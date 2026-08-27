@@ -2,91 +2,150 @@
 @{
     Layout = "~/Views/Shared/_AdminLayout.cshtml";
     ViewData["Title"] = Model.Page.Title;
+
+    var query = Context.Request.Query["q"].ToString();
+    var successMessage = TempData["Success"] as string ?? TempData["AdminSuccess"] as string;
+    var errorMessage = TempData["Error"] as string ?? TempData["AdminError"] as string;
+    var hasRowActions = Model.Page.Section is AdminSectionType.ForumModeration or AdminSectionType.Notifications;
+
+    bool IsUnread(AdminSectionRowDto row)
+    {
+        if (string.Equals(row.BadgeText, "Unread", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(row.BadgeText, "New", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return row.Cells.Any(cell =>
+            string.Equals(cell.Value, "Unread", StringComparison.OrdinalIgnoreCase)
+            || (string.Equals(cell.Key, "isRead", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(cell.Value, "false", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    var hasUnreadNotifications = Model.Page.Section == AdminSectionType.Notifications
+        && Model.Page.Rows.Any(IsUnread);
+
+    var totalPages = Model.Page.PageSize > 0
+        ? Math.Max(1, (int)Math.Ceiling(Model.Page.TotalCount / (double)Model.Page.PageSize))
+        : 1;
+    var currentPage = Math.Clamp(Model.Page.Page, 1, totalPages);
+    var firstRowNumber = Model.Page.Rows.Count == 0 ? 0 : ((currentPage - 1) * Model.Page.PageSize) + 1;
+    var lastRowNumber = ((currentPage - 1) * Model.Page.PageSize) + Model.Page.Rows.Count;
 }
 
 <div class="ls-admin-page">
-    <section class="ls-admin-hero card ls-admin-surface">
-        <div class="ls-admin-hero__body">
-            <div>
-                <p class="ls-admin-kicker">Admin section</p>
-                <h1 class="ls-admin-title">@Model.Page.Title</h1>
-                <p class="ls-admin-subtitle">@Model.Page.Subtitle</p>
-            </div>
-            <div class="ls-admin-hero__actions">
-                @if (Model.Page.ShowExportButtons)
-                {
-                    <a class="btn btn-sm btn-outline-secondary" href="#"><i class="bi bi-file-earmark-pdf me-2"></i>Export PDF</a>
-                    <a class="btn btn-sm btn-outline-secondary" href="#"><i class="bi bi-file-earmark-excel me-2"></i>Export Excel</a>
-                }
-                <a class="btn btn-sm btn-primary" asp-controller="Admin" asp-action="Index"><i class="bi bi-arrow-left me-2"></i>Back to dashboard</a>
-            </div>
+    <header class="ls-admin-page-header">
+        <div class="ls-admin-page-header__content">
+            <p class="ls-admin-page-header__eyebrow">@Model.Page.Eyebrow</p>
+            <h1>@Model.Page.Title</h1>
+            <p>@Model.Page.Subtitle</p>
         </div>
-    </section>
-
-    <section class="ls-admin-section">
-        <div class="ls-admin-section__head">
-            <div>
-                <p class="ls-admin-section__eyebrow">Summary</p>
-                <h2 class="ls-admin-section__title">Section metrics</h2>
-            </div>
-        </div>
-        <div class="row g-3 row-cols-1 row-cols-md-3">
-            @foreach (var metric in Model.Page.Metrics)
+        <div class="ls-admin-page-actions">
+            @if (hasUnreadNotifications)
             {
-                <div class="col">
-                    <div class="card ls-admin-surface ls-admin-mini-metric">
-                        <span class="ls-admin-mini-card__label">@metric.Label</span>
-                        <strong class="@(metric.Tone ?? string.Empty)">@metric.Value</strong>
-                    </div>
-                </div>
+                <form asp-controller="Admin" asp-action="MarkAllNotificationsRead" method="post">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="q" value="@query" />
+                    <button class="ls-admin-btn ls-admin-btn--secondary" type="submit">
+                        <i class="bi bi-check2-all" aria-hidden="true"></i>
+                        Mark all read
+                    </button>
+                </form>
             }
+            <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Admin" asp-action="Index">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Dashboard
+            </a>
         </div>
-    </section>
+    </header>
 
-    <section class="ls-admin-section">
-        <div class="card ls-admin-surface ls-admin-table-card">
-            <div class="ls-admin-section__head ls-admin-section__head--compact">
-                <div>
-                    <p class="ls-admin-section__eyebrow">Data</p>
-                    <h2 class="ls-admin-section__title">@Model.Page.Title records</h2>
-                </div>
-                <div class="ls-admin-table-tools">
-                    @if (Model.Page.ShowFilters)
-                    {
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" type="button">Filters</button>
-                            <div class="dropdown-menu dropdown-menu-end p-3 ls-admin-filter-menu">
-                                <div class="mb-2">
-                                    <label class="form-label">Risk Level</label>
-                                    <select class="form-select form-select-sm"><option>All</option><option>High</option><option>Medium</option><option>Low</option></select>
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label">Department</label>
-                                    <select class="form-select form-select-sm"><option>All</option><option>CSE</option><option>EEE</option><option>BBA</option></select>
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    <div class="input-group input-group-sm ls-admin-search-inline">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="search" class="form-control" placeholder="@Model.Page.SearchPlaceholder" />
-                    </div>
-                </div>
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="ls-admin-alert ls-admin-alert--success" role="status">
+            <i class="bi bi-check-circle" aria-hidden="true"></i>
+            <span>@successMessage</span>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="ls-admin-alert ls-admin-alert--error" role="alert">
+            <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+            <span>@errorMessage</span>
+        </div>
+    }
+
+    @if (Model.Page.Metrics.Count > 0)
+    {
+        <section aria-labelledby="section-summary-heading">
+            <h2 class="ls-admin-sr-only" id="section-summary-heading">@Model.Page.Title summary</h2>
+            <div class="ls-admin-kpi-grid ls-admin-kpi-grid--compact">
+                @foreach (var metric in Model.Page.Metrics)
+                {
+                    <article class="ls-admin-kpi ls-admin-kpi--compact ls-admin-kpi--@metric.Tone">
+                        <span class="ls-admin-kpi__label">@metric.Label</span>
+                        <strong class="ls-admin-kpi__value">@metric.Value</strong>
+                    </article>
+                }
             </div>
+        </section>
+    }
 
+    <section class="ls-admin-panel" aria-labelledby="section-records-heading">
+        <header class="ls-admin-panel__header ls-admin-panel__header--toolbar">
+            <div>
+                <p class="ls-admin-panel__eyebrow">Live records</p>
+                <h2 id="section-records-heading">@Model.Page.Title</h2>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Model.Page.SearchPlaceholder))
+            {
+                <form class="ls-admin-toolbar" method="get" role="search">
+                    <label class="ls-admin-sr-only" for="admin-section-search">Search @Model.Page.Title</label>
+                    <div class="ls-admin-field ls-admin-field--search">
+                        <i class="bi bi-search" aria-hidden="true"></i>
+                        <input class="ls-admin-input"
+                               id="admin-section-search"
+                               name="q"
+                               type="search"
+                               value="@query"
+                               maxlength="100"
+                               placeholder="@Model.Page.SearchPlaceholder" />
+                    </div>
+                    <button class="ls-admin-btn ls-admin-btn--secondary" type="submit">Search</button>
+                    @if (!string.IsNullOrWhiteSpace(query))
+                    {
+                        <a class="ls-admin-btn ls-admin-btn--quiet" href="@Context.Request.Path">Clear</a>
+                    }
+                </form>
+            }
+        </header>
+
+        <div class="ls-admin-panel__body ls-admin-panel__body--flush">
             @if (Model.Page.Rows.Count == 0)
             {
-                <div class="ls-admin-empty">@Model.Page.EmptyStateMessage</div>
+                <div class="ls-admin-empty">
+                    <i class="bi bi-inbox" aria-hidden="true"></i>
+                    <h3>No records to show</h3>
+                    <p>@(Model.Page.EmptyStateMessage ?? "There are no records in this section yet.")</p>
+                    @if (!string.IsNullOrWhiteSpace(query))
+                    {
+                        <a class="ls-admin-btn ls-admin-btn--secondary" href="@Context.Request.Path">Clear search</a>
+                    }
+                </div>
             }
             else
             {
-                <div class="table-responsive">
-                    <table class="table align-middle ls-admin-table">
+                <div class="ls-admin-table-wrap">
+                    <table class="ls-admin-table">
+                        <caption class="ls-admin-sr-only">@Model.Page.Title records</caption>
                         <thead>
                             <tr>
                                 @foreach (var column in Model.Page.Columns)
                                 {
-                                    <th class="@column.CssClass">@column.Label</th>
+                                    <th class="@column.CssClass" scope="col">@column.Label</th>
+                                }
+                                @if (hasRowActions)
+                                {
+                                    <th class="ls-admin-table__actions-heading" scope="col">Actions</th>
                                 }
                             </tr>
                         </thead>
@@ -94,33 +153,79 @@
                             @foreach (var row in Model.Page.Rows)
                             {
                                 <tr>
-                                    @for (var i = 0; i < Model.Page.Columns.Count; i++)
+                                    @for (var columnIndex = 0; columnIndex < Model.Page.Columns.Count; columnIndex++)
                                     {
-                                        var column = Model.Page.Columns[i];
-                                        var isActionColumn = string.Equals(column.Key, "actions", StringComparison.OrdinalIgnoreCase);
-                                        <td class="@column.CssClass">
-                                            @if (i == 0)
-                                            {
+                                        var column = Model.Page.Columns[columnIndex];
+                                        row.Cells.TryGetValue(column.Key, out var cellValue);
+
+                                        @if (columnIndex == 0)
+                                        {
+                                            <th class="@column.CssClass" scope="row" data-label="@column.Label">
                                                 <div class="ls-admin-table__primary">@row.PrimaryLabel</div>
-                                                <div class="ls-admin-table__secondary">@row.SecondaryLabel</div>
+                                                @if (!string.IsNullOrWhiteSpace(row.SecondaryLabel))
+                                                {
+                                                    <div class="ls-admin-table__secondary">@row.SecondaryLabel</div>
+                                                }
                                                 @if (!string.IsNullOrWhiteSpace(row.BadgeText))
                                                 {
-                                                    <span class="badge @row.BadgeClass mt-2">@row.BadgeText</span>
+                                                    <span class="ls-admin-badge ls-admin-badge--@row.BadgeClass">@row.BadgeText</span>
                                                 }
-                                            }
-                                            else if (isActionColumn)
-                                            {
-                                                <div class="d-flex flex-wrap gap-2">
-                                                    @foreach (var action in row.Actions)
+                                            </th>
+                                        }
+                                        else
+                                        {
+                                            <td class="@column.CssClass" data-label="@column.Label">
+                                                <span class="@(column.IsNumeric ? "ls-admin-table__number" : string.Empty)">
+                                                    @if (string.IsNullOrWhiteSpace(cellValue))
                                                     {
-                                                        <a class="@action.CssClass" href="@action.Url"><i class="bi @action.Icon me-1"></i>@action.Label</a>
+                                                        <span aria-label="Not available">&mdash;</span>
                                                     }
-                                                </div>
+                                                    else
+                                                    {
+                                                        @cellValue
+                                                    }
+                                                </span>
+                                            </td>
+                                        }
+                                    }
+
+                                    @if (hasRowActions)
+                                    {
+                                        <td class="ls-admin-table__actions" data-label="Actions">
+                                            @if (Model.Page.Section == AdminSectionType.ForumModeration)
+                                            {
+                                                <form asp-controller="Admin"
+                                                      asp-action="ReviewForumPost"
+                                                      method="post">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="postId" value="@row.Id" />
+                                                    <input type="hidden" name="publish" value="true" />
+                                                    <input type="hidden" name="q" value="@query" />
+                                                    <button class="ls-admin-btn ls-admin-btn--small ls-admin-btn--secondary" type="submit">Approve</button>
+                                                </form>
+                                                <form asp-controller="Admin"
+                                                      asp-action="ReviewForumPost"
+                                                      method="post"
+                                                      data-admin-confirm="Remove this discussion from the community?">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="postId" value="@row.Id" />
+                                                    <input type="hidden" name="publish" value="false" />
+                                                    <input type="hidden" name="q" value="@query" />
+                                                    <button class="ls-admin-btn ls-admin-btn--small ls-admin-btn--danger" type="submit">Remove</button>
+                                                </form>
+                                            }
+                                            else if (Model.Page.Section == AdminSectionType.Notifications && IsUnread(row))
+                                            {
+                                                <form asp-controller="Admin" asp-action="MarkNotificationRead" method="post">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="id" value="@row.Id" />
+                                                    <input type="hidden" name="q" value="@query" />
+                                                    <button class="ls-admin-btn ls-admin-btn--small ls-admin-btn--secondary" type="submit">Mark read</button>
+                                                </form>
                                             }
                                             else
                                             {
-                                                row.Cells.TryGetValue(column.Key, out var value);
-                                                @value
+                                                <span class="ls-admin-table__no-action" aria-label="No action available">&mdash;</span>
                                             }
                                         </td>
                                     }
@@ -129,34 +234,35 @@
                         </tbody>
                     </table>
                 </div>
+
+                @if (totalPages > 1)
+                {
+                    <nav class="ls-admin-pager" aria-label="@Model.Page.Title pagination">
+                        <span class="ls-admin-pager__summary">
+                            Showing @firstRowNumber&ndash;@lastRowNumber of @Model.Page.TotalCount.ToString("N0")
+                        </span>
+                        <div class="ls-admin-pager__controls">
+                            @if (currentPage > 1)
+                            {
+                                <a class="ls-admin-btn ls-admin-btn--small ls-admin-btn--secondary"
+                                   asp-all-route-data="@(new Dictionary<string, string> { ["q"] = query, ["page"] = (currentPage - 1).ToString() })">
+                                    <i class="bi bi-chevron-left" aria-hidden="true"></i>
+                                    Previous
+                                </a>
+                            }
+                            <span class="ls-admin-pager__page">Page @currentPage of @totalPages</span>
+                            @if (currentPage < totalPages)
+                            {
+                                <a class="ls-admin-btn ls-admin-btn--small ls-admin-btn--secondary"
+                                   asp-all-route-data="@(new Dictionary<string, string> { ["q"] = query, ["page"] = (currentPage + 1).ToString() })">
+                                    Next
+                                    <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                                </a>
+                            }
+                        </div>
+                    </nav>
+                }
             }
         </div>
     </section>
-
-    @if (Model.Page.Activity.Count > 0)
-    {
-        <section class="ls-admin-section">
-            <div class="card ls-admin-surface ls-admin-panel">
-                <div class="ls-admin-section__head ls-admin-section__head--compact">
-                    <div>
-                        <p class="ls-admin-section__eyebrow">Activity</p>
-                        <h2 class="ls-admin-section__title">Recent section activity</h2>
-                    </div>
-                </div>
-                <div class="ls-admin-activity ls-admin-activity--compact">
-                    @foreach (var item in Model.Page.Activity)
-                    {
-                        <article class="ls-admin-activity__item">
-                            <div class="ls-admin-activity__icon @item.ToneClass"><i class="bi @item.Icon"></i></div>
-                            <div class="ls-admin-activity__content">
-                                <div class="ls-admin-activity__title">@item.Title</div>
-                                <div class="ls-admin-activity__subtitle">@item.Subtitle</div>
-                            </div>
-                            <div class="ls-admin-activity__time">@item.TimeLabel</div>
-                        </article>
-                    }
-                </div>
-            </div>
-        </section>
-    }
 </div>

@@ -1,107 +1,247 @@
 @model AdminDashboardViewModel
 @{
     Layout = "~/Views/Shared/_AdminLayout.cshtml";
-    ViewData["Title"] = "Admin Dashboard";
+    ViewData["Title"] = "Support operations";
+
+    var dashboard = Model.Dashboard;
+    var successMessage = TempData["Success"] as string ?? TempData["AdminSuccess"] as string;
+    var errorMessage = TempData["Error"] as string ?? TempData["AdminError"] as string;
+    var maximumRiskSignals = Math.Max(1, dashboard.RiskTrend.Count == 0
+        ? 0
+        : dashboard.RiskTrend.Max(point => point.Total));
 }
 
 <div class="ls-admin-page ls-admin-page--dashboard">
-    <section class="ls-admin-hero card ls-admin-surface">
-        <div class="ls-admin-hero__body">
-            <div>
-                <p class="ls-admin-kicker">University Administration</p>
-                <h1 class="ls-admin-title">Operational control center for wellbeing, risk, and support workflows.</h1>
-                <p class="ls-admin-subtitle">Monitor disengagement signals, manage support teams, review moderation queues, and keep the campus support network moving in one place.</p>
-            </div>
-            <div class="ls-admin-hero__actions">
-                <a class="btn btn-sm btn-outline-secondary" asp-controller="Admin" asp-action="Reports"><i class="bi bi-file-earmark-pdf me-2"></i>Export Reports</a>
-                <a class="btn btn-sm btn-primary" asp-controller="Admin" asp-action="MachineLearning"><i class="bi bi-cpu me-2"></i>Open ML Panel</a>
-            </div>
+    <header class="ls-admin-page-header">
+        <div class="ls-admin-page-header__content">
+            <p class="ls-admin-page-header__eyebrow">Operations overview</p>
+            <h1>Support operations</h1>
+            <p>Prioritize people who may need support, keep appointments moving, and review community reports from one live workspace.</p>
+            <p class="ls-admin-page-header__meta">
+                <i class="bi bi-clock" aria-hidden="true"></i>
+                Data as of @dashboard.Shell.CurrentDateLabel
+            </p>
         </div>
-    </section>
+        <div class="ls-admin-page-actions">
+            <a class="ls-admin-btn ls-admin-btn--primary" asp-controller="Admin" asp-action="RiskMonitoring">
+                Review support queue
+                <i class="bi bi-arrow-right" aria-hidden="true"></i>
+            </a>
+        </div>
+    </header>
 
-    <section class="ls-admin-section">
-        <div class="ls-admin-section__head">
-            <div>
-                <p class="ls-admin-section__eyebrow">Overview</p>
-                <h2 class="ls-admin-section__title">Key metrics</h2>
-            </div>
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="ls-admin-alert ls-admin-alert--success" role="status">
+            <i class="bi bi-check-circle" aria-hidden="true"></i>
+            <span>@successMessage</span>
         </div>
-        <div class="row g-3 row-cols-1 row-cols-sm-2 row-cols-xl-3 row-cols-xxl-4">
-            @foreach (var stat in Model.Dashboard.Stats)
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="ls-admin-alert ls-admin-alert--error" role="alert">
+            <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+            <span>@errorMessage</span>
+        </div>
+    }
+
+    <section aria-labelledby="admin-summary-heading">
+        <h2 class="ls-admin-sr-only" id="admin-summary-heading">Operational summary</h2>
+        <div class="ls-admin-kpi-grid">
+            @foreach (var kpi in dashboard.Kpis.Take(4))
             {
-                <div class="col">
-                    <div class="card ls-admin-surface ls-admin-stat-card @stat.GradientClass">
-                        <div class="ls-admin-stat-card__top">
-                            <div>
-                                <div class="ls-admin-stat-card__label">@stat.Title</div>
-                                <div class="ls-admin-stat-card__value">@stat.Value</div>
-                            </div>
-                            <div class="ls-admin-stat-card__icon"><i class="bi @stat.Icon"></i></div>
-                        </div>
-                        <div class="ls-admin-stat-card__meta">
-                            <span class="@stat.DeltaClass">@stat.Delta</span>
-                            <span>vs last 7 days</span>
-                        </div>
-                        <canvas class="ls-admin-sparkline" data-sparkline="@stat.SparklineJson" height="38" aria-hidden="true"></canvas>
+                <article class="ls-admin-kpi ls-admin-kpi--@kpi.Tone">
+                    <div class="ls-admin-kpi__topline">
+                        <span class="ls-admin-kpi__label">@kpi.Label</span>
+                        <span class="ls-admin-kpi__icon" aria-hidden="true"><i class="bi @kpi.Icon"></i></span>
                     </div>
-                </div>
+                    <strong class="ls-admin-kpi__value">@kpi.Value</strong>
+                    <div class="ls-admin-kpi__footer">
+                        <span>@kpi.Detail</span>
+                        <a asp-controller="@kpi.Controller" asp-action="@kpi.Action" aria-label="Open @kpi.Label">
+                            View
+                            <i class="bi bi-arrow-up-right" aria-hidden="true"></i>
+                        </a>
+                    </div>
+                </article>
             }
         </div>
     </section>
 
-    <section class="ls-admin-section">
-        <div class="row g-3">
-            @foreach (var chart in Model.Dashboard.Charts)
-            {
-                var isDoughnut = chart.Type == "doughnut";
-                var chartColClass = isDoughnut ? "col-12 col-xl-4" : "col-12 col-xl-6";
-                var chartCardClass = isDoughnut ? "ls-admin-chart-card--doughnut" : "ls-admin-chart-card--medium";
-                var chartFrameClass = isDoughnut ? "ls-admin-chart-frame--doughnut" : "ls-admin-chart-frame--medium";
-
-                <div class="@chartColClass">
-                    <div class="card ls-admin-surface ls-admin-chart-card @chartCardClass">
-                        <div class="ls-admin-section__head ls-admin-section__head--compact">
-                            <div>
-                                <p class="ls-admin-section__eyebrow">@chart.Subtitle</p>
-                                <h2 class="ls-admin-section__title">@chart.Title</h2>
-                            </div>
-                        </div>
-                        <div class="ls-admin-chart-frame @chartFrameClass">
-                            <canvas id="@chart.Id" class="ls-admin-chart" data-chart-type="@chart.Type" data-chart-config='@Html.Raw(chart.DatasetsJson)'></canvas>
-                        </div>
+    <div class="ls-admin-grid--main">
+        <section class="ls-admin-panel ls-admin-panel--queue" aria-labelledby="support-queue-heading">
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Care operations</p>
+                    <h2 id="support-queue-heading">Support queue</h2>
+                    <p>Open high-priority signals, ordered by risk level and then by longest-waiting first.</p>
+                </div>
+                <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Admin" asp-action="RiskMonitoring">
+                    Open queue
+                </a>
+            </header>
+            <div class="ls-admin-panel__body">
+                @if (dashboard.SupportRows.Count == 0)
+                {
+                    <div class="ls-admin-empty">
+                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                        <h3>The queue is clear</h3>
+                        <p>There are no open high-priority support signals right now.</p>
                     </div>
+                }
+                else
+                {
+                    @await Html.PartialAsync("_AdminDashboardTable", (dashboard.SupportColumns, dashboard.SupportRows))
+                }
+            </div>
+        </section>
+
+        <section class="ls-admin-panel ls-admin-panel--today" aria-labelledby="today-heading">
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Live workload</p>
+                    <h2 id="today-heading">Today (UTC)</h2>
                 </div>
+            </header>
+            <div class="ls-admin-panel__body">
+                @if (dashboard.TodayItems.Count == 0)
+                {
+                    <div class="ls-admin-empty ls-admin-empty--compact">
+                        <p>No new operational activity today.</p>
+                    </div>
+                }
+                else
+                {
+                    <ul class="ls-admin-list" role="list">
+                        @foreach (var item in dashboard.TodayItems)
+                        {
+                            <li class="ls-admin-list__item">
+                                <span class="ls-admin-list__icon ls-admin-list__icon--@item.Tone" aria-hidden="true">
+                                    <i class="bi @item.Icon"></i>
+                                </span>
+                                <div class="ls-admin-list__content">
+                                    <strong>@item.Title</strong>
+                                    <span>@item.Detail</span>
+                                </div>
+                                <span class="ls-admin-list__time">@item.TimeLabel</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="ls-admin-grid--main ls-admin-grid--secondary">
+        <section class="ls-admin-panel ls-admin-panel--trend" aria-labelledby="risk-trend-heading">
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Last seven days</p>
+                    <h2 id="risk-trend-heading">Risk signal trend</h2>
+                    <p>Daily scores by risk level. Counts represent generated signals, not diagnoses.</p>
+                </div>
+            </header>
+            <div class="ls-admin-panel__body">
+                @if (dashboard.RiskTrend.Count == 0)
+                {
+                    <div class="ls-admin-empty ls-admin-empty--compact">
+                        <p>No risk scores have been generated in the last seven days.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ls-admin-trend">
+                        <div class="ls-admin-trend__legend" aria-label="Risk level legend">
+                            <span><i class="ls-admin-trend__key ls-admin-trend__key--low" aria-hidden="true"></i>Low</span>
+                            <span><i class="ls-admin-trend__key ls-admin-trend__key--moderate" aria-hidden="true"></i>Moderate</span>
+                            <span><i class="ls-admin-trend__key ls-admin-trend__key--high" aria-hidden="true"></i>High</span>
+                            <span><i class="ls-admin-trend__key ls-admin-trend__key--critical" aria-hidden="true"></i>Critical</span>
+                        </div>
+                        <ul class="ls-admin-trend__rows" role="list">
+                            @foreach (var point in dashboard.RiskTrend)
+                            {
+                                var lowWidth = (point.Low * 100d / maximumRiskSignals).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                                var moderateWidth = (point.Moderate * 100d / maximumRiskSignals).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                                var highWidth = (point.High * 100d / maximumRiskSignals).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                                var criticalWidth = (point.Critical * 100d / maximumRiskSignals).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+                                <li class="ls-admin-trend__row">
+                                    <div class="ls-admin-trend__row-head">
+                                        <strong>@point.Label</strong>
+                                        <span>@point.Total total</span>
+                                    </div>
+                                    <div class="ls-admin-trend__bar" aria-hidden="true">
+                                        <span class="ls-admin-trend__segment ls-admin-trend__segment--low" style="@($"width: {lowWidth}%")"></span>
+                                        <span class="ls-admin-trend__segment ls-admin-trend__segment--moderate" style="@($"width: {moderateWidth}%")"></span>
+                                        <span class="ls-admin-trend__segment ls-admin-trend__segment--high" style="@($"width: {highWidth}%")"></span>
+                                        <span class="ls-admin-trend__segment ls-admin-trend__segment--critical" style="@($"width: {criticalWidth}%")"></span>
+                                    </div>
+                                    <dl class="ls-admin-trend__counts">
+                                        <div><dt>Low</dt><dd>@point.Low</dd></div>
+                                        <div><dt>Moderate</dt><dd>@point.Moderate</dd></div>
+                                        <div><dt>High</dt><dd>@point.High</dd></div>
+                                        <div><dt>Critical</dt><dd>@point.Critical</dd></div>
+                                    </dl>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="ls-admin-panel ls-admin-panel--status" aria-labelledby="data-status-heading">
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Data freshness</p>
+                    <h2 id="data-status-heading">System status</h2>
+                </div>
+            </header>
+            <div class="ls-admin-panel__body">
+                @if (dashboard.StatusItems.Count == 0)
+                {
+                    <div class="ls-admin-empty ls-admin-empty--compact"><p>No status data is available.</p></div>
+                }
+                else
+                {
+                    <ul class="ls-admin-status" role="list">
+                        @foreach (var status in dashboard.StatusItems)
+                        {
+                            <li class="ls-admin-status__item">
+                                <span class="ls-admin-status__marker ls-admin-status__marker--@status.Tone" aria-hidden="true"></span>
+                                <div>
+                                    <span>@status.Label</span>
+                                    <strong>@status.Value</strong>
+                                    <small>@status.Detail</small>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </section>
+    </div>
+
+    <section class="ls-admin-panel" aria-labelledby="notifications-heading">
+        <header class="ls-admin-panel__header">
+            <div>
+                <p class="ls-admin-panel__eyebrow">Admin account</p>
+                <h2 id="notifications-heading">Recent notifications</h2>
+                <p>Messages generated for your administrator account.</p>
+            </div>
+            <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Admin" asp-action="Notifications">
+                Notification center
+            </a>
+        </header>
+        <div class="ls-admin-panel__body">
+            @if (dashboard.NotificationRows.Count == 0)
+            {
+                <div class="ls-admin-empty ls-admin-empty--compact"><p>You have no recent notifications.</p></div>
             }
-        </div>
-    </section>
-
-    <section class="ls-admin-section">
-        <div class="card ls-admin-surface ls-admin-table-card">
-            <div class="ls-admin-section__head ls-admin-section__head--compact">
-                <div>
-                    <p class="ls-admin-section__eyebrow">Risk Monitoring</p>
-                    <h2 class="ls-admin-section__title">Top queue items</h2>
-                </div>
-                <a class="btn btn-sm btn-outline-secondary" asp-controller="Admin" asp-action="RiskMonitoring">Open queue</a>
-            </div>
-            @await Html.PartialAsync("_AdminDashboardTable", Model.Dashboard.RiskRows)
-        </div>
-    </section>
-
-    <section class="ls-admin-section">
-        <div class="card ls-admin-surface ls-admin-table-card">
-            <div class="ls-admin-section__head ls-admin-section__head--compact">
-                <div>
-                    <p class="ls-admin-section__eyebrow">Notifications</p>
-                    <h2 class="ls-admin-section__title">Unread and recent notifications</h2>
-                </div>
-                <a class="btn btn-sm btn-outline-secondary" asp-controller="Admin" asp-action="Notifications">Open center</a>
-            </div>
-            @await Html.PartialAsync("_AdminDashboardTable", Model.Dashboard.NotificationRows)
+            else
+            {
+                @await Html.PartialAsync("_AdminDashboardTable", (dashboard.NotificationColumns, dashboard.NotificationRows))
+            }
         </div>
     </section>
 </div>
-
-@section Scripts {
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-}

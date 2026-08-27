@@ -2,53 +2,51 @@
     Layout = null;
 }
 
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#F4EEE3" />
+    <meta name="theme-color" content="#201C17" />
     <title>@(ViewData["Title"] ?? "Admin") - Lodestone</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/admin-dashboard.css" asp-append-version="true" />
 
-    @RenderSection("Styles", required: false)
+    @await RenderSectionAsync("Styles", required: false)
 </head>
 <body class="ls-admin">
+    <a class="ls-admin-skip-link" href="#admin-main">Skip to main content</a>
+
+    <aside class="ls-admin-sidebar" id="ls-admin-sidebar" aria-label="Admin navigation" data-lenis-prevent>
+        <div class="ls-admin-sidebar__inner">
+            @await Html.PartialAsync("_AdminSidebar")
+        </div>
+    </aside>
+
+    <button class="ls-admin-drawer-overlay"
+            id="ls-admin-drawer-overlay"
+            type="button"
+            tabindex="-1"
+            aria-label="Close navigation"
+            aria-hidden="true"></button>
 
     <header class="ls-admin-topnav" id="ls-admin-topnav">
-        <div class="ls-shell ls-admin-topnav__inner">
-            @await Html.PartialAsync("_AdminTopNav")
-        </div>
+        @await Html.PartialAsync("_AdminTopNav")
     </header>
 
-    <div class="ls-admin-body">
-        <aside class="ls-admin-sidebar" id="ls-admin-sidebar">
-            <div class="ls-admin-sidebar__inner">
-                @await Html.PartialAsync("_AdminSidebar")
-            </div>
-        </aside>
+    <main class="ls-admin-main" id="admin-main" tabindex="-1">
+        <div class="ls-admin-main__inner">
+            @RenderBody()
+        </div>
+    </main>
 
-        <main class="ls-admin-main" role="main">
-            <div class="ls-shell ls-admin-main__inner">
-                @RenderBody()
-            </div>
-        </main>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.7/dist/browser/signalr.min.js" defer></script>
-    <script src="~/js/site.js" asp-append-version="true" defer></script>
-    @RenderSection("Scripts", required: false)
+    <script src="https://cdn.jsdelivr.net/npm/@@studio-freight/lenis@1.0.42/dist/lenis.min.js" defer></script>
+    @await RenderSectionAsync("Scripts", required: false)
     <script src="~/js/admin-dashboard.js" asp-append-version="true" defer></script>
 </body>
 </html>
-
