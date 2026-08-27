@@ -3,60 +3,87 @@
 
 @{
     var shell = ViewData["AdminShell"] as AdminShellDto;
-    var currentDate = shell?.CurrentDateLabel ?? DateTime.Now.ToString("dddd, dd MMM yyyy", CultureInfo.InvariantCulture);
+    var currentDate = shell?.CurrentDateLabel ?? DateTime.UtcNow.ToString("dddd, dd MMM yyyy", CultureInfo.InvariantCulture) + " UTC";
     var adminName = shell?.AdminName ?? User.Identity?.Name ?? "Admin";
     var unreadNotifications = shell?.UnreadNotifications ?? 0;
-    var unreadMessages = shell?.UnreadMessages ?? 0;
+    var profileImageUrl = string.IsNullOrWhiteSpace(shell?.ProfileImageUrl)
+        ? "/images/admin-avatar.svg"
+        : shell.ProfileImageUrl;
+    var activeSection = ViewData["AdminActiveSection"]?.ToString();
+    var currentQuery = string.Equals(activeSection, AdminSectionType.Users.ToString(), StringComparison.Ordinal)
+        ? Context.Request.Query["q"].ToString()
+        : string.Empty;
+    var currentDateIso = DateTime.UtcNow.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 }
 
-<div class="ls-admin-topnav__left">
-    <a class="ls-admin-logo" asp-controller="Admin" asp-action="Index" aria-label="Lodestone admin home">
-        <span class="ls-admin-logo__mark" aria-hidden="true">
-            <i class="bi bi-bezier2"></i>
-        </span>
-        <span class="ls-admin-logo__text">Lodestone</span>
-        <span class="ls-admin-logo__dot" aria-hidden="true"></span>
-    </a>
-
-    <div class="ls-admin-search" role="search">
-        <i class="bi bi-search ls-admin-search__icon" aria-hidden="true"></i>
-        <input class="ls-admin-search__input" type="search" placeholder="Search students, bookings, posts..." aria-label="Search" />
-    </div>
-</div>
-
-<div class="ls-admin-topnav__right">
-    <button class="ls-admin-iconbtn" type="button" aria-label="Notifications">
-        <i class="bi bi-bell ls-admin-iconbtn__icon" aria-hidden="true"></i>
-        <span class="ls-admin-iconbtn__badge" id="ls-unread-badge" aria-label="Unread notifications">@unreadNotifications</span>
-    </button>
-
-    <button class="ls-admin-iconbtn" type="button" aria-label="Messages">
-        <i class="bi bi-chat-dots ls-admin-iconbtn__icon" aria-hidden="true"></i>
-        @if (unreadMessages > 0)
-        {
-            <span class="ls-admin-iconbtn__badge ls-admin-iconbtn__badge--sm">@unreadMessages</span>
-        }
-    </button>
-
-    <div class="ls-admin-topnav__date" id="ls-admin-date">@currentDate</div>
-
-
-
-    <div class="ls-admin-profile dropdown">
-        <button class="ls-admin-profile__btn" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-            <img class="ls-admin-profile__img" src="@(shell?.ProfileImageUrl ?? "/images/admin-avatar.svg")" alt="Admin profile" />
-            <span class="ls-admin-profile__name">@adminName</span>
-            <i class="bi bi-chevron-down ls-admin-profile__chevron" aria-hidden="true"></i>
+<div class="ls-admin-topnav__inner">
+    <div class="ls-admin-topnav__mobile-brand">
+        <button class="ls-admin-menu-toggle"
+                id="ls-admin-menu-toggle"
+                type="button"
+                aria-label="Open navigation"
+                aria-controls="ls-admin-sidebar"
+                aria-expanded="false">
+            <i class="bi bi-list" aria-hidden="true"></i>
         </button>
-        <ul class="dropdown-menu dropdown-menu-end ls-admin-profile__menu" aria-label="Admin profile dropdown">
-            <li><a class="dropdown-item" asp-controller="Admin" asp-action="Profile"><i class="bi bi-person me-2"></i>Profile</a></li>
-            <li><a class="dropdown-item" asp-controller="Admin" asp-action="Settings"><i class="bi bi-gear me-2"></i>Settings</a></li>
-            <li><hr class="dropdown-divider" /></li>
-            <li>
-                <form asp-controller="Account" asp-action="Logout" method="post" class="m-0">
-                    <button class="dropdown-item text-danger" type="submit"><i class="bi bi-box-arrow-right me-2"></i>Logout</button>
+        <a class="ls-admin-mobile-logo" asp-controller="Admin" asp-action="Index" aria-label="Lodestone admin home">
+            Lodestone<span aria-hidden="true">.</span>
+        </a>
+    </div>
+
+    <form class="ls-admin-global-search" asp-controller="Admin" asp-action="Users" method="get" role="search">
+        <label class="ls-admin-visually-hidden" for="admin-global-search">Search users</label>
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input id="admin-global-search"
+               name="q"
+               type="search"
+               value="@currentQuery"
+               maxlength="100"
+               placeholder="Search users"
+               autocomplete="off" />
+        <button type="submit">Search</button>
+    </form>
+
+    <div class="ls-admin-topnav__actions">
+        <time class="ls-admin-topnav__date" datetime="@currentDateIso">
+            @currentDate
+        </time>
+
+        <a class="ls-admin-icon-button"
+           asp-controller="Admin"
+           asp-action="Notifications"
+           aria-label="Notifications, @unreadNotifications unread">
+            <i class="bi bi-bell" aria-hidden="true"></i>
+            @if (unreadNotifications > 0)
+            {
+                <span class="ls-admin-icon-button__badge" aria-hidden="true">
+                    @(unreadNotifications > 99 ? "99+" : unreadNotifications.ToString(CultureInfo.InvariantCulture))
+                </span>
+            }
+        </a>
+
+        <details class="ls-admin-account">
+            <summary class="ls-admin-account__summary" aria-label="Open account menu for @adminName">
+                <img src="@profileImageUrl" asp-append-version="true" alt="" />
+                <span>@adminName</span>
+                <i class="bi bi-chevron-down" aria-hidden="true"></i>
+            </summary>
+            <div class="ls-admin-account__menu">
+                <div class="ls-admin-account__identity">
+                    <strong>@adminName</strong>
+                    <span>Administrator</span>
+                </div>
+                <a asp-controller="Admin" asp-action="Profile">
+                    <i class="bi bi-person" aria-hidden="true"></i>
+                    Profile
+                </a>
+                <form asp-controller="Account" asp-action="Logout" method="post">
+                    <button type="submit">
+                        <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                        Sign out
+                    </button>
                 </form>
-            </li>
-        </ul>
+            </div>
+        </details>
     </div>
 </div>

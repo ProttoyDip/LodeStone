@@ -10,12 +10,18 @@ public class ForumService : IForumService
     private readonly IForumRepository _forumRepository;
     private readonly ICurrentUserService _currentUser;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAuditLogService _auditLog;
 
-    public ForumService(IForumRepository forumRepository, ICurrentUserService currentUser, IUnitOfWork unitOfWork)
+    public ForumService(
+        IForumRepository forumRepository,
+        ICurrentUserService currentUser,
+        IUnitOfWork unitOfWork,
+        IAuditLogService auditLog)
     {
         _forumRepository = forumRepository;
         _currentUser     = currentUser;
         _unitOfWork      = unitOfWork;
+        _auditLog        = auditLog;
     }
 
     public async Task<IReadOnlyList<ForumCategoryDto>> GetCategoriesAsync(
@@ -122,14 +128,32 @@ public class ForumService : IForumService
             .ToList()
             .AsReadOnly();
 
-    public async Task ReviewPostAsync(int postId, bool publish, CancellationToken cancellationToken = default)
+    public async Task<bool> ReviewPostAsync(int postId, bool publish, CancellationToken cancellationToken = default)
     {
-        var post = await _forumRepository.GetPostByIdAsync(postId, cancellationToken)
-            ?? throw new InvalidOperationException($"Post {postId} not found.");
+        var post = await _forumRepository.GetPostByIdAsync(postId, cancellationToken);
+        if (post is null)
+        {
+            return false;
+        }
 
+        var reviewedAtUtc = DateTime.UtcNow;
         post.Status = publish ? ForumPostStatus.Published : ForumPostStatus.Removed;
-        post.ModifiedAtUtc = DateTime.UtcNow;
+        post.ModifiedAtUtc = reviewedAtUtc;
+
+        foreach (var flag in post.Flags.Where(flag => !flag.IsReviewed))
+        {
+            flag.IsReviewed = true;
+            flag.ModifiedAtUtc = reviewedAtUtc;
+        }
+
+        _auditLog.Record(
+            action: publish ? "ForumPost.Approve" : "ForumPost.Remove",
+            entityName: "ForumPost",
+            entityId: postId.ToString(),
+            details: $"Post \"{post.Title}\" {(publish ? "restored to" : "removed from")} the community.");
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     private static ForumPostDto MapToDto(ForumPost p)

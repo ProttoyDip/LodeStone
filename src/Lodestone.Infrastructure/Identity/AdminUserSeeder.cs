@@ -12,6 +12,7 @@ public static class AdminUserSeeder
         UserManager<ApplicationUser> userManager,
         RoleManager<IdentityRole> roleManager,
         string adminPassword,
+        bool resetExistingPassword = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(adminPassword))
@@ -42,6 +43,30 @@ public static class AdminUserSeeder
             {
                 var errors = string.Join("; ", createResult.Errors.Select(error => error.Description));
                 throw new InvalidOperationException($"Unable to seed admin user: {errors}");
+            }
+        }
+        else if (resetExistingPassword)
+        {
+            var resetToken = await userManager.GeneratePasswordResetTokenAsync(admin);
+            var resetResult = await userManager.ResetPasswordAsync(admin, resetToken, adminPassword);
+            if (!resetResult.Succeeded)
+            {
+                var errors = string.Join("; ", resetResult.Errors.Select(error => error.Description));
+                throw new InvalidOperationException($"Unable to reset admin user password: {errors}");
+            }
+
+            var unlockResult = await userManager.SetLockoutEndDateAsync(admin, null);
+            if (!unlockResult.Succeeded)
+            {
+                var errors = string.Join("; ", unlockResult.Errors.Select(error => error.Description));
+                throw new InvalidOperationException($"Unable to unlock admin user: {errors}");
+            }
+
+            var failedCountResult = await userManager.ResetAccessFailedCountAsync(admin);
+            if (!failedCountResult.Succeeded)
+            {
+                var errors = string.Join("; ", failedCountResult.Errors.Select(error => error.Description));
+                throw new InvalidOperationException($"Unable to clear admin login failures: {errors}");
             }
         }
 

@@ -1,1169 +1,1765 @@
 using System.Globalization;
 using Lodestone.Application.DTOs.Admin;
 using Lodestone.Application.Interfaces;
-using Lodestone.Domain.Constants;
-using Lodestone.Domain.Entities;
 using Lodestone.Domain.Enums;
 using Lodestone.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace Lodestone.Infrastructure.Services;
 
-public class AdminDashboardService : IAdminDashboardService
+public sealed class AdminDashboardService : IAdminDashboardService
 {
+    private const int DashboardRowLimit = 8;
+    private const int SectionRowLimit = 100;
+    private const string AdminController = "Admin";
+
     private readonly ApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IAuditLogService _auditLog;
 
-    public AdminDashboardService(ApplicationDbContext context, ICurrentUserService currentUserService)
+    public AdminDashboardService(
+        ApplicationDbContext context,
+        ICurrentUserService currentUserService,
+        IAuditLogService auditLog)
     {
         _context = context;
         _currentUserService = currentUserService;
+        _auditLog = auditLog;
     }
 
     public async Task<AdminShellDto> GetShellAsync(CancellationToken cancellationToken = default)
     {
+        var userId = CurrentUserId;
         var displayName = _currentUserService.UserName ?? "Admin";
-        if (_currentUserService.IsAuthenticated && !string.IsNullOrWhiteSpace(_currentUserService.UserId))
+
+        if (userId is not null)
         {
-            displayName = await _context.Users
+            var user = await _context.Users
                 .AsNoTracking()
-                .Where(user => user.Id == _currentUserService.UserId)
-                .Select(user => string.IsNullOrWhiteSpace(user.FullName) ? user.UserName ?? string.Empty : user.FullName)
+                .Where(candidate => candidate.Id == userId)
+                .Select(candidate => new { candidate.FullName, candidate.UserName })
                 .FirstOrDefaultAsync(cancellationToken);
 
-            if (string.IsNullOrWhiteSpace(displayName))
+            if (user is not null)
             {
-                displayName = _currentUserService.UserName ?? "Admin";
+                displayName = FirstNonEmpty(user.FullName, user.UserName, displayName);
             }
         }
 
-        var unreadNotifications = await _context.Notifications
-            .Where(notification => !_currentUserService.IsAuthenticated || notification.RecipientUserId == _currentUserService.UserId)
-            .CountAsync(notification => !notification.IsRead, cancellationToken);
+        var unreadNotifications = userId is null
+            ? 0
+            : await _context.Notifications
+                .AsNoTracking()
+                .CountAsync(
+                    notification => notification.RecipientUserId == userId && !notification.IsRead,
+                    cancellationToken);
 
         return new AdminShellDto(
             AdminName: displayName,
             UnreadNotifications: unreadNotifications,
-            UnreadMessages: 4,
-            ModelHealth: "Healthy",
-            CurrentDateLabel: DateTime.Now.ToString("dddd, dd MMM yyyy", CultureInfo.InvariantCulture),
+            CurrentDateLabel: DateTime.UtcNow.ToString("dddd, dd MMM yyyy", CultureInfo.InvariantCulture) + " UTC",
             ProfileImageUrl: "/images/admin-avatar.svg");
     }
 
     public async Task<AdminDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default)
     {
+        var nowUtc = DateTime.UtcNow;
+        var todayStartUtc = nowUtc.Date;
+        var tomorrowStartUtc = todayStartUtc.AddDays(1);
         var shell = await GetShellAsync(cancellationToken);
-        var riskRows = await BuildRiskRowsAsync(cancellationToken);
-        var bookingRows = await BuildBookingRowsAsync(cancellationToken);
-        var notificationRows = await BuildNotificationRowsAsync(cancellationToken);
+
+        var openPriorityCases = await _context.RiskQueueEntries
+            .AsNoTracking()
+            .CountAsync(
+                entry => !entry.IsResolved &&
+                         (entry.Level == RiskLevel.High || entry.Level == RiskLevel.Critical),
+                cancellationToken);
+
+        var bookingsToday = await _context.CounselorBookings
+            .AsNoTracking()
+            .CountAsync(
+                booking => booking.ScheduledForUtc >= todayStartUtc &&
+                           booking.ScheduledForUtc < tomorrowStartUtc &&
+                           (booking.Status == BookingStatus.Requested || booking.Status == BookingStatus.Confirmed),
+                cancellationToken);
+
+        var moderationQueue = await _context.ForumPosts
+            .AsNoTracking()
+            .CountAsync(
+                post => !post.IsDeleted &&
+                        (post.Status == ForumPostStatus.Flagged ||
+                         post.Status == ForumPostStatus.UnderReview ||
+                         post.Flags.Any(flag => !flag.IsReviewed)),
+                cancellationToken);
+
+        var supportRows = (await BuildRiskRowsAsync(
+            query: null,
+            take: DashboardRowLimit,
+            skip: 0,
+            highOrCriticalOnly: true,
+            cancellationToken)).Rows;
+
+        var todayItems = await BuildTodayItemsAsync(
+            bookingsToday,
+            todayStartUtc,
+            tomorrowStartUtc,
+            cancellationToken);
+
+        var riskTrend = await BuildRiskTrendAsync(todayStartUtc, tomorrowStartUtc, cancellationToken);
+        var statusItems = await BuildStatusItemsAsync(
+            openPriorityCases,
+            moderationQueue,
+            shell.UnreadNotifications,
+            cancellationToken);
+        var notificationRows = (await BuildNotificationRowsAsync(null, DashboardRowLimit, 0, cancellationToken)).Rows;
+
+        var kpis = new[]
+        {
+            new AdminKpiDto(
+                "Priority support cases",
+                FormatNumber(openPriorityCases),
+                "Unresolved high or critical cases",
+                "bi-life-preserver",
+                openPriorityCases > 0 ? "critical" : "positive",
+                AdminController,
+                "RiskMonitoring"),
+            new AdminKpiDto(
+                "Appointments today",
+                FormatNumber(bookingsToday),
+                "Requested or confirmed sessions",
+                "bi-calendar2-check",
+                bookingsToday > 0 ? "info" : "neutral",
+                AdminController,
+                "CounselorBookings"),
+            new AdminKpiDto(
+                "Moderation queue",
+                FormatNumber(moderationQueue),
+                "Flagged or under-review posts",
+                "bi-shield-exclamation",
+                moderationQueue > 0 ? "warning" : "positive",
+                AdminController,
+                "ForumModeration"),
+            new AdminKpiDto(
+                "Unread notifications",
+                FormatNumber(shell.UnreadNotifications),
+                "Notifications assigned to your account",
+                "bi-bell",
+                shell.UnreadNotifications > 0 ? "info" : "neutral",
+                AdminController,
+                "Notifications")
+        };
 
         return new AdminDashboardDto(
             Shell: shell,
-            Stats: BuildStats(riskRows, bookingRows, notificationRows),
-            Charts: BuildCharts(),
-            RecentActivity: BuildRecentActivity(),
-            MlPanel: BuildMlPanel(),
-            HangfirePanel: BuildHangfirePanel(),
-            RiskRows: riskRows,
-            BookingRows: bookingRows,
+            Kpis: kpis,
+            SupportColumns: DashboardSupportColumns(),
+            SupportRows: supportRows,
+            TodayItems: todayItems,
+            RiskTrend: riskTrend,
+            StatusItems: statusItems,
+            NotificationColumns: DashboardNotificationColumns(),
             NotificationRows: notificationRows);
     }
 
-    public async Task<AdminSectionPageDto> GetSectionAsync(AdminSectionType section, CancellationToken cancellationToken = default)
-    {
-        var shell = await GetShellAsync(cancellationToken);
-        return section switch
-        {
-            AdminSectionType.Students => BuildStudentsPage(shell),
-            AdminSectionType.Counselors => BuildCounselorsPage(shell),
-            AdminSectionType.Volunteers => BuildVolunteersPage(shell),
-            AdminSectionType.Users => BuildUsersPage(shell),
-            AdminSectionType.RiskMonitoring => await BuildRiskMonitoringPageAsync(shell, cancellationToken),
-            AdminSectionType.ForumModeration => BuildForumModerationPage(shell),
-            AdminSectionType.CounselorBookings => BuildBookingPage(shell),
-            AdminSectionType.MoodJournals => BuildMoodJournalsPage(shell),
-            AdminSectionType.Reports => BuildReportsPage(shell),
-            AdminSectionType.Analytics => BuildAnalyticsPage(shell),
-            AdminSectionType.MachineLearning => BuildMachineLearningPage(shell),
-            AdminSectionType.BackgroundJobs => BuildBackgroundJobsPage(shell),
-            AdminSectionType.Notifications => BuildNotificationsPage(shell),
-            AdminSectionType.AuditLogs => await BuildAuditLogsPageAsync(shell, cancellationToken),
-            AdminSectionType.Settings => BuildSettingsPage(shell),
-            AdminSectionType.Profile => BuildProfilePage(shell),
-            _ => BuildStudentsPage(shell)
-        };
-    }
-
-    private static IReadOnlyList<AdminStatCardDto> BuildStats(
-        IReadOnlyList<AdminSectionRowDto> riskRows,
-        IReadOnlyList<AdminSectionRowDto> bookingRows,
-        IReadOnlyList<AdminSectionRowDto> notificationRows)
-    {
-        return new[]
-        {
-            new AdminStatCardDto("Total Students", "1,248", "+8.4%", "text-success", "bi-people", "gradient-teal", "[6,7,8,10,11,12,13]"),
-            new AdminStatCardDto("Active Students Today", "972", "+4.2%", "text-success", "bi-activity", "gradient-gold", "[8,8,9,10,10,11,12]"),
-            new AdminStatCardDto("High Risk Students", "38", "-2.8%", "text-danger", "bi-exclamation-triangle", "gradient-rose", "[15,14,14,13,12,10,9]"),
-            new AdminStatCardDto("Medium Risk Students", "114", "+1.3%", "text-warning", "bi-graph-up", "gradient-sand", "[11,10,11,12,12,13,13]"),
-            new AdminStatCardDto("Low Risk Students", "1,096", "+2.9%", "text-success", "bi-shield-check", "gradient-forest", "[9,10,10,11,12,12,13]"),
-            new AdminStatCardDto("Counselors", "18", "+0.0%", "text-muted", "bi-person-badge", "gradient-ink", "[6,6,6,7,7,7,8]"),
-            new AdminStatCardDto("Volunteers", "43", "+5.1%", "text-success", "bi-hand-thumbs-up", "gradient-clay", "[5,5,6,6,7,7,8]"),
-            new AdminStatCardDto("Forum Posts", "1,542", "+12.7%", "text-success", "bi-chat-square-text", "gradient-ocean", "[12,12,13,13,14,15,16]"),
-
-            new AdminStatCardDto("Pending Reviews", "26", "-6.0%", "text-danger", "bi-inbox", "gradient-amber", "[12,11,10,10,9,8,7]"),
-            new AdminStatCardDto("Unread Notifications", notificationRows.Count.ToString(CultureInfo.InvariantCulture), "+3.4%", "text-success", "bi-bell", "gradient-indigo", "[2,3,4,5,5,6,7]")
-        };
-    }
-
-    private static IReadOnlyList<AdminChartDto> BuildCharts()
-    {
-        string labels = """["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]""";
-        return new[]
-        {
-            new AdminChartDto("riskDistributionChart", "Risk Distribution", "Students by current risk level", "doughnut", labels, """{"labels":["Low","Medium","High"],"datasets":[{"data":[74,18,8],"backgroundColor":["#3C5647","#E0A85A","#BC5138"],"borderWidth":0}]}"""),
-            new AdminChartDto("forumActivityChart", "Forum Activity", "Posts, comments, and flags", "bar", labels, """{"labels":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],"datasets":[{"label":"Posts","data":[32,28,41,36,39,35,44],"backgroundColor":"#BC5138"},{"label":"Flags","data":[4,6,3,5,7,4,6],"backgroundColor":"#E0A85A"}]}"""),
-        };
-    }
-
-    private static IReadOnlyList<AdminActivityItemDto> BuildRecentActivity()
+    private static IReadOnlyList<AdminSectionColumnDto> DashboardSupportColumns()
         => new[]
         {
-            new AdminActivityItemDto("Student completed assignment", "ENG 201 submission was marked complete", "5 min ago", "bi-journal-check", "tone-success"),
-            new AdminActivityItemDto("Risk score updated", "Student risk moved from medium to high", "12 min ago", "bi-arrow-repeat", "tone-warning"),
-            new AdminActivityItemDto("Counselor accepted booking", "Counselor Rahman confirmed a session", "18 min ago", "bi-calendar-check", "tone-forest"),
-            new AdminActivityItemDto("Volunteer replied in forum", "Helpful reply added to academic stress thread", "29 min ago", "bi-chat-dots", "tone-clay"),
-            new AdminActivityItemDto("Journal created", "Private mood journal entry saved", "41 min ago", "bi-pencil-square", "tone-indigo"),
-            new AdminActivityItemDto("Forum reported", "Moderation queue received a new report", "1 hr ago", "bi-flag", "tone-rose"),
-            new AdminActivityItemDto("Admin changed settings", "Notification routing updated", "2 hr ago", "bi-gear", "tone-sand")
+            new AdminSectionColumnDto("score", "Score", true),
+            new AdminSectionColumnDto("level", "Risk level"),
+            new AdminSectionColumnDto("queued", "Queued")
         };
 
-    private static AdminMlPanelDto BuildMlPanel()
-        => new(
-            CurrentModel: "risk-model.zip",
-            Accuracy: "93.4%",
-            Precision: "91.7%",
-            Recall: "89.8%",
-            F1Score: "90.7%",
-            RocAuc: "0.94",
-            LastTrainingDate: "2026-07-10",
-            TotalPredictionsToday: 428,
-            PredictionQueue: 12,
-            ModelHealth: "Healthy",
-            RetrainEnabled: true);
+    private static IReadOnlyList<AdminSectionColumnDto> DashboardNotificationColumns()
+        => new[]
+        {
+            new AdminSectionColumnDto("type", "Type"),
+            new AdminSectionColumnDto("received", "Received"),
+            new AdminSectionColumnDto("status", "Status")
+        };
 
-    private static AdminHangfirePanelDto BuildHangfirePanel()
-        => new(
-            RunningJobs: 3,
-            CompletedJobs: 42,
-            FailedJobs: 1,
-            UpcomingJobs: 5,
-            RecentLogs: new[]
+    public Task<AdminSectionPageDto> GetSectionAsync(
+        AdminSectionType section,
+        string? query = null,
+        int page = 1,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = NormalizeQuery(query);
+        var normalizedPage = Math.Max(1, page);
+
+        return section switch
+        {
+            AdminSectionType.RiskMonitoring => BuildRiskMonitoringPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.CounselorBookings => BuildBookingPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.ForumModeration => BuildForumModerationPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.Students => BuildStudentsPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.Counselors => BuildCounselorsPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.Volunteers => BuildVolunteersPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.Users => BuildUsersPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.Notifications => BuildNotificationsPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.AuditLogs => BuildAuditLogsPageAsync(normalizedQuery, normalizedPage, cancellationToken),
+            AdminSectionType.Profile => BuildProfilePageAsync(cancellationToken),
+            AdminSectionType.Dashboard => Task.FromResult(BuildDashboardSection()),
+            _ => throw new ArgumentOutOfRangeException(nameof(section), section, "Unknown admin section.")
+        };
+    }
+
+    public async Task<bool> MarkNotificationReadAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return false;
+        }
+
+        var notification = await _context.Notifications
+            .FirstOrDefaultAsync(
+                candidate => candidate.Id == id && candidate.RecipientUserId == userId,
+                cancellationToken);
+
+        if (notification is null)
+        {
+            return false;
+        }
+
+        if (notification.IsRead)
+        {
+            return true;
+        }
+
+        notification.IsRead = true;
+        _auditLog.Record(
+            action: "Notification.MarkRead",
+            entityName: "Notification",
+            entityId: id.ToString(CultureInfo.InvariantCulture));
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<int> MarkAllNotificationsReadAsync(CancellationToken cancellationToken = default)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return 0;
+        }
+
+        var updated = await _context.Notifications
+            .Where(candidate => candidate.RecipientUserId == userId && !candidate.IsRead)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(candidate => candidate.IsRead, true),
+                cancellationToken);
+
+        if (updated == 0)
+        {
+            return 0;
+        }
+
+        _auditLog.Record(
+            action: "Notification.MarkAllRead",
+            entityName: "Notification",
+            details: $"Marked {updated} notification(s) as read.");
+        await _context.SaveChangesAsync(cancellationToken);
+        return updated;
+    }
+
+    private async Task<AdminSectionPageDto> BuildRiskMonitoringPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var openCounts = await _context.RiskQueueEntries
+            .AsNoTracking()
+            .Where(entry => !entry.IsResolved)
+            .GroupBy(entry => entry.Level)
+            .Select(group => new RiskLevelCount(group.Key, group.Count()))
+            .ToListAsync(cancellationToken);
+
+        var resolvedToday = await _context.RiskQueueEntries
+            .AsNoTracking()
+            .CountAsync(
+                entry => entry.IsResolved && entry.ResolvedAtUtc >= DateTime.UtcNow.Date,
+                cancellationToken);
+
+        var skip = (page - 1) * SectionRowLimit;
+        var paged = await BuildRiskRowsAsync(query, SectionRowLimit, skip, false, cancellationToken);
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.RiskMonitoring,
+            Eyebrow: "Care operations",
+            Title: "Support queue",
+            Subtitle: "Review live risk cases that are waiting for follow-up. Assignment is not shown because it is not yet recorded by this system.",
+            SearchPlaceholder: "Search by student name, email, or ID",
+            Metrics: new[]
             {
+                new AdminMiniMetricDto("Critical open", FormatNumber(CountFor(openCounts, RiskLevel.Critical)), "critical"),
+                new AdminMiniMetricDto("High open", FormatNumber(CountFor(openCounts, RiskLevel.High)), "warning"),
+                new AdminMiniMetricDto("Moderate open", FormatNumber(CountFor(openCounts, RiskLevel.Moderate)), "info"),
+                new AdminMiniMetricDto("Resolved today", FormatNumber(resolvedToday), "positive")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("student", "Student"),
+                new AdminSectionColumnDto("studentId", "Student ID"),
+                new AdminSectionColumnDto("score", "Score", true),
+                new AdminSectionColumnDto("level", "Risk level"),
+                new AdminSectionColumnDto("queued", "Queued"),
+                new AdminSectionColumnDto("status", "Status")
+            },
+            Rows: paged.Rows,
+            EmptyStateMessage: query is null
+                ? "No unresolved support cases are currently in the queue."
+                : "No support cases match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: paged.TotalCount);
+    }
 
-                new AdminActivityItemDto("Notification fan-out", "Processed 84 recipients", "14 min ago", "bi-bell", "tone-indigo"),
-                new AdminActivityItemDto("Forum moderation sweep", "Two posts flagged for review", "27 min ago", "bi-shield-exclamation", "tone-warning")
+    private async Task<AdminSectionPageDto> BuildBookingPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var todayStartUtc = nowUtc.Date;
+        var tomorrowStartUtc = todayStartUtc.AddDays(1);
+        var sevenDaysAgoUtc = nowUtc.AddDays(-7);
+
+        var requested = await _context.CounselorBookings
+            .AsNoTracking()
+            .CountAsync(booking => booking.Status == BookingStatus.Requested, cancellationToken);
+        var scheduledToday = await _context.CounselorBookings
+            .AsNoTracking()
+            .CountAsync(
+                booking => booking.ScheduledForUtc >= todayStartUtc &&
+                           booking.ScheduledForUtc < tomorrowStartUtc &&
+                           (booking.Status == BookingStatus.Requested || booking.Status == BookingStatus.Confirmed),
+                cancellationToken);
+        var upcomingConfirmed = await _context.CounselorBookings
+            .AsNoTracking()
+            .CountAsync(
+                booking => booking.Status == BookingStatus.Confirmed && booking.ScheduledForUtc >= nowUtc,
+                cancellationToken);
+        var completedRecently = await _context.CounselorBookings
+            .AsNoTracking()
+            .CountAsync(
+                booking => booking.Status == BookingStatus.Completed && booking.ScheduledForUtc >= sevenDaysAgoUtc,
+                cancellationToken);
+
+        var bookings = _context.CounselorBookings.AsNoTracking();
+        if (query is not null)
+        {
+            bookings = bookings.Where(booking =>
+                (booking.StudentProfile != null && booking.StudentProfile.User != null &&
+                 (booking.StudentProfile.User.FullName.Contains(query) ||
+                  (booking.StudentProfile.User.Email != null && booking.StudentProfile.User.Email.Contains(query)) ||
+                  (booking.StudentProfile.StudentNumber != null && booking.StudentProfile.StudentNumber.Contains(query)))) ||
+                (booking.CounselorProfile != null && booking.CounselorProfile.User != null &&
+                 (booking.CounselorProfile.User.FullName.Contains(query) ||
+                  (booking.CounselorProfile.User.Email != null && booking.CounselorProfile.User.Email.Contains(query)))));
+        }
+
+        var totalCount = await bookings.CountAsync(cancellationToken);
+        var skip = (page - 1) * SectionRowLimit;
+
+        var records = await bookings
+            .OrderByDescending(booking => booking.CreatedAtUtc)
+            .Skip(skip)
+            .Take(SectionRowLimit)
+            .Select(booking => new
+            {
+                booking.Id,
+                StudentName = booking.StudentProfile != null && booking.StudentProfile.User != null
+                    ? booking.StudentProfile.User.FullName
+                    : string.Empty,
+                StudentEmail = booking.StudentProfile != null && booking.StudentProfile.User != null
+                    ? booking.StudentProfile.User.Email
+                    : null,
+                StudentNumber = booking.StudentProfile != null
+                    ? booking.StudentProfile.StudentNumber
+                    : null,
+                CounselorName = booking.CounselorProfile != null && booking.CounselorProfile.User != null
+                    ? booking.CounselorProfile.User.FullName
+                    : string.Empty,
+                CounselorEmail = booking.CounselorProfile != null && booking.CounselorProfile.User != null
+                    ? booking.CounselorProfile.User.Email
+                    : null,
+                booking.ScheduledForUtc,
+                booking.Status,
+                booking.CreatedAtUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = records.Select(booking =>
+        {
+            var studentName = FirstNonEmpty(booking.StudentName, booking.StudentEmail, "Student");
+            var counselorName = FirstNonEmpty(booking.CounselorName, booking.CounselorEmail, "Counselor");
+
+            return new AdminSectionRowDto(
+                Id: booking.Id.ToString(CultureInfo.InvariantCulture),
+                PrimaryLabel: studentName,
+                SecondaryLabel: counselorName,
+                BadgeText: BookingLabel(booking.Status),
+                BadgeClass: BookingBadge(booking.Status),
+                Cells: new Dictionary<string, string>
+                {
+                    ["student"] = studentName,
+                    ["studentId"] = ValueOrFallback(booking.StudentNumber),
+                    ["counselor"] = counselorName,
+                    ["scheduled"] = FormatTimestamp(booking.ScheduledForUtc),
+                    ["status"] = BookingLabel(booking.Status),
+                    ["requested"] = FormatTimestamp(booking.CreatedAtUtc)
+                });
+        }).ToList();
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.CounselorBookings,
+            Eyebrow: "Care operations",
+            Title: "Counselor bookings",
+            Subtitle: "Monitor real appointment requests and confirmed sessions. Booking decisions remain with the counselor workflow.",
+            SearchPlaceholder: "Search student or counselor",
+            Metrics: new[]
+            {
+                new AdminMiniMetricDto("Awaiting response", FormatNumber(requested), "warning"),
+                new AdminMiniMetricDto("Scheduled today", FormatNumber(scheduledToday), "info"),
+                new AdminMiniMetricDto("Upcoming confirmed", FormatNumber(upcomingConfirmed), "positive"),
+                new AdminMiniMetricDto("Completed in 7 days", FormatNumber(completedRecently), "neutral")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("student", "Student"),
+                new AdminSectionColumnDto("studentId", "Student ID"),
+                new AdminSectionColumnDto("counselor", "Counselor"),
+                new AdminSectionColumnDto("scheduled", "Scheduled for"),
+                new AdminSectionColumnDto("status", "Status"),
+                new AdminSectionColumnDto("requested", "Requested")
+            },
+            Rows: rows,
+            EmptyStateMessage: query is null
+                ? "No counselor bookings have been recorded yet."
+                : "No counselor bookings match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: totalCount);
+    }
+
+    private async Task<AdminSectionPageDto> BuildForumModerationPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var flaggedPosts = await _context.ForumPosts
+            .AsNoTracking()
+            .CountAsync(
+                post => !post.IsDeleted && post.Status == ForumPostStatus.Flagged,
+                cancellationToken);
+        var underReviewPosts = await _context.ForumPosts
+            .AsNoTracking()
+            .CountAsync(
+                post => !post.IsDeleted && post.Status == ForumPostStatus.UnderReview,
+                cancellationToken);
+        var unreviewedFlags = await _context.ForumFlags
+            .AsNoTracking()
+            .CountAsync(
+                flag => !flag.IsReviewed && flag.Post != null && !flag.Post.IsDeleted,
+                cancellationToken);
+
+        var posts = _context.ForumPosts
+            .AsNoTracking()
+            .Where(post => !post.IsDeleted &&
+                           (post.Status == ForumPostStatus.Flagged ||
+                            post.Status == ForumPostStatus.UnderReview ||
+                            post.Flags.Any(flag => !flag.IsReviewed)));
+
+        if (query is not null)
+        {
+            posts = posts.Where(post =>
+                post.Title.Contains(query) ||
+                post.AuthorUserId.Contains(query) ||
+                (post.Category != null && post.Category.Name.Contains(query)));
+        }
+
+        var totalCount = await posts.CountAsync(cancellationToken);
+        var skip = (page - 1) * SectionRowLimit;
+
+        var records = await posts
+            .OrderByDescending(post => post.CreatedAtUtc)
+            .Skip(skip)
+            .Take(SectionRowLimit)
+            .Select(post => new
+            {
+                post.Id,
+                post.Title,
+                post.AuthorUserId,
+                Category = post.Category != null ? post.Category.Name : string.Empty,
+                post.Status,
+                FlagCount = post.Flags.Count,
+                UnreviewedFlagCount = post.Flags.Count(flag => !flag.IsReviewed),
+                post.CreatedAtUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var authorIds = records.Select(post => post.AuthorUserId).Distinct().ToList();
+        var authors = authorIds.Count == 0
+            ? new Dictionary<string, string>()
+            : await _context.Users
+                .AsNoTracking()
+                .Where(user => authorIds.Contains(user.Id))
+                .ToDictionaryAsync(
+                    user => user.Id,
+                    user => string.IsNullOrEmpty(user.FullName)
+                        ? user.UserName ?? "Unknown user"
+                        : user.FullName,
+                    cancellationToken);
+
+        var rows = records.Select(post =>
+        {
+            var status = post.Status == ForumPostStatus.Published && post.UnreviewedFlagCount > 0
+                ? "Flagged"
+                : ForumStatusLabel(post.Status);
+
+            return new AdminSectionRowDto(
+                Id: post.Id.ToString(CultureInfo.InvariantCulture),
+                PrimaryLabel: post.Title,
+                SecondaryLabel: authors.GetValueOrDefault(post.AuthorUserId, "Unknown user"),
+                BadgeText: status,
+                BadgeClass: ForumBadge(post.Status, post.UnreviewedFlagCount),
+                Cells: new Dictionary<string, string>
+                {
+                    ["post"] = post.Title,
+                    ["author"] = authors.GetValueOrDefault(post.AuthorUserId, "Unknown user"),
+                    ["category"] = ValueOrFallback(post.Category),
+                    ["flags"] = FormatNumber(post.FlagCount),
+                    ["unreviewed"] = FormatNumber(post.UnreviewedFlagCount),
+                    ["status"] = status,
+                    ["created"] = FormatTimestamp(post.CreatedAtUtc)
+                });
+        }).ToList();
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.ForumModeration,
+            Eyebrow: "Community safety",
+            Title: "Forum moderation",
+            Subtitle: "Review posts with active reports. Moderation decisions are available only through the dedicated review workflow.",
+            SearchPlaceholder: "Search post, category, or author ID",
+            Metrics: new[]
+            {
+                new AdminMiniMetricDto("Flagged posts", FormatNumber(flaggedPosts), "critical"),
+                new AdminMiniMetricDto("Under review", FormatNumber(underReviewPosts), "warning"),
+                new AdminMiniMetricDto("Unreviewed reports", FormatNumber(unreviewedFlags), "info")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("post", "Post"),
+                new AdminSectionColumnDto("author", "Author"),
+                new AdminSectionColumnDto("category", "Category"),
+                new AdminSectionColumnDto("flags", "Reports", true),
+                new AdminSectionColumnDto("unreviewed", "Unreviewed", true),
+                new AdminSectionColumnDto("status", "Status"),
+                new AdminSectionColumnDto("created", "Created")
+            },
+            Rows: rows,
+            EmptyStateMessage: query is null
+                ? "There are no posts waiting for moderation."
+                : "No moderation items match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: totalCount);
+    }
+
+    private async Task<AdminSectionPageDto> BuildStudentsPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var totalStudents = await _context.StudentProfiles.AsNoTracking().CountAsync(cancellationToken);
+        var activeStudents = await _context.StudentProfiles
+            .AsNoTracking()
+            .CountAsync(profile => profile.User != null && profile.User.IsActive, cancellationToken);
+        var scoredStudents = await _context.RiskScores
+            .AsNoTracking()
+            .Select(score => score.StudentProfileId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+
+        var students = _context.StudentProfiles.AsNoTracking();
+        if (query is not null)
+        {
+            students = students.Where(profile =>
+                (profile.StudentNumber != null && profile.StudentNumber.Contains(query)) ||
+                (profile.Program != null && profile.Program.Contains(query)) ||
+                (profile.User != null &&
+                 (profile.User.FullName.Contains(query) ||
+                  (profile.User.Email != null && profile.User.Email.Contains(query)))));
+        }
+
+        var totalCount = await students.CountAsync(cancellationToken);
+        var skip = (page - 1) * SectionRowLimit;
+
+        var records = await students
+            .OrderBy(profile => profile.User != null ? profile.User.FullName : profile.StudentNumber)
+            .Skip(skip)
+            .Take(SectionRowLimit)
+            .Select(profile => new
+            {
+                profile.Id,
+                profile.StudentNumber,
+                profile.Program,
+                profile.EnrollmentYear,
+                Name = profile.User != null ? profile.User.FullName : string.Empty,
+                Email = profile.User != null ? profile.User.Email : null,
+                IsActive = profile.User != null && profile.User.IsActive,
+                LastLoginUtc = profile.User != null ? profile.User.LastLoginUtc : null,
+                LatestRisk = profile.RiskScores
+                    .OrderByDescending(score => score.ScoredAtUtc)
+                    .Select(score => (RiskLevel?)score.Level)
+                    .FirstOrDefault()
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = records.Select(student =>
+        {
+            var name = FirstNonEmpty(student.Name, student.Email, student.StudentNumber, "Student");
+            var riskLabel = student.LatestRisk.HasValue
+                ? RiskLabel(student.LatestRisk.Value)
+                : "Not scored";
+
+            return new AdminSectionRowDto(
+                Id: student.Id.ToString(CultureInfo.InvariantCulture),
+                PrimaryLabel: name,
+                SecondaryLabel: ValueOrFallback(student.StudentNumber),
+                BadgeText: riskLabel,
+                BadgeClass: student.LatestRisk.HasValue ? RiskBadge(student.LatestRisk.Value) : "tone-neutral",
+                Cells: new Dictionary<string, string>
+                {
+                    ["studentId"] = ValueOrFallback(student.StudentNumber),
+                    ["name"] = name,
+                    ["program"] = ValueOrFallback(student.Program),
+                    ["year"] = student.EnrollmentYear > 0
+                        ? student.EnrollmentYear.ToString(CultureInfo.InvariantCulture)
+                        : "Not recorded",
+                    ["email"] = ValueOrFallback(student.Email),
+                    ["risk"] = riskLabel,
+                    ["lastLogin"] = FormatOptionalTimestamp(student.LastLoginUtc),
+                    ["status"] = student.IsActive ? "Active" : "Disabled"
+                });
+        }).ToList();
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.Students,
+            Eyebrow: "People and access",
+            Title: "Students",
+            Subtitle: "View student account and support context sourced from current platform records.",
+            SearchPlaceholder: "Search student name, ID, email, or program",
+            Metrics: new[]
+            {
+                new AdminMiniMetricDto("Student profiles", FormatNumber(totalStudents), "neutral"),
+                new AdminMiniMetricDto("Active accounts", FormatNumber(activeStudents), "positive"),
+                new AdminMiniMetricDto("With a risk score", FormatNumber(scoredStudents), "info")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("name", "Name"),
+                new AdminSectionColumnDto("studentId", "Student ID"),
+                new AdminSectionColumnDto("program", "Program"),
+                new AdminSectionColumnDto("year", "Enrollment year", true),
+                new AdminSectionColumnDto("email", "Email"),
+                new AdminSectionColumnDto("risk", "Latest risk"),
+                new AdminSectionColumnDto("lastLogin", "Last sign-in"),
+                new AdminSectionColumnDto("status", "Account")
+            },
+            Rows: rows,
+            EmptyStateMessage: query is null
+                ? "No student profiles have been created yet."
+                : "No students match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: totalCount);
+    }
+
+    private async Task<AdminSectionPageDto> BuildCounselorsPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var totalCounselors = await _context.CounselorProfiles.AsNoTracking().CountAsync(cancellationToken);
+        var acceptingBookings = await _context.CounselorProfiles
+            .AsNoTracking()
+            .CountAsync(profile => profile.IsAcceptingBookings, cancellationToken);
+        var pendingBookings = await _context.CounselorBookings
+            .AsNoTracking()
+            .CountAsync(booking => booking.Status == BookingStatus.Requested, cancellationToken);
+
+        var counselors = _context.CounselorProfiles.AsNoTracking();
+        if (query is not null)
+        {
+            counselors = counselors.Where(profile =>
+                (profile.Specialization != null && profile.Specialization.Contains(query)) ||
+                (profile.User != null &&
+                 (profile.User.FullName.Contains(query) ||
+                  (profile.User.Email != null && profile.User.Email.Contains(query)))));
+        }
+
+        var totalCount = await counselors.CountAsync(cancellationToken);
+        var skip = (page - 1) * SectionRowLimit;
+
+        var records = await counselors
+            .OrderBy(profile => profile.User != null ? profile.User.FullName : profile.Specialization)
+            .Skip(skip)
+            .Take(SectionRowLimit)
+            .Select(profile => new
+            {
+                profile.Id,
+                profile.Specialization,
+                profile.IsAcceptingBookings,
+                Name = profile.User != null ? profile.User.FullName : string.Empty,
+                Email = profile.User != null ? profile.User.Email : null,
+                IsActive = profile.User != null && profile.User.IsActive,
+                LastLoginUtc = profile.User != null ? profile.User.LastLoginUtc : null,
+                RequestedBookings = profile.Bookings.Count(booking => booking.Status == BookingStatus.Requested),
+                UpcomingSessions = profile.Bookings.Count(booking =>
+                    booking.Status == BookingStatus.Confirmed && booking.ScheduledForUtc >= nowUtc),
+                CompletedSessions = profile.Bookings.Count(booking => booking.Status == BookingStatus.Completed)
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = records.Select(counselor =>
+        {
+            var name = FirstNonEmpty(counselor.Name, counselor.Email, "Counselor");
+            var availability = counselor.IsAcceptingBookings ? "Accepting bookings" : "Not accepting";
+
+            return new AdminSectionRowDto(
+                Id: counselor.Id.ToString(CultureInfo.InvariantCulture),
+                PrimaryLabel: name,
+                SecondaryLabel: ValueOrFallback(counselor.Specialization),
+                BadgeText: availability,
+                BadgeClass: counselor.IsAcceptingBookings ? "tone-positive" : "tone-neutral",
+                Cells: new Dictionary<string, string>
+                {
+                    ["name"] = name,
+                    ["specialization"] = ValueOrFallback(counselor.Specialization),
+                    ["availability"] = availability,
+                    ["requests"] = FormatNumber(counselor.RequestedBookings),
+                    ["upcoming"] = FormatNumber(counselor.UpcomingSessions),
+                    ["completed"] = FormatNumber(counselor.CompletedSessions),
+                    ["lastLogin"] = FormatOptionalTimestamp(counselor.LastLoginUtc),
+                    ["account"] = counselor.IsActive ? "Active" : "Disabled"
+                });
+        }).ToList();
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.Counselors,
+            Eyebrow: "Care operations",
+            Title: "Counselors",
+            Subtitle: "Monitor current counselor availability and booking load without inventing capacity or response-time estimates.",
+            SearchPlaceholder: "Search counselor or specialization",
+            Metrics: new[]
+            {
+                new AdminMiniMetricDto("Counselor profiles", FormatNumber(totalCounselors), "neutral"),
+                new AdminMiniMetricDto("Accepting bookings", FormatNumber(acceptingBookings), "positive"),
+                new AdminMiniMetricDto("Booking requests", FormatNumber(pendingBookings), "warning")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("name", "Counselor"),
+                new AdminSectionColumnDto("specialization", "Specialization"),
+                new AdminSectionColumnDto("availability", "Availability"),
+                new AdminSectionColumnDto("requests", "Requests", true),
+                new AdminSectionColumnDto("upcoming", "Upcoming", true),
+                new AdminSectionColumnDto("completed", "Completed", true),
+                new AdminSectionColumnDto("lastLogin", "Last sign-in"),
+                new AdminSectionColumnDto("account", "Account")
+            },
+            Rows: rows,
+            EmptyStateMessage: query is null
+                ? "No counselor profiles have been created yet."
+                : "No counselors match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: totalCount);
+    }
+
+    private async Task<AdminSectionPageDto> BuildVolunteersPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var totalVolunteers = await _context.VolunteerProfiles.AsNoTracking().CountAsync(cancellationToken);
+        var approvedVolunteers = await _context.VolunteerProfiles
+            .AsNoTracking()
+            .CountAsync(profile => profile.IsApproved, cancellationToken);
+        var activeVolunteers = await _context.VolunteerProfiles
+            .AsNoTracking()
+            .CountAsync(profile => profile.User != null && profile.User.IsActive, cancellationToken);
+
+        var volunteers = _context.VolunteerProfiles.AsNoTracking();
+        if (query is not null)
+        {
+            volunteers = volunteers.Where(profile =>
+                (profile.Bio != null && profile.Bio.Contains(query)) ||
+                (profile.User != null &&
+                 (profile.User.FullName.Contains(query) ||
+                  (profile.User.Email != null && profile.User.Email.Contains(query)))));
+        }
+
+        var totalCount = await volunteers.CountAsync(cancellationToken);
+        var skip = (page - 1) * SectionRowLimit;
+
+        var records = await volunteers
+            .OrderBy(profile => profile.User != null ? profile.User.FullName : profile.UserId)
+            .Skip(skip)
+            .Take(SectionRowLimit)
+            .Select(profile => new
+            {
+                profile.Id,
+                profile.IsApproved,
+                profile.CreatedAtUtc,
+                Name = profile.User != null ? profile.User.FullName : string.Empty,
+                Email = profile.User != null ? profile.User.Email : null,
+                IsActive = profile.User != null && profile.User.IsActive,
+                LastLoginUtc = profile.User != null ? profile.User.LastLoginUtc : null
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = records.Select(volunteer =>
+        {
+            var name = FirstNonEmpty(volunteer.Name, volunteer.Email, "Volunteer");
+            var approval = volunteer.IsApproved ? "Approved" : "Pending approval";
+
+            return new AdminSectionRowDto(
+                Id: volunteer.Id.ToString(CultureInfo.InvariantCulture),
+                PrimaryLabel: name,
+                SecondaryLabel: ValueOrFallback(volunteer.Email),
+                BadgeText: approval,
+                BadgeClass: volunteer.IsApproved ? "tone-positive" : "tone-warning",
+                Cells: new Dictionary<string, string>
+                {
+                    ["name"] = name,
+                    ["email"] = ValueOrFallback(volunteer.Email),
+                    ["approval"] = approval,
+                    ["joined"] = FormatDate(volunteer.CreatedAtUtc),
+                    ["lastLogin"] = FormatOptionalTimestamp(volunteer.LastLoginUtc),
+                    ["account"] = volunteer.IsActive ? "Active" : "Disabled"
+                });
+        }).ToList();
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.Volunteers,
+            Eyebrow: "Community",
+            Title: "Volunteers",
+            Subtitle: "Review volunteer approval and account status from live profile records.",
+            SearchPlaceholder: "Search volunteer name or email",
+            Metrics: new[]
+            {
+                new AdminMiniMetricDto("Volunteer profiles", FormatNumber(totalVolunteers), "neutral"),
+                new AdminMiniMetricDto("Approved", FormatNumber(approvedVolunteers), "positive"),
+                new AdminMiniMetricDto("Active accounts", FormatNumber(activeVolunteers), "info")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("name", "Volunteer"),
+                new AdminSectionColumnDto("email", "Email"),
+                new AdminSectionColumnDto("approval", "Approval"),
+                new AdminSectionColumnDto("joined", "Joined"),
+                new AdminSectionColumnDto("lastLogin", "Last sign-in"),
+                new AdminSectionColumnDto("account", "Account")
+            },
+            Rows: rows,
+            EmptyStateMessage: query is null
+                ? "No volunteer profiles have been created yet."
+                : "No volunteers match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: totalCount);
+    }
+
+    private async Task<AdminSectionPageDto> BuildUsersPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var sevenDaysAgoUtc = nowUtc.AddDays(-7);
+        var totalUsers = await _context.Users.AsNoTracking().CountAsync(cancellationToken);
+        var activeUsers = await _context.Users
+            .AsNoTracking()
+            .CountAsync(user => user.IsActive, cancellationToken);
+        var recentUsers = await _context.Users
+            .AsNoTracking()
+            .CountAsync(user => user.CreatedAtUtc >= sevenDaysAgoUtc, cancellationToken);
+
+        var users = _context.Users.AsNoTracking();
+        if (query is not null)
+        {
+            var matchingRoleUserIds = _context.UserRoles
+                .Join(
+                    _context.Roles,
+                    userRole => userRole.RoleId,
+                    role => role.Id,
+                    (userRole, role) => new { userRole.UserId, role.Name })
+                .Where(item => item.Name != null && item.Name.Contains(query))
+                .Select(item => item.UserId);
+
+            users = users.Where(user =>
+                user.FullName.Contains(query) ||
+                (user.Email != null && user.Email.Contains(query)) ||
+                (user.UserName != null && user.UserName.Contains(query)) ||
+                matchingRoleUserIds.Contains(user.Id));
+        }
+
+        var totalCount = await users.CountAsync(cancellationToken);
+        var skip = (page - 1) * SectionRowLimit;
+
+        var records = await users
+            .OrderBy(user => user.FullName)
+            .Skip(skip)
+            .Take(SectionRowLimit)
+            .Select(user => new
+            {
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.UserName,
+                user.IsActive,
+                user.CreatedAtUtc,
+                user.LastLoginUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var userIds = records.Select(user => user.Id).ToList();
+        var rolePairs = userIds.Count == 0
+            ? new List<UserRoleRecord>()
+            : await _context.UserRoles
+                .AsNoTracking()
+                .Where(userRole => userIds.Contains(userRole.UserId))
+                .Join(
+                    _context.Roles.AsNoTracking(),
+                    userRole => userRole.RoleId,
+                    role => role.Id,
+                    (userRole, role) => new UserRoleRecord(userRole.UserId, role.Name ?? "Unknown role"))
+                .ToListAsync(cancellationToken);
+
+        var rolesByUser = rolePairs
+            .GroupBy(item => item.UserId)
+            .ToDictionary(
+                group => group.Key,
+                group => string.Join(", ", group.Select(item => item.RoleName).OrderBy(role => role)));
+
+        var rows = records.Select(user =>
+        {
+            var name = FirstNonEmpty(user.FullName, user.UserName, user.Email, "User");
+            var roles = rolesByUser.GetValueOrDefault(user.Id, "No role assigned");
+
+            return new AdminSectionRowDto(
+                Id: user.Id,
+                PrimaryLabel: name,
+                SecondaryLabel: roles,
+                BadgeText: user.IsActive ? "Active" : "Disabled",
+                BadgeClass: user.IsActive ? "tone-positive" : "tone-critical",
+                Cells: new Dictionary<string, string>
+                {
+                    ["name"] = name,
+                    ["roles"] = roles,
+                    ["email"] = ValueOrFallback(user.Email),
+                    ["username"] = ValueOrFallback(user.UserName),
+                    ["created"] = FormatDate(user.CreatedAtUtc),
+                    ["lastLogin"] = FormatOptionalTimestamp(user.LastLoginUtc),
+                    ["status"] = user.IsActive ? "Active" : "Disabled"
+                });
+        }).ToList();
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.Users,
+            Eyebrow: "People and access",
+            Title: "User accounts",
+            Subtitle: "Inspect current identity accounts and assigned roles. Account editing is intentionally not offered until an audited workflow exists.",
+            SearchPlaceholder: "Search name, email, username, or role",
+            Metrics: new[]
+            {
+                new AdminMiniMetricDto("Accounts", FormatNumber(totalUsers), "neutral"),
+                new AdminMiniMetricDto("Active", FormatNumber(activeUsers), "positive"),
+                new AdminMiniMetricDto("Disabled", FormatNumber(totalUsers - activeUsers), "critical"),
+                new AdminMiniMetricDto("Created in 7 days", FormatNumber(recentUsers), "info")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("name", "Name"),
+                new AdminSectionColumnDto("roles", "Roles"),
+                new AdminSectionColumnDto("email", "Email"),
+                new AdminSectionColumnDto("username", "Username"),
+                new AdminSectionColumnDto("created", "Created"),
+                new AdminSectionColumnDto("lastLogin", "Last sign-in"),
+                new AdminSectionColumnDto("status", "Status")
+            },
+            Rows: rows,
+            EmptyStateMessage: query is null
+                ? "No user accounts have been created yet."
+                : "No user accounts match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: totalCount);
+    }
+
+    private async Task<AdminSectionPageDto> BuildNotificationsPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        var todayStartUtc = DateTime.UtcNow.Date;
+
+        var total = userId is null
+            ? 0
+            : await _context.Notifications
+                .AsNoTracking()
+                .CountAsync(notification => notification.RecipientUserId == userId, cancellationToken);
+        var unread = userId is null
+            ? 0
+            : await _context.Notifications
+                .AsNoTracking()
+                .CountAsync(
+                    notification => notification.RecipientUserId == userId && !notification.IsRead,
+                    cancellationToken);
+        var receivedToday = userId is null
+            ? 0
+            : await _context.Notifications
+                .AsNoTracking()
+                .CountAsync(
+                    notification => notification.RecipientUserId == userId &&
+                                    notification.CreatedAtUtc >= todayStartUtc,
+                    cancellationToken);
+
+        var skip = (page - 1) * SectionRowLimit;
+        var paged = await BuildNotificationRowsAsync(query, SectionRowLimit, skip, cancellationToken);
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.Notifications,
+            Eyebrow: "System",
+            Title: "Notifications",
+            Subtitle: "Messages addressed to your administrator account. Other users' notifications are never included here.",
+            SearchPlaceholder: "Search your notifications",
+            Metrics: new[]
+            {
+                new AdminMiniMetricDto("Unread", FormatNumber(unread), unread > 0 ? "info" : "neutral"),
+                new AdminMiniMetricDto("Received today", FormatNumber(receivedToday), "neutral"),
+                new AdminMiniMetricDto("All notifications", FormatNumber(total), "neutral")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("title", "Notification"),
+                new AdminSectionColumnDto("message", "Message"),
+                new AdminSectionColumnDto("type", "Type"),
+                new AdminSectionColumnDto("received", "Received"),
+                new AdminSectionColumnDto("status", "Status")
+            },
+            Rows: paged.Rows,
+            EmptyStateMessage: query is null
+                ? "You do not have any notifications yet."
+                : "No notifications match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: paged.TotalCount);
+    }
+
+    private async Task<AdminSectionPageDto> BuildAuditLogsPageAsync(
+        string? query,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var todayStartUtc = DateTime.UtcNow.Date;
+        var totalLogs = await _context.AuditLogs.AsNoTracking().CountAsync(cancellationToken);
+        var logsToday = await _context.AuditLogs
+            .AsNoTracking()
+            .CountAsync(log => log.TimestampUtc >= todayStartUtc, cancellationToken);
+        var actors = await _context.AuditLogs
+            .AsNoTracking()
+            .Where(log => log.UserId != null)
+            .Select(log => log.UserId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+
+        var logs = _context.AuditLogs.AsNoTracking();
+        if (query is not null)
+        {
+            logs = logs.Where(log =>
+                log.Action.Contains(query) ||
+                (log.EntityName != null && log.EntityName.Contains(query)) ||
+                (log.EntityId != null && log.EntityId.Contains(query)) ||
+                (log.Details != null && log.Details.Contains(query)) ||
+                (log.UserId != null &&
+                 (log.UserId.Contains(query) ||
+                  _context.Users.Any(user =>
+                      user.Id == log.UserId &&
+                      (user.FullName.Contains(query) ||
+                       (user.Email != null && user.Email.Contains(query)))))));
+        }
+
+        var totalCount = await logs.CountAsync(cancellationToken);
+        var skip = (page - 1) * SectionRowLimit;
+
+        var records = await logs
+            .OrderByDescending(log => log.TimestampUtc)
+            .Skip(skip)
+            .Take(SectionRowLimit)
+            .Select(log => new
+            {
+                log.Id,
+                log.UserId,
+                log.Action,
+                log.EntityName,
+                log.EntityId,
+                log.Details,
+                log.TimestampUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var actorIds = records
+            .Where(log => !string.IsNullOrWhiteSpace(log.UserId))
+            .Select(log => log.UserId!)
+            .Distinct()
+            .ToList();
+        var actorNames = actorIds.Count == 0
+            ? new Dictionary<string, string>()
+            : await _context.Users
+                .AsNoTracking()
+                .Where(user => actorIds.Contains(user.Id))
+                .ToDictionaryAsync(
+                    user => user.Id,
+                    user => string.IsNullOrEmpty(user.FullName)
+                        ? user.UserName ?? user.Id
+                        : user.FullName,
+                    cancellationToken);
+
+        var rows = records.Select(log =>
+        {
+            var actor = log.UserId is null
+                ? "System"
+                : actorNames.GetValueOrDefault(log.UserId, log.UserId);
+            var entity = ValueOrFallback(log.EntityName);
+
+            return new AdminSectionRowDto(
+                Id: log.Id.ToString(CultureInfo.InvariantCulture),
+                PrimaryLabel: log.Action,
+                SecondaryLabel: actor,
+                BadgeText: entity,
+                BadgeClass: "tone-neutral",
+                Cells: new Dictionary<string, string>
+                {
+                    ["action"] = log.Action,
+                    ["actor"] = actor,
+                    ["entity"] = entity,
+                    ["entityId"] = ValueOrFallback(log.EntityId),
+                    ["details"] = Truncate(log.Details, 120),
+                    ["timestamp"] = FormatTimestamp(log.TimestampUtc)
+                });
+        }).ToList();
+
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.AuditLogs,
+            Eyebrow: "System",
+            Title: "Audit log",
+            Subtitle: "Inspect the immutable trail of security and privacy-relevant events recorded by the platform.",
+            SearchPlaceholder: "Search action, actor, entity, or details",
+            Metrics: new[]
+            {
+                new AdminMiniMetricDto("Recorded events", FormatNumber(totalLogs), "neutral"),
+                new AdminMiniMetricDto("Events today", FormatNumber(logsToday), "info"),
+                new AdminMiniMetricDto("Recorded actors", FormatNumber(actors), "neutral")
+            },
+            Columns: new[]
+            {
+                new AdminSectionColumnDto("action", "Action"),
+                new AdminSectionColumnDto("actor", "Actor"),
+                new AdminSectionColumnDto("entity", "Entity"),
+                new AdminSectionColumnDto("entityId", "Entity ID"),
+                new AdminSectionColumnDto("details", "Details"),
+                new AdminSectionColumnDto("timestamp", "Recorded")
+            },
+            Rows: rows,
+            EmptyStateMessage: query is null
+                ? "No audit events have been recorded yet."
+                : "No audit events match this search.",
+            Page: page,
+            PageSize: SectionRowLimit,
+            TotalCount: totalCount);
+    }
+
+    private async Task<AdminSectionPageDto> BuildProfilePageAsync(CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return new AdminSectionPageDto(
+                AdminSectionType.Profile,
+                "Account",
+                "Administrator profile",
+                "No authenticated administrator account is available in this request.",
+                string.Empty,
+                Array.Empty<AdminMiniMetricDto>(),
+                ProfileColumns(),
+                Array.Empty<AdminSectionRowDto>(),
+                "No administrator profile is available.");
+        }
+
+        var user = await _context.Users
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == userId)
+            .Select(candidate => new
+            {
+                candidate.Id,
+                candidate.FullName,
+                candidate.Email,
+                candidate.UserName,
+                candidate.IsActive,
+                candidate.CreatedAtUtc,
+                candidate.LastLoginUtc
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (user is null)
+        {
+            return new AdminSectionPageDto(
+                AdminSectionType.Profile,
+                "Account",
+                "Administrator profile",
+                "The signed-in account could not be found in the current identity store.",
+                string.Empty,
+                Array.Empty<AdminMiniMetricDto>(),
+                ProfileColumns(),
+                Array.Empty<AdminSectionRowDto>(),
+                "The administrator account record was not found.");
+        }
+
+        var roles = await _context.UserRoles
+            .AsNoTracking()
+            .Where(userRole => userRole.UserId == userId)
+            .Join(
+                _context.Roles.AsNoTracking(),
+                userRole => userRole.RoleId,
+                role => role.Id,
+                (_, role) => role.Name ?? "Unknown role")
+            .OrderBy(role => role)
+            .ToListAsync(cancellationToken);
+
+        var roleLabel = roles.Count == 0 ? "No role assigned" : string.Join(", ", roles);
+        var name = FirstNonEmpty(user.FullName, user.UserName, user.Email, "Administrator");
+        var accountStatus = user.IsActive ? "Active" : "Disabled";
+        var row = new AdminSectionRowDto(
+            Id: user.Id,
+            PrimaryLabel: name,
+            SecondaryLabel: roleLabel,
+            BadgeText: accountStatus,
+            BadgeClass: user.IsActive ? "tone-positive" : "tone-critical",
+            Cells: new Dictionary<string, string>
+            {
+                ["name"] = name,
+                ["email"] = ValueOrFallback(user.Email),
+                ["username"] = ValueOrFallback(user.UserName),
+                ["roles"] = roleLabel,
+                ["created"] = FormatDate(user.CreatedAtUtc),
+                ["lastLogin"] = FormatOptionalTimestamp(user.LastLoginUtc),
+                ["status"] = accountStatus
             });
 
-    private async Task<IReadOnlyList<AdminSectionRowDto>> BuildRiskRowsAsync(CancellationToken cancellationToken)
-    {
-        var records = await _context.RiskScores
-            .AsNoTracking()
-            .Include(score => score.StudentProfile)
-                .ThenInclude(student => student!.User)
-            .OrderByDescending(score => score.ScoredAtUtc)
-            .Take(8)
-            .ToListAsync(cancellationToken);
-
-        var rows = records.Select(score => new AdminSectionRowDto(
-            Id: score.Id.ToString(CultureInfo.InvariantCulture),
-            PrimaryLabel: score.StudentProfile!.User!.FullName,
-            SecondaryLabel: score.StudentProfile.StudentNumber ?? "No student number",
-            BadgeText: score.Level.ToString(),
-            BadgeClass: RiskBadge(score.Level),
-            Cells: new Dictionary<string, string>
+        return new AdminSectionPageDto(
+            Section: AdminSectionType.Profile,
+            Eyebrow: "Account",
+            Title: "Administrator profile",
+            Subtitle: "Your current identity record and access assignment.",
+            SearchPlaceholder: string.Empty,
+            Metrics: new[]
             {
-                ["studentId"] = score.StudentProfile.StudentNumber ?? "N/A",
-                ["risk"] = $"{score.Probability:P1}",
-                ["level"] = score.Level.ToString(),
-                ["lastActive"] = score.StudentProfile!.CreatedAtUtc.ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
-                ["predictionTime"] = score.ScoredAtUtc.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture),
-                ["counselor"] = score.StudentProfile.User!.FullName,
-                ["status"] = score.Level == RiskLevel.High ? "Escalated" : "Monitoring"
+                new AdminMiniMetricDto("Account status", accountStatus, user.IsActive ? "positive" : "critical"),
+                new AdminMiniMetricDto("Roles", roleLabel, "info"),
+                new AdminMiniMetricDto("Member since", FormatDate(user.CreatedAtUtc), "neutral"),
+                new AdminMiniMetricDto("Last sign-in", FormatOptionalTimestamp(user.LastLoginUtc), "neutral")
             },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary"),
-                new AdminSectionActionDto("Assign", "#", "bi-person-plus", "btn btn-sm btn-outline-success")
-            })).ToList();
-
-        return rows.Count > 0 ? rows : BuildRiskSampleRows();
+            Columns: ProfileColumns(),
+            Rows: new[] { row },
+            EmptyStateMessage: "The administrator account record was not found.",
+            Page: 1,
+            PageSize: 1,
+            TotalCount: 1);
     }
 
-    private async Task<IReadOnlyList<AdminSectionRowDto>> BuildBookingRowsAsync(CancellationToken cancellationToken)
+    private async Task<PagedRows> BuildRiskRowsAsync(
+        string? query,
+        int take,
+        int skip,
+        bool highOrCriticalOnly,
+        CancellationToken cancellationToken)
     {
-        var records = await _context.CounselorBookings
+        var entries = _context.RiskQueueEntries
             .AsNoTracking()
-            .Include(booking => booking.StudentProfile)
-                .ThenInclude(student => student!.User)
-            .Include(booking => booking.CounselorProfile)
-                .ThenInclude(counselor => counselor!.User)
-            .OrderByDescending(booking => booking.ScheduledForUtc)
-            .Take(6)
+            .Where(entry => !entry.IsResolved);
+
+        if (highOrCriticalOnly)
+        {
+            entries = entries.Where(entry =>
+                entry.Level == RiskLevel.High || entry.Level == RiskLevel.Critical);
+        }
+
+        if (query is not null)
+        {
+            entries = entries.Where(entry =>
+                entry.StudentProfile != null &&
+                ((entry.StudentProfile.StudentNumber != null && entry.StudentProfile.StudentNumber.Contains(query)) ||
+                 (entry.StudentProfile.User != null &&
+                  (entry.StudentProfile.User.FullName.Contains(query) ||
+                   (entry.StudentProfile.User.Email != null && entry.StudentProfile.User.Email.Contains(query))))));
+        }
+
+        var totalCount = await entries.CountAsync(cancellationToken);
+
+        var records = await entries
+            .OrderByDescending(entry => entry.Level)
+            .ThenBy(entry => entry.CreatedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(entry => new
+            {
+                entry.Id,
+                entry.Level,
+                entry.CreatedAtUtc,
+                StudentName = entry.StudentProfile != null && entry.StudentProfile.User != null
+                    ? entry.StudentProfile.User.FullName
+                    : string.Empty,
+                StudentEmail = entry.StudentProfile != null && entry.StudentProfile.User != null
+                    ? entry.StudentProfile.User.Email
+                    : null,
+                StudentNumber = entry.StudentProfile != null
+                    ? entry.StudentProfile.StudentNumber
+                    : null,
+                Probability = entry.RiskScore != null ? (double?)entry.RiskScore.Probability : null,
+                ScoredAtUtc = entry.RiskScore != null ? (DateTime?)entry.RiskScore.ScoredAtUtc : null
+            })
             .ToListAsync(cancellationToken);
 
-        var rows = records.Select(booking => new AdminSectionRowDto(
-            Id: booking.Id.ToString(CultureInfo.InvariantCulture),
-            PrimaryLabel: booking.StudentProfile!.User!.FullName,
-            SecondaryLabel: booking.CounselorProfile!.User!.FullName,
-            BadgeText: booking.Status.ToString(),
-            BadgeClass: BookingBadge(booking.Status),
-            Cells: new Dictionary<string, string>
-            {
-                ["pending"] = booking.Status == BookingStatus.Requested ? "Yes" : "No",
-                ["approved"] = booking.Status == BookingStatus.Confirmed ? "Yes" : "No",
-                ["rejected"] = booking.Status == BookingStatus.Cancelled || booking.Status == BookingStatus.NoShow ? "Yes" : "No",
-                ["completed"] = booking.Status == BookingStatus.Completed ? "Yes" : "No",
-                ["scheduled"] = booking.ScheduledForUtc.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture)
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("Approve", "#", "bi-check-lg", "btn btn-sm btn-outline-success"),
-                new AdminSectionActionDto("Reject", "#", "bi-x-lg", "btn btn-sm btn-outline-danger")
-            })).ToList();
+        var rows = records.Select(entry =>
+        {
+            var studentName = FirstNonEmpty(entry.StudentName, entry.StudentEmail, entry.StudentNumber, "Student");
+            var level = RiskLabel(entry.Level);
 
-        return rows.Count > 0 ? rows : BuildBookingSampleRows();
+            return new AdminSectionRowDto(
+                Id: entry.Id.ToString(CultureInfo.InvariantCulture),
+                PrimaryLabel: studentName,
+                SecondaryLabel: ValueOrFallback(entry.StudentNumber),
+                BadgeText: level,
+                BadgeClass: RiskBadge(entry.Level),
+                Cells: new Dictionary<string, string>
+                {
+                    ["student"] = studentName,
+                    ["studentId"] = ValueOrFallback(entry.StudentNumber),
+                    ["score"] = entry.Probability.HasValue
+                        ? entry.Probability.Value.ToString("P1", CultureInfo.InvariantCulture)
+                        : "Not recorded",
+                    ["level"] = level,
+                    ["queued"] = FormatTimestamp(entry.CreatedAtUtc),
+                    ["scored"] = FormatOptionalTimestamp(entry.ScoredAtUtc),
+                    ["status"] = "Awaiting review"
+                });
+        }).ToList();
+
+        return new PagedRows(rows, totalCount);
     }
 
-    private async Task<IReadOnlyList<AdminSectionRowDto>> BuildNotificationRowsAsync(CancellationToken cancellationToken)
+    private async Task<PagedRows> BuildNotificationRowsAsync(
+        string? query,
+        int take,
+        int skip,
+        CancellationToken cancellationToken)
     {
-        var records = await _context.Notifications
+        var userId = CurrentUserId;
+        if (userId is null)
+        {
+            return new PagedRows(Array.Empty<AdminSectionRowDto>(), 0);
+        }
+
+        var notifications = _context.Notifications
             .AsNoTracking()
-            .OrderByDescending(notification => notification.CreatedAtUtc)
-            .Take(6)
+            .Where(notification => notification.RecipientUserId == userId);
+
+        if (query is not null)
+        {
+            notifications = notifications.Where(notification =>
+                notification.Title.Contains(query) ||
+                notification.Message.Contains(query));
+        }
+
+        var totalCount = await notifications.CountAsync(cancellationToken);
+
+        var records = await notifications
+            .OrderBy(notification => notification.IsRead)
+            .ThenByDescending(notification => notification.CreatedAtUtc)
+            .Skip(skip)
+            .Take(take)
+            .Select(notification => new
+            {
+                notification.Id,
+                notification.Title,
+                notification.Message,
+                notification.Type,
+                notification.IsRead,
+                notification.CreatedAtUtc
+            })
             .ToListAsync(cancellationToken);
 
         var rows = records.Select(notification => new AdminSectionRowDto(
             Id: notification.Id.ToString(CultureInfo.InvariantCulture),
             PrimaryLabel: notification.Title,
-            SecondaryLabel: notification.Message,
+            SecondaryLabel: notification.Message.Length <= 140
+                ? notification.Message
+                : Truncate(notification.Message, 140),
             BadgeText: notification.IsRead ? "Read" : "Unread",
-            BadgeClass: notification.IsRead ? "badge text-bg-secondary" : "badge text-bg-primary",
+            BadgeClass: notification.IsRead ? "tone-neutral" : "tone-info",
             Cells: new Dictionary<string, string>
             {
-                ["type"] = notification.Type.ToString(),
-                ["created"] = notification.CreatedAtUtc.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture),
-                ["recipient"] = notification.RecipientUserId,
+                ["title"] = notification.Title,
+                ["message"] = Truncate(notification.Message, 120),
+                ["type"] = NotificationLabel(notification.Type),
+                ["received"] = FormatTimestamp(notification.CreatedAtUtc),
                 ["status"] = notification.IsRead ? "Read" : "Unread"
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary"),
-                new AdminSectionActionDto("Delete", "#", "bi-trash", "btn btn-sm btn-outline-danger")
             })).ToList();
 
-        return rows.Count > 0 ? rows : BuildNotificationSampleRows();
+        return new PagedRows(rows, totalCount);
     }
 
-    private async Task<AdminSectionPageDto> BuildRiskMonitoringPageAsync(AdminShellDto shell, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<AdminActivityItemDto>> BuildTodayItemsAsync(
+        int bookingsToday,
+        DateTime todayStartUtc,
+        DateTime tomorrowStartUtc,
+        CancellationToken cancellationToken)
     {
-        var rows = await BuildRiskRowsAsync(cancellationToken);
-        return new AdminSectionPageDto(
-            AdminSectionType.RiskMonitoring,
-            "Risk Monitoring",
-            "Track disengagement signals, review assigned counselors, and export triage queues.",
-            "Search risk queue",
-            ShowExportButtons: true,
-            ShowFilters: true,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("High risk", "38", "text-danger"),
-                new AdminMiniMetricDto("Medium risk", "114", "text-warning"),
-                new AdminMiniMetricDto("Resolved today", "14", "text-success")
-            },
-            Columns: RiskColumns(),
-            Rows: rows,
-            Activity: BuildRecentActivity(),
-            EmptyStateMessage: "No risk items were found. Sample rows are shown when the live database is empty.");
-    }
-
-    private AdminSectionPageDto BuildStudentsPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Students,
-            "Student Management",
-            "Review student records, risk levels, and support status.",
-            "Search students",
-            ShowExportButtons: false,
-            ShowFilters: true,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Total students", "1,248"),
-                new AdminMiniMetricDto("Active today", "972", "text-success"),
-                new AdminMiniMetricDto("Disabled", "21", "text-danger")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("studentId", "Student ID"),
-                new AdminSectionColumnDto("photo", "Photo"),
-                new AdminSectionColumnDto("name", "Name"),
-                new AdminSectionColumnDto("department", "Department"),
-                new AdminSectionColumnDto("email", "Email"),
-                new AdminSectionColumnDto("risk", "Risk Level"),
-                new AdminSectionColumnDto("lastLogin", "Last Login"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildStudentSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildCounselorsPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Counselors,
-            "Counselor Management",
-            "Monitor availability, case load, and response times.",
-            "Search counselors",
-            ShowExportButtons: false,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Available", "12", "text-success"),
-                new AdminMiniMetricDto("On leave", "2", "text-warning"),
-                new AdminMiniMetricDto("Avg response", "18m", "text-muted")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("name", "Name"),
-                new AdminSectionColumnDto("availability", "Availability"),
-                new AdminSectionColumnDto("cases", "Current Cases", true),
-                new AdminSectionColumnDto("sessions", "Completed Sessions", true),
-                new AdminSectionColumnDto("bookings", "Pending Bookings", true),
-                new AdminSectionColumnDto("response", "Average Response Time"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildCounselorSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildVolunteersPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Volunteers,
-            "Volunteer Management",
-            "Track assignments, forum activity, and escalation support.",
-            "Search volunteers",
-            ShowExportButtons: false,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Approved", "31", "text-success"),
-                new AdminMiniMetricDto("Pending", "9", "text-warning"),
-                new AdminMiniMetricDto("Active today", "19", "text-muted")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("name", "Name"),
-                new AdminSectionColumnDto("assigned", "Assigned Students", true),
-                new AdminSectionColumnDto("forum", "Forum Activity", true),
-                new AdminSectionColumnDto("resolved", "Reports Resolved", true),
-                new AdminSectionColumnDto("status", "Active Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildVolunteerSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildUsersPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Users,
-            "User Administration",
-            "Manage logins, roles, and account status across the university platform.",
-            "Search users",
-            ShowExportButtons: false,
-            ShowFilters: true,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Admins", "1", "text-success"),
-                new AdminMiniMetricDto("Counselors", "18", "text-muted"),
-                new AdminMiniMetricDto("Students", "1,248", "text-muted")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("name", "Name"),
-                new AdminSectionColumnDto("role", "Role"),
-                new AdminSectionColumnDto("email", "Email"),
-                new AdminSectionColumnDto("lastLogin", "Last Login"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildUserSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildForumModerationPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.ForumModeration,
-            "Forum Moderation",
-            "Review reported posts, apply moderation actions, and preserve the flag history.",
-            "Search reported posts",
-            ShowExportButtons: false,
-            ShowFilters: true,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Reported", "14", "text-warning"),
-                new AdminMiniMetricDto("Approved", "6", "text-success"),
-                new AdminMiniMetricDto("Deleted", "3", "text-danger")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("post", "Reported Post"),
-                new AdminSectionColumnDto("reportedBy", "Reported By"),
-                new AdminSectionColumnDto("flags", "Flag History", true),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildForumSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildBookingPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.CounselorBookings,
-            "Booking Management",
-            "Coordinate counseling appointments and calendar load.",
-            "Search bookings",
-            ShowExportButtons: true,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Pending", "17", "text-warning"),
-                new AdminMiniMetricDto("Approved", "29", "text-success"),
-                new AdminMiniMetricDto("Completed", "84", "text-muted")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("student", "Student"),
-                new AdminSectionColumnDto("counselor", "Counselor"),
-                new AdminSectionColumnDto("pending", "Pending"),
-                new AdminSectionColumnDto("approved", "Approved"),
-                new AdminSectionColumnDto("rejected", "Rejected"),
-                new AdminSectionColumnDto("completed", "Completed"),
-                new AdminSectionColumnDto("scheduled", "Scheduled For"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildBookingSampleRows(),
-            Activity: BuildRecentActivity(),
-            EmptyStateMessage: "Calendar and list view use the same sample booking data on first run.");
-
-    private AdminSectionPageDto BuildMoodJournalsPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.MoodJournals,
-            "Mood Journals",
-            "Review private journal cadence and identify engagement dips.",
-            "Search journal entries",
-            ShowExportButtons: false,
-            ShowFilters: true,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Entries today", "78", "text-success"),
-                new AdminMiniMetricDto("Average mood", "3.8/5", "text-muted"),
-                new AdminMiniMetricDto("Flagged", "5", "text-warning")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("student", "Student"),
-                new AdminSectionColumnDto("mood", "Mood"),
-                new AdminSectionColumnDto("entry", "Last Entry"),
-                new AdminSectionColumnDto("flags", "Flags"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildJournalSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildJournalSampleRows()
-        => new[]
-        {
-            CreateJournalRow("Ayesha Rahman", "Calm", "11 Jul 2026", "0"),
-            CreateJournalRow("Tanvir Ahmed", "Stressed", "11 Jul 2026", "1"),
-            CreateJournalRow("Nusrat Jahan", "Focused", "10 Jul 2026", "0")
-        };
-
-    private static AdminSectionRowDto CreateJournalRow(string student, string mood, string entry, string flags)
-        => new(
-            Id: student,
-            PrimaryLabel: student,
-            SecondaryLabel: mood,
-            BadgeText: mood,
-            BadgeClass: mood == "Stressed" ? "badge text-bg-warning" : "badge text-bg-success",
-            Cells: new Dictionary<string, string>
-            {
-                ["student"] = student,
-                ["mood"] = mood,
-                ["entry"] = entry,
-                ["flags"] = flags,
-                ["status"] = mood == "Stressed" ? "Needs Review" : "Normal"
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary"),
-                new AdminSectionActionDto("Flag", "#", "bi-flag", "btn btn-sm btn-outline-warning")
-            });
-
-    private AdminSectionPageDto BuildReportsPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Reports,
-            "Reports",
-            "Generate QuestPDF exports for risk, engagement, bookings, and forum activity.",
-            "Search reports",
-            ShowExportButtons: true,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Ready", "5", "text-success"),
-                new AdminMiniMetricDto("Queued", "2", "text-warning"),
-                new AdminMiniMetricDto("Exports today", "12", "text-muted")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("report", "Report"),
-                new AdminSectionColumnDto("scope", "Scope"),
-                new AdminSectionColumnDto("format", "Format"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildReportSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildAnalyticsPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Analytics,
-            "Analytics",
-            "Compare departments, view risk heat, and inspect cohort trends.",
-            "Search analytics views",
-            ShowExportButtons: false,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Heatmaps", "4", "text-muted"),
-                new AdminMiniMetricDto("Departments tracked", "8", "text-muted"),
-                new AdminMiniMetricDto("Faculty comparisons", "12", "text-muted")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("metric", "Metric"),
-                new AdminSectionColumnDto("current", "Current"),
-                new AdminSectionColumnDto("previous", "Previous"),
-                new AdminSectionColumnDto("trend", "Trend"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildAnalyticsSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildMachineLearningPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.MachineLearning,
-            "Machine Learning",
-            "Track model health, prediction throughput, and retraining readiness.",
-            "Search model outputs",
-            ShowExportButtons: false,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Accuracy", "93.4%", "text-success"),
-                new AdminMiniMetricDto("ROC AUC", "0.94", "text-success"),
-                new AdminMiniMetricDto("Queue", "12", "text-warning")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("model", "Model"),
-                new AdminSectionColumnDto("accuracy", "Accuracy"),
-                new AdminSectionColumnDto("predictions", "Today", true),
-                new AdminSectionColumnDto("health", "Health"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildMlSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildBackgroundJobsPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.BackgroundJobs,
-            "Background Jobs",
-            "Monitor scheduled jobs, execution logs, and retry status.",
-            "Search background jobs",
-            ShowExportButtons: false,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Running", "3", "text-muted"),
-                new AdminMiniMetricDto("Completed", "42", "text-success"),
-                new AdminMiniMetricDto("Failed", "1", "text-danger")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("job", "Job"),
-                new AdminSectionColumnDto("schedule", "Schedule"),
-                new AdminSectionColumnDto("lastRun", "Last Run"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildJobSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private AdminSectionPageDto BuildNotificationsPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Notifications,
-            "Notification Center",
-            "Review unread items, mark them read, and inspect delivery details.",
-            "Search notifications",
-            ShowExportButtons: false,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Unread", shell.UnreadNotifications.ToString(CultureInfo.InvariantCulture), "text-primary"),
-                new AdminMiniMetricDto("Delivered today", "96", "text-muted"),
-                new AdminMiniMetricDto("Muted", "3", "text-warning")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("title", "Title"),
-                new AdminSectionColumnDto("message", "Message"),
-                new AdminSectionColumnDto("type", "Type"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: BuildNotificationSampleRows(),
-            Activity: BuildRecentActivity());
-
-    private async Task<AdminSectionPageDto> BuildAuditLogsPageAsync(AdminShellDto shell, CancellationToken cancellationToken)
-    {
-        var records = await _context.AuditLogs
+        var newPriorityScores = await _context.RiskScores
             .AsNoTracking()
-            .OrderByDescending(log => log.TimestampUtc)
-            .Take(10)
+            .CountAsync(
+                score => score.ScoredAtUtc >= todayStartUtc &&
+                         score.ScoredAtUtc < tomorrowStartUtc &&
+                         (score.Level == RiskLevel.High || score.Level == RiskLevel.Critical),
+                cancellationToken);
+        var newForumFlags = await _context.ForumFlags
+            .AsNoTracking()
+            .CountAsync(
+                flag => flag.CreatedAtUtc >= todayStartUtc && flag.CreatedAtUtc < tomorrowStartUtc,
+                cancellationToken);
+        var newAccounts = await _context.Users
+            .AsNoTracking()
+            .CountAsync(
+                user => user.CreatedAtUtc >= todayStartUtc && user.CreatedAtUtc < tomorrowStartUtc,
+                cancellationToken);
+
+        var items = new List<AdminActivityItemDto>();
+        if (newPriorityScores > 0)
+        {
+            items.Add(new AdminActivityItemDto(
+                "New priority risk scores",
+                $"{FormatNumber(newPriorityScores)} high or critical score{PluralSuffix(newPriorityScores)} recorded",
+                "Today",
+                "bi-activity",
+                "critical"));
+        }
+
+        if (bookingsToday > 0)
+        {
+            items.Add(new AdminActivityItemDto(
+                "Counselor appointments",
+                $"{FormatNumber(bookingsToday)} requested or confirmed session{PluralSuffix(bookingsToday)} scheduled",
+                "Today",
+                "bi-calendar2-check",
+                "info"));
+        }
+
+        if (newForumFlags > 0)
+        {
+            items.Add(new AdminActivityItemDto(
+                "New forum reports",
+                $"{FormatNumber(newForumFlags)} moderation report{PluralSuffix(newForumFlags)} received",
+                "Today",
+                "bi-flag",
+                "warning"));
+        }
+
+        if (newAccounts > 0)
+        {
+            items.Add(new AdminActivityItemDto(
+                "New accounts",
+                $"{FormatNumber(newAccounts)} account{PluralSuffix(newAccounts)} created",
+                "Today",
+                "bi-person-plus",
+                "neutral"));
+        }
+
+        return items;
+    }
+
+    private async Task<IReadOnlyList<AdminTrendPointDto>> BuildRiskTrendAsync(
+        DateTime todayStartUtc,
+        DateTime tomorrowStartUtc,
+        CancellationToken cancellationToken)
+    {
+        var firstDayUtc = todayStartUtc.AddDays(-6);
+        var buckets = await _context.RiskScores
+            .AsNoTracking()
+            .Where(score => score.ScoredAtUtc >= firstDayUtc && score.ScoredAtUtc < tomorrowStartUtc)
+            .GroupBy(score => new { Day = score.ScoredAtUtc.Date, score.Level })
+            .Select(group => new RiskTrendBucket(group.Key.Day, group.Key.Level, group.Count()))
             .ToListAsync(cancellationToken);
 
-        var rows = records.Select(log => new AdminSectionRowDto(
-            Id: log.Id.ToString(CultureInfo.InvariantCulture),
-            PrimaryLabel: log.Action,
-            SecondaryLabel: log.EntityName ?? "System",
-            BadgeText: "Audit",
-            BadgeClass: "badge text-bg-dark",
-            Cells: new Dictionary<string, string>
-            {
-                ["user"] = log.UserId ?? "System",
-                ["entity"] = log.EntityName ?? "N/A",
-                ["entityId"] = log.EntityId ?? "N/A",
-                ["timestamp"] = log.TimestampUtc.ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture)
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("Inspect", "#", "bi-search", "btn btn-sm btn-outline-primary")
-            })).ToList();
+        if (buckets.Count == 0)
+        {
+            return Array.Empty<AdminTrendPointDto>();
+        }
 
-        return new AdminSectionPageDto(
-            AdminSectionType.AuditLogs,
-            "Audit Logs",
-            "Search security and privacy events with date filters.",
-            "Search audit entries",
-            ShowExportButtons: false,
-            ShowFilters: true,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Login events", "142", "text-muted"),
-                new AdminMiniMetricDto("Role changes", "6", "text-muted"),
-                new AdminMiniMetricDto("Settings changes", "11", "text-muted")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("user", "User"),
-                new AdminSectionColumnDto("entity", "Entity"),
-                new AdminSectionColumnDto("entityId", "Entity ID"),
-                new AdminSectionColumnDto("timestamp", "Timestamp"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: rows.Count > 0 ? rows : BuildAuditSampleRows(),
-            Activity: BuildRecentActivity());
+        var trend = new List<AdminTrendPointDto>(7);
+        for (var offset = 0; offset < 7; offset++)
+        {
+            var day = firstDayUtc.AddDays(offset);
+            var low = CountFor(buckets, day, RiskLevel.Low);
+            var moderate = CountFor(buckets, day, RiskLevel.Moderate);
+            var high = CountFor(buckets, day, RiskLevel.High);
+            var critical = CountFor(buckets, day, RiskLevel.Critical);
+
+            trend.Add(new AdminTrendPointDto(
+                Label: day.ToString("ddd", CultureInfo.InvariantCulture),
+                Low: low,
+                Moderate: moderate,
+                High: high,
+                Critical: critical,
+                Total: low + moderate + high + critical));
+        }
+
+        return trend;
     }
 
-    private AdminSectionPageDto BuildSettingsPage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Settings,
-            "Settings",
-            "Review notification, privacy, email, and security settings.",
-            "Search settings",
-            ShowExportButtons: false,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("General", "Ready", "text-success"),
-                new AdminMiniMetricDto("Email", "Configured", "text-success"),
-                new AdminMiniMetricDto("Security", "Hardened", "text-success")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("section", "Section"),
-                new AdminSectionColumnDto("value", "Value"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: new[]
-            {
-                CreateSingleValueRow("general", "General", "University branding, locale, and time zone", "Enabled"),
-                CreateSingleValueRow("email", "Email", "SMTP and template settings", "Configured"),
-                CreateSingleValueRow("ml", "ML Settings", "Retrain cadence and thresholds", "Healthy"),
-                CreateSingleValueRow("privacy", "Privacy", "Audit logging and retention", "Enabled"),
-                CreateSingleValueRow("security", "Security", "Session timeout and role policies", "Enabled"),
-                CreateSingleValueRow("system", "System Information", "net8.0 / Bootstrap / SignalR", "Online")
-            },
-            Activity: BuildRecentActivity());
+    private async Task<IReadOnlyList<AdminStatusItemDto>> BuildStatusItemsAsync(
+        int openPriorityCases,
+        int moderationQueue,
+        int unreadNotifications,
+        CancellationToken cancellationToken)
+    {
+        var latestRiskScore = await _context.RiskScores
+            .AsNoTracking()
+            .OrderByDescending(score => score.ScoredAtUtc)
+            .Select(score => (DateTime?)score.ScoredAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        var oldestOpenCase = await _context.RiskQueueEntries
+            .AsNoTracking()
+            .Where(entry => !entry.IsResolved)
+            .OrderBy(entry => entry.CreatedAtUtc)
+            .Select(entry => (DateTime?)entry.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        var latestAuditEvent = await _context.AuditLogs
+            .AsNoTracking()
+            .OrderByDescending(log => log.TimestampUtc)
+            .Select(log => (DateTime?)log.TimestampUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        var userId = CurrentUserId;
+        var latestNotification = userId is null
+            ? null
+            : await _context.Notifications
+                .AsNoTracking()
+                .Where(notification => notification.RecipientUserId == userId)
+                .OrderByDescending(notification => notification.CreatedAtUtc)
+                .Select(notification => (DateTime?)notification.CreatedAtUtc)
+                .FirstOrDefaultAsync(cancellationToken);
 
-    private AdminSectionPageDto BuildProfilePage(AdminShellDto shell)
-        => new(
-            AdminSectionType.Profile,
-            "Profile",
-            "Update the admin profile and password.",
-            "Search profile settings",
-            ShowExportButtons: false,
-            ShowFilters: false,
-            Metrics: new[]
-            {
-                new AdminMiniMetricDto("Name", shell.AdminName),
-                new AdminMiniMetricDto("Role", RoleConstants.Admin),
-                new AdminMiniMetricDto("Status", "Active")
-            },
-            Columns: new[]
-            {
-                new AdminSectionColumnDto("field", "Field"),
-                new AdminSectionColumnDto("value", "Value"),
-                new AdminSectionColumnDto("status", "Status"),
-                new AdminSectionColumnDto("actions", "Actions")
-            },
-            Rows: new[]
-            {
-                CreateSingleValueRow("profile-picture", "Profile Picture", "Default avatar in use", "Upload"),
-                CreateSingleValueRow("name", "Name", shell.AdminName, "Saved"),
-                CreateSingleValueRow("email", "Email", "rashid.cse.20230104102@aust.edu", "Verified"),
-                CreateSingleValueRow("role", "Role", RoleConstants.Admin, "Locked"),
-                CreateSingleValueRow("password", "Change Password", "Managed through Identity", "Available")
-            },
-            Activity: BuildRecentActivity());
+        return new[]
+        {
+            new AdminStatusItemDto(
+                "Risk data",
+                latestRiskScore.HasValue ? FormatTimestamp(latestRiskScore.Value) : "No scores recorded",
+                "Most recent stored risk score",
+                latestRiskScore.HasValue ? "info" : "neutral"),
+            new AdminStatusItemDto(
+                "Support queue",
+                $"{FormatNumber(openPriorityCases)} priority open",
+                oldestOpenCase.HasValue
+                    ? $"Oldest unresolved case: {FormatTimestamp(oldestOpenCase.Value)}"
+                    : "No unresolved cases",
+                openPriorityCases > 0 ? "warning" : "positive"),
+            new AdminStatusItemDto(
+                "Moderation",
+                $"{FormatNumber(moderationQueue)} waiting",
+                "Posts flagged, under review, or carrying an unreviewed report",
+                moderationQueue > 0 ? "warning" : "positive"),
+            new AdminStatusItemDto(
+                "Audit trail",
+                latestAuditEvent.HasValue ? FormatTimestamp(latestAuditEvent.Value) : "No events recorded",
+                "Most recent stored audit event",
+                latestAuditEvent.HasValue ? "neutral" : "warning"),
+            new AdminStatusItemDto(
+                "Your notifications",
+                $"{FormatNumber(unreadNotifications)} unread",
+                latestNotification.HasValue
+                    ? $"Most recent: {FormatTimestamp(latestNotification.Value)}"
+                    : "No notifications received",
+                unreadNotifications > 0 ? "info" : "neutral")
+        };
+    }
 
-    private static AdminSectionRowDto CreateSingleValueRow(string id, string label, string value, string status)
+    private static AdminSectionPageDto BuildDashboardSection()
         => new(
-            Id: id,
-            PrimaryLabel: label,
-            SecondaryLabel: value,
-            BadgeText: status,
-            BadgeClass: "badge text-bg-secondary",
-            Cells: new Dictionary<string, string>
-            {
-                ["section"] = label,
-                ["value"] = value,
-                ["status"] = status
-            },
-            Actions: Array.Empty<AdminSectionActionDto>());
+            AdminSectionType.Dashboard,
+            "Overview",
+            "Admin dashboard",
+            "Use the dashboard overview for live care, community, and system signals.",
+            string.Empty,
+            Array.Empty<AdminMiniMetricDto>(),
+            Array.Empty<AdminSectionColumnDto>(),
+            Array.Empty<AdminSectionRowDto>(),
+            "Dashboard data is shown on the overview page.");
 
-    private static IReadOnlyList<AdminSectionColumnDto> RiskColumns()
+    private static IReadOnlyList<AdminSectionColumnDto> ProfileColumns()
         => new[]
         {
-            new AdminSectionColumnDto("studentName", "Student Name"),
-            new AdminSectionColumnDto("studentId", "Student ID"),
-            new AdminSectionColumnDto("risk", "Current Risk Score", true),
-            new AdminSectionColumnDto("level", "Risk Level"),
-            new AdminSectionColumnDto("lastActive", "Last Active"),
-            new AdminSectionColumnDto("predictionTime", "Prediction Time"),
-            new AdminSectionColumnDto("counselor", "Assigned Counselor"),
-            new AdminSectionColumnDto("status", "Status"),
-            new AdminSectionColumnDto("actions", "Actions")
+            new AdminSectionColumnDto("name", "Name"),
+            new AdminSectionColumnDto("email", "Email"),
+            new AdminSectionColumnDto("username", "Username"),
+            new AdminSectionColumnDto("roles", "Roles"),
+            new AdminSectionColumnDto("created", "Created"),
+            new AdminSectionColumnDto("lastLogin", "Last sign-in"),
+            new AdminSectionColumnDto("status", "Status")
         };
 
-    private static IReadOnlyList<AdminSectionRowDto> BuildRiskSampleRows()
-        => new[]
+    private string? CurrentUserId
+        => _currentUserService.IsAuthenticated && !string.IsNullOrWhiteSpace(_currentUserService.UserId)
+            ? _currentUserService.UserId
+            : null;
+
+    private static string? NormalizeQuery(string? query)
+    {
+        var normalized = query?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
         {
-            Row("Ayesha Rahman", "2023-04102", "0.89", RiskLevel.High, "2026-07-11 08:20", "2026-07-11 08:34", "Dr. M. Hasan", "Escalated"),
-            Row("Tanvir Ahmed", "2023-03814", "0.71", RiskLevel.Moderate, "2026-07-11 09:02", "2026-07-11 09:12", "Dr. N. Akter", "Monitoring"),
-            Row("Nusrat Jahan", "2022-02751", "0.33", RiskLevel.Low, "2026-07-11 07:54", "2026-07-11 08:11", "Dr. S. Rahman", "Stable")
-        };
+            return null;
+        }
 
-    private static AdminSectionRowDto Row(string name, string studentId, string risk, RiskLevel level, string lastActive, string predictionTime, string counselor, string status)
-        => new(
-            Id: studentId,
-            PrimaryLabel: name,
-            SecondaryLabel: studentId,
-            BadgeText: level.ToString(),
-            BadgeClass: RiskBadge(level),
-            Cells: new Dictionary<string, string>
-            {
-                ["studentName"] = name,
-                ["studentId"] = studentId,
-                ["risk"] = risk,
-                ["level"] = level.ToString(),
-                ["lastActive"] = lastActive,
-                ["predictionTime"] = predictionTime,
-                ["counselor"] = counselor,
-                ["status"] = status
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary"),
-                new AdminSectionActionDto("Assign", "#", "bi-person-plus", "btn btn-sm btn-outline-success")
-            });
+        return normalized.Length <= 100 ? normalized : normalized[..100];
+    }
 
-    private static IReadOnlyList<AdminSectionRowDto> BuildStudentSampleRows()
-        => new[]
+    private static int CountFor(IEnumerable<RiskLevelCount> source, RiskLevel level)
+        => source.Where(item => item.Level == level).Sum(item => item.Count);
+
+    private static int CountFor(
+        IEnumerable<RiskTrendBucket> buckets,
+        DateTime day,
+        RiskLevel level)
+        => buckets
+            .Where(item => item.Day == day.Date && item.Level == level)
+            .Sum(item => item.Count);
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
+    private static string ValueOrFallback(string? value, string fallback = "Not recorded")
+        => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    private static string FormatNumber(int value)
+        => value.ToString("N0", CultureInfo.InvariantCulture);
+
+    private static string FormatDate(DateTime value)
+        => value == default
+            ? "Not recorded"
+            : value.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
+
+    private static string FormatTimestamp(DateTime value)
+        => value == default
+            ? "Not recorded"
+            : $"{value:dd MMM yyyy, HH:mm} UTC";
+
+    private static string FormatOptionalTimestamp(DateTime? value)
+        => value.HasValue ? FormatTimestamp(value.Value) : "Not recorded";
+
+    private static string Truncate(string? value, int maximumLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
-            CreateStudentRow("2023-04102", "Ayesha Rahman", "CSE", "ayesha.rahman@aust.edu", "High", "11 Jul 2026", "Active"),
-            CreateStudentRow("2023-03814", "Tanvir Ahmed", "EEE", "tanvir.ahmed@aust.edu", "Medium", "10 Jul 2026", "Active"),
-            CreateStudentRow("2022-02751", "Nusrat Jahan", "BBA", "nusrat.jahan@aust.edu", "Low", "09 Jul 2026", "Disabled")
-        };
+            return "Not recorded";
+        }
 
-    private static AdminSectionRowDto CreateStudentRow(string studentId, string name, string department, string email, string risk, string lastLogin, string status)
-        => new(
-            Id: studentId,
-            PrimaryLabel: name,
-            SecondaryLabel: email,
-            BadgeText: risk,
-            BadgeClass: $"badge {RiskBadge(ParseRisk(risk))}",
-            Cells: new Dictionary<string, string>
-            {
-                ["studentId"] = studentId,
-                ["photo"] = name.Substring(0, 1),
-                ["name"] = name,
-                ["department"] = department,
-                ["email"] = email,
-                ["risk"] = risk,
-                ["lastLogin"] = lastLogin,
-                ["status"] = status
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary"),
-                new AdminSectionActionDto("Edit", "#", "bi-pencil", "btn btn-sm btn-outline-secondary"),
-                new AdminSectionActionDto("Disable", "#", "bi-slash-circle", "btn btn-sm btn-outline-danger"),
-                new AdminSectionActionDto("Assign", "#", "bi-person-check", "btn btn-sm btn-outline-success")
-            });
+        var normalized = value.Trim();
+        return normalized.Length <= maximumLength
+            ? normalized
+            : string.Concat(normalized.AsSpan(0, maximumLength - 1), "…");
+    }
 
-    private static RiskLevel ParseRisk(string risk)
-        => risk switch
+    private static string PluralSuffix(int count) => count == 1 ? string.Empty : "s";
+
+    private static string RiskLabel(RiskLevel level)
+        => level switch
         {
-            "High" => RiskLevel.High,
-            "Medium" or "Moderate" => RiskLevel.Moderate,
-            _ => RiskLevel.Low
+            RiskLevel.Critical => "Critical",
+            RiskLevel.High => "High",
+            RiskLevel.Moderate => "Moderate",
+            _ => "Low"
         };
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildCounselorSampleRows()
-        => new[]
-        {
-            CreateCounselorRow("Dr. M. Hasan", "Available", "42", "118", "12", "18m"),
-            CreateCounselorRow("Dr. N. Akter", "Available", "35", "91", "9", "22m"),
-            CreateCounselorRow("Dr. S. Rahman", "Busy", "27", "104", "4", "31m")
-        };
-
-    private static AdminSectionRowDto CreateCounselorRow(string name, string availability, string cases, string sessions, string bookings, string response)
-        => new(
-            Id: name,
-            PrimaryLabel: name,
-            SecondaryLabel: availability,
-            BadgeText: availability,
-            BadgeClass: availability == "Available" ? "badge text-bg-success" : "badge text-bg-warning",
-            Cells: new Dictionary<string, string>
-            {
-                ["name"] = name,
-                ["availability"] = availability,
-                ["cases"] = cases,
-                ["sessions"] = sessions,
-                ["bookings"] = bookings,
-                ["response"] = response,
-                ["status"] = availability
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildVolunteerSampleRows()
-        => new[]
-        {
-            CreateVolunteerRow("Saima Akter", "14", "62", "8", true),
-            CreateVolunteerRow("Rakib Hossain", "9", "47", "5", true),
-            CreateVolunteerRow("Mahi Chowdhury", "6", "21", "2", false)
-        };
-
-    private static AdminSectionRowDto CreateVolunteerRow(string name, string assigned, string forum, string resolved, bool active)
-        => new(
-            Id: name,
-            PrimaryLabel: name,
-            SecondaryLabel: active ? "Active" : "Idle",
-            BadgeText: active ? "Active" : "Idle",
-            BadgeClass: active ? "badge text-bg-success" : "badge text-bg-secondary",
-            Cells: new Dictionary<string, string>
-            {
-                ["name"] = name,
-                ["assigned"] = assigned,
-                ["forum"] = forum,
-                ["resolved"] = resolved,
-                ["status"] = active ? "Active" : "Idle"
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildUserSampleRows()
-        => new[]
-        {
-            CreateUserRow("System Admin", "Admin", "rashid.cse.20230104102@aust.edu", "11 Jul 2026", "Active"),
-            CreateUserRow("Dr. M. Hasan", "Counselor", "m.hasan@aust.edu", "10 Jul 2026", "Active"),
-            CreateUserRow("Saima Akter", "Volunteer", "saima.akter@aust.edu", "09 Jul 2026", "Active")
-        };
-
-    private static AdminSectionRowDto CreateUserRow(string name, string role, string email, string lastLogin, string status)
-        => new(
-            Id: email,
-            PrimaryLabel: name,
-            SecondaryLabel: role,
-            BadgeText: status,
-            BadgeClass: "badge text-bg-secondary",
-            Cells: new Dictionary<string, string>
-            {
-                ["name"] = name,
-                ["role"] = role,
-                ["email"] = email,
-                ["lastLogin"] = lastLogin,
-                ["status"] = status
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary"),
-                new AdminSectionActionDto("Edit", "#", "bi-pencil", "btn btn-sm btn-outline-secondary")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildForumSampleRows()
-        => new[]
-        {
-            CreateForumRow("Need help with finals", "Student A", "3", "Pending"),
-            CreateForumRow("Finding study group", "Student B", "2", "Reviewed"),
-            CreateForumRow("Report on spam links", "Student C", "4", "Escalated")
-        };
-
-    private static AdminSectionRowDto CreateForumRow(string post, string reportedBy, string flags, string status)
-        => new(
-            Id: post,
-            PrimaryLabel: post,
-            SecondaryLabel: reportedBy,
-            BadgeText: status,
-            BadgeClass: "badge text-bg-warning",
-            Cells: new Dictionary<string, string>
-            {
-                ["post"] = post,
-                ["reportedBy"] = reportedBy,
-                ["flags"] = flags,
-                ["status"] = status
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("Approve", "#", "bi-check-lg", "btn btn-sm btn-outline-success"),
-                new AdminSectionActionDto("Reject", "#", "bi-x-lg", "btn btn-sm btn-outline-danger"),
-                new AdminSectionActionDto("Delete", "#", "bi-trash", "btn btn-sm btn-outline-secondary")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildBookingSampleRows()
-        => new[]
-        {
-            CreateBookingRow("Ayesha Rahman", "Dr. M. Hasan", "Yes", "No", "No", "No", "11 Jul 2026 10:00"),
-            CreateBookingRow("Tanvir Ahmed", "Dr. N. Akter", "No", "Yes", "No", "No", "11 Jul 2026 13:30"),
-            CreateBookingRow("Nusrat Jahan", "Dr. S. Rahman", "No", "No", "No", "Yes", "12 Jul 2026 09:00")
-        };
-
-    private static AdminSectionRowDto CreateBookingRow(string student, string counselor, string pending, string approved, string rejected, string completed, string scheduled)
-        => new(
-            Id: student,
-            PrimaryLabel: student,
-            SecondaryLabel: counselor,
-            BadgeText: approved == "Yes" ? "Approved" : pending == "Yes" ? "Pending" : completed == "Yes" ? "Completed" : "Rejected",
-            BadgeClass: approved == "Yes" ? "badge text-bg-success" : pending == "Yes" ? "badge text-bg-warning" : completed == "Yes" ? "badge text-bg-secondary" : "badge text-bg-danger",
-            Cells: new Dictionary<string, string>
-            {
-                ["student"] = student,
-                ["counselor"] = counselor,
-                ["pending"] = pending,
-                ["approved"] = approved,
-                ["rejected"] = rejected,
-                ["completed"] = completed,
-                ["scheduled"] = scheduled
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("Open", "#", "bi-eye", "btn btn-sm btn-outline-primary")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildNotificationSampleRows()
-        => new[]
-        {
-            CreateNotificationRow("Risk alert escalated", "Ayesha Rahman moved to high risk", "Risk", "Unread"),
-            CreateNotificationRow("Booking accepted", "Dr. M. Hasan accepted a booking", "Booking", "Read"),
-            CreateNotificationRow("Forum report received", "Moderation queue has a new report", "Forum", "Unread")
-        };
-
-    private static AdminSectionRowDto CreateNotificationRow(string title, string message, string type, string status)
-        => new(
-            Id: title,
-            PrimaryLabel: title,
-            SecondaryLabel: message,
-            BadgeText: status,
-            BadgeClass: status == "Unread" ? "badge text-bg-primary" : "badge text-bg-secondary",
-            Cells: new Dictionary<string, string>
-            {
-                ["title"] = title,
-                ["message"] = message,
-                ["type"] = type,
-                ["status"] = status
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("View", "#", "bi-eye", "btn btn-sm btn-outline-primary"),
-                new AdminSectionActionDto("Delete", "#", "bi-trash", "btn btn-sm btn-outline-danger")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildAuditSampleRows()
-        => new[]
-        {
-            CreateAuditRow("Admin login", "ApplicationUser", "1", "11 Jul 2026 09:10"),
-            CreateAuditRow("Prediction generated", "RiskScore", "28", "11 Jul 2026 09:21"),
-            CreateAuditRow("Booking approved", "CounselorBooking", "85", "11 Jul 2026 09:42")
-        };
-
-    private static AdminSectionRowDto CreateAuditRow(string action, string entity, string entityId, string timestamp)
-        => new(
-            Id: $"{action}-{entityId}",
-            PrimaryLabel: action,
-            SecondaryLabel: entity,
-            BadgeText: "Audit",
-            BadgeClass: "badge text-bg-dark",
-            Cells: new Dictionary<string, string>
-            {
-                ["user"] = "System",
-                ["entity"] = entity,
-                ["entityId"] = entityId,
-                ["timestamp"] = timestamp
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("Inspect", "#", "bi-search", "btn btn-sm btn-outline-primary")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildReportSampleRows()
-        => new[]
-        {
-            CreateReportRow("Risk Report", "Campus-wide", "PDF", "Ready"),
-            CreateReportRow("Booking Report", "Weekly", "PDF", "Queued")
-        };
-
-    private static AdminSectionRowDto CreateReportRow(string report, string scope, string format, string status)
-        => new(
-            Id: report,
-            PrimaryLabel: report,
-            SecondaryLabel: scope,
-            BadgeText: status,
-            BadgeClass: status == "Ready" ? "badge text-bg-success" : "badge text-bg-warning",
-            Cells: new Dictionary<string, string>
-            {
-                ["report"] = report,
-                ["scope"] = scope,
-                ["format"] = format,
-                ["status"] = status
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("Generate", "#", "bi-file-earmark-pdf", "btn btn-sm btn-outline-primary")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildAnalyticsSampleRows()
-        => new[]
-        {
-            CreateAnalyticsRow("Risk index", "18", "21", "-3"),
-            CreateAnalyticsRow("Forum activity", "148", "129", "+19")
-        };
-
-    private static AdminSectionRowDto CreateAnalyticsRow(string metric, string current, string previous, string trend)
-        => new(
-            Id: metric,
-            PrimaryLabel: metric,
-            SecondaryLabel: current,
-            BadgeText: trend,
-            BadgeClass: trend.StartsWith('+') ? "badge text-bg-success" : "badge text-bg-danger",
-            Cells: new Dictionary<string, string>
-            {
-                ["metric"] = metric,
-                ["current"] = current,
-                ["previous"] = previous,
-                ["trend"] = trend
-            },
-            Actions: Array.Empty<AdminSectionActionDto>());
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildMlSampleRows()
-        => new[]
-        {
-            CreateMlRow("risk-model.zip", "93.4%", "428", "Healthy"),
-            CreateMlRow("forum-model.zip", "88.8%", "73", "Attention")
-        };
-
-
-    private static AdminSectionRowDto CreateMlRow(string model, string accuracy, string predictions, string health)
-        => new(
-            Id: model,
-            PrimaryLabel: model,
-            SecondaryLabel: health,
-            BadgeText: health,
-            BadgeClass: health == "Healthy" ? "badge text-bg-success" : "badge text-bg-warning",
-            Cells: new Dictionary<string, string>
-            {
-                ["model"] = model,
-                ["accuracy"] = accuracy,
-                ["predictions"] = predictions,
-                ["health"] = health
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("Retrain", "#", "bi-arrow-repeat", "btn btn-sm btn-outline-primary")
-            });
-
-    private static IReadOnlyList<AdminSectionRowDto> BuildJobSampleRows()
-        => new[]
-        {
-            CreateJobRow("Booking reminders", "Every 15 min", "11 Jul 2026 09:45", "Running"),
-            CreateJobRow("Forum moderation sweep", "Hourly", "11 Jul 2026 09:00", "Failed")
-        };
-
-
-    private static AdminSectionRowDto CreateJobRow(string job, string schedule, string lastRun, string status)
-        => new(
-            Id: job,
-            PrimaryLabel: job,
-            SecondaryLabel: schedule,
-            BadgeText: status,
-            BadgeClass: status == "Completed" ? "badge text-bg-success" : status == "Running" ? "badge text-bg-primary" : "badge text-bg-danger",
-            Cells: new Dictionary<string, string>
-            {
-                ["job"] = job,
-                ["schedule"] = schedule,
-                ["lastRun"] = lastRun,
-                ["status"] = status
-            },
-            Actions: new[]
-            {
-                new AdminSectionActionDto("Open", "#", "bi-eye", "btn btn-sm btn-outline-primary")
-            });
 
     private static string RiskBadge(RiskLevel level)
         => level switch
         {
-            RiskLevel.High => "text-bg-danger",
-            RiskLevel.Moderate => "text-bg-warning",
-            _ => "text-bg-success"
+            RiskLevel.Critical => "tone-critical",
+            RiskLevel.High => "tone-warning",
+            RiskLevel.Moderate => "tone-info",
+            _ => "tone-positive"
+        };
+
+    private static string BookingLabel(BookingStatus status)
+        => status switch
+        {
+            BookingStatus.Requested => "Requested",
+            BookingStatus.Confirmed => "Confirmed",
+            BookingStatus.Completed => "Completed",
+            BookingStatus.Cancelled => "Cancelled",
+            BookingStatus.NoShow => "No show",
+            _ => status.ToString()
         };
 
     private static string BookingBadge(BookingStatus status)
         => status switch
         {
-            BookingStatus.Confirmed => "text-bg-success",
-            BookingStatus.Cancelled or BookingStatus.NoShow => "text-bg-danger",
-            BookingStatus.Completed => "text-bg-secondary",
-            _ => "text-bg-warning"
+            BookingStatus.Requested => "tone-warning",
+            BookingStatus.Confirmed => "tone-info",
+            BookingStatus.Completed => "tone-positive",
+            BookingStatus.Cancelled or BookingStatus.NoShow => "tone-critical",
+            _ => "tone-neutral"
         };
+
+    private static string ForumStatusLabel(ForumPostStatus status)
+        => status switch
+        {
+            ForumPostStatus.Published => "Published",
+            ForumPostStatus.Flagged => "Flagged",
+            ForumPostStatus.UnderReview => "Under review",
+            ForumPostStatus.Removed => "Removed",
+            _ => status.ToString()
+        };
+
+    private static string ForumBadge(ForumPostStatus status, int unreviewedFlags)
+        => status switch
+        {
+            ForumPostStatus.Flagged => "tone-critical",
+            ForumPostStatus.UnderReview => "tone-warning",
+            ForumPostStatus.Published when unreviewedFlags > 0 => "tone-warning",
+            ForumPostStatus.Removed => "tone-neutral",
+            _ => "tone-info"
+        };
+
+    private static string NotificationLabel(NotificationType type)
+        => type switch
+        {
+            NotificationType.RiskAlert => "Risk alert",
+            NotificationType.Nudge => "Nudge",
+            NotificationType.BookingReminder => "Booking reminder",
+            NotificationType.ForumReply => "Forum reply",
+            NotificationType.CrisisEscalation => "Crisis escalation",
+            NotificationType.System => "System",
+            _ => type.ToString()
+        };
+
+    private sealed record PagedRows(IReadOnlyList<AdminSectionRowDto> Rows, int TotalCount);
+    private sealed record UserRoleRecord(string UserId, string RoleName);
+    private sealed record RiskLevelCount(RiskLevel Level, int Count);
+    private sealed record RiskTrendBucket(DateTime Day, RiskLevel Level, int Count);
 }

@@ -122,8 +122,10 @@ public class ForumController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Review(int postId, bool publish, CancellationToken cancellationToken)
     {
-        await _forumService.ReviewPostAsync(postId, publish, cancellationToken);
-        TempData["ForumSuccess"] = publish ? "The post has been restored." : "The post has been removed.";
+        var reviewed = await _forumService.ReviewPostAsync(postId, publish, cancellationToken);
+        TempData[reviewed ? "ForumSuccess" : "ForumError"] = reviewed
+            ? publish ? "The post has been restored." : "The post has been removed."
+            : "That post was not found. It may have already been reviewed.";
         return RedirectToAction(nameof(Moderation));
     }
 

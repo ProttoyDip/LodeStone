@@ -3,81 +3,61 @@ namespace Lodestone.Application.DTOs.Admin;
 public enum AdminSectionType
 {
     Dashboard,
+    RiskMonitoring,
+    CounselorBookings,
+    ForumModeration,
     Students,
     Counselors,
     Volunteers,
     Users,
-    RiskMonitoring,
-    ForumModeration,
-    CounselorBookings,
-    MoodJournals,
-    Reports,
-    Analytics,
-    MachineLearning,
-    BackgroundJobs,
     Notifications,
     AuditLogs,
-    Settings,
     Profile
 }
 
 public record AdminShellDto(
     string AdminName,
     int UnreadNotifications,
-    int UnreadMessages,
-    string ModelHealth,
     string CurrentDateLabel,
     string ProfileImageUrl);
 
-public record AdminStatCardDto(
-    string Title,
+public record AdminKpiDto(
+    string Label,
     string Value,
-    string Delta,
-    string DeltaClass,
+    string Detail,
     string Icon,
-    string GradientClass,
-    string SparklineJson);
+    string Tone,
+    string Controller,
+    string Action);
 
 public record AdminMiniMetricDto(string Label, string Value, string? Tone = null);
 
 public record AdminActivityItemDto(
     string Title,
-    string Subtitle,
+    string Detail,
     string TimeLabel,
     string Icon,
-    string ToneClass);
+    string Tone);
 
-public record AdminChartDto(
-    string Id,
-    string Title,
-    string Subtitle,
-    string Type,
-    string LabelsJson,
-    string DatasetsJson);
+public record AdminTrendPointDto(
+    string Label,
+    int Low,
+    int Moderate,
+    int High,
+    int Critical,
+    int Total);
 
-public record AdminMlPanelDto(
-    string CurrentModel,
-    string Accuracy,
-    string Precision,
-    string Recall,
-    string F1Score,
-    string RocAuc,
-    string LastTrainingDate,
-    int TotalPredictionsToday,
-    int PredictionQueue,
-    string ModelHealth,
-    bool RetrainEnabled);
+public record AdminStatusItemDto(
+    string Label,
+    string Value,
+    string Detail,
+    string Tone);
 
-public record AdminHangfirePanelDto(
-    int RunningJobs,
-    int CompletedJobs,
-    int FailedJobs,
-    int UpcomingJobs,
-    IReadOnlyList<AdminActivityItemDto> RecentLogs);
-
-public record AdminSectionColumnDto(string Key, string Label, bool IsNumeric = false, string? CssClass = null);
-
-public record AdminSectionActionDto(string Label, string Url, string Icon, string CssClass, string? Method = null);
+public record AdminSectionColumnDto(
+    string Key,
+    string Label,
+    bool IsNumeric = false,
+    string? CssClass = null);
 
 public record AdminSectionRowDto(
     string Id,
@@ -85,29 +65,29 @@ public record AdminSectionRowDto(
     string SecondaryLabel,
     string? BadgeText,
     string? BadgeClass,
-    IReadOnlyDictionary<string, string> Cells,
-    IReadOnlyList<AdminSectionActionDto> Actions);
+    IReadOnlyDictionary<string, string> Cells);
 
 public record AdminSectionPageDto(
     AdminSectionType Section,
+    string Eyebrow,
     string Title,
     string Subtitle,
     string SearchPlaceholder,
-    bool ShowExportButtons,
-    bool ShowFilters,
     IReadOnlyList<AdminMiniMetricDto> Metrics,
     IReadOnlyList<AdminSectionColumnDto> Columns,
     IReadOnlyList<AdminSectionRowDto> Rows,
-    IReadOnlyList<AdminActivityItemDto> Activity,
-    string? EmptyStateMessage = null);
+    string EmptyStateMessage,
+    int Page = 1,
+    int PageSize = 100,
+    int TotalCount = 0);
 
 public record AdminDashboardDto(
     AdminShellDto Shell,
-    IReadOnlyList<AdminStatCardDto> Stats,
-    IReadOnlyList<AdminChartDto> Charts,
-    IReadOnlyList<AdminActivityItemDto> RecentActivity,
-    AdminMlPanelDto MlPanel,
-    AdminHangfirePanelDto HangfirePanel,
-    IReadOnlyList<AdminSectionRowDto> RiskRows,
-    IReadOnlyList<AdminSectionRowDto> BookingRows,
+    IReadOnlyList<AdminKpiDto> Kpis,
+    IReadOnlyList<AdminSectionColumnDto> SupportColumns,
+    IReadOnlyList<AdminSectionRowDto> SupportRows,
+    IReadOnlyList<AdminActivityItemDto> TodayItems,
+    IReadOnlyList<AdminTrendPointDto> RiskTrend,
+    IReadOnlyList<AdminStatusItemDto> StatusItems,
+    IReadOnlyList<AdminSectionColumnDto> NotificationColumns,
     IReadOnlyList<AdminSectionRowDto> NotificationRows);

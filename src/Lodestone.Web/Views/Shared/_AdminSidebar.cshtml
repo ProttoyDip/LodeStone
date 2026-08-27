@@ -4,100 +4,111 @@
     var active = ViewData["AdminActiveSection"]?.ToString() ?? AdminSectionType.Dashboard.ToString();
 }
 
-<nav class="ls-admin-side" aria-label="Admin sidebar">
-    <div class="ls-admin-side__brand">
-        <div class="ls-admin-side__brandmark" aria-hidden="true"></div>
-        <div class="ls-admin-side__brandtext">
-            Lodestone<span class="ls-admin-side__branddot" aria-hidden="true"></span>
-        </div>
-        <button class="ls-admin-side__collapse" type="button" id="ls-admin-side-collapse" aria-label="Collapse sidebar" aria-expanded="true">
-            <i class="bi bi-layout-sidebar-inset"></i>
-        </button>
+<div class="ls-admin-side__header">
+    <a class="ls-admin-side__brand" asp-controller="Admin" asp-action="Index" aria-label="Lodestone admin home">
+        <span>Lodestone<span class="ls-admin-side__brand-dot" aria-hidden="true">.</span></span>
+    </a>
+    <button class="ls-admin-side__close"
+            type="button"
+            data-admin-drawer-close
+            aria-label="Close navigation">
+        <i class="bi bi-x-lg" aria-hidden="true"></i>
+    </button>
+</div>
+
+<nav class="ls-admin-side" aria-label="Admin sections">
+    <div class="ls-admin-side__group">
+        <p class="ls-admin-side__group-label">Overview</p>
+        <a class="ls-admin-link @(active == AdminSectionType.Dashboard.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="Index"
+           aria-current="@(active == AdminSectionType.Dashboard.ToString() ? "page" : null)">
+            <i class="bi bi-grid-1x2" aria-hidden="true"></i>
+            <span>Dashboard</span>
+        </a>
     </div>
 
     <div class="ls-admin-side__group">
-        <a class="ls-admin-link @(active == AdminSectionType.Dashboard.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Index">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-grid-1x2-fill"></i></span>
-            <span class="ls-admin-link__text">Dashboard</span>
+        <p class="ls-admin-side__group-label">Care Operations</p>
+        <a class="ls-admin-link @(active == AdminSectionType.RiskMonitoring.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="RiskMonitoring"
+           aria-current="@(active == AdminSectionType.RiskMonitoring.ToString() ? "page" : null)">
+            <i class="bi bi-shield-exclamation" aria-hidden="true"></i>
+            <span>Support Queue</span>
+        </a>
+        <a class="ls-admin-link @(active == AdminSectionType.CounselorBookings.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="CounselorBookings"
+           aria-current="@(active == AdminSectionType.CounselorBookings.ToString() ? "page" : null)">
+            <i class="bi bi-calendar2-check" aria-hidden="true"></i>
+            <span>Bookings</span>
+        </a>
+        <a class="ls-admin-link @(active == AdminSectionType.Counselors.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="Counselors"
+           aria-current="@(active == AdminSectionType.Counselors.ToString() ? "page" : null)">
+            <i class="bi bi-person-badge" aria-hidden="true"></i>
+            <span>Counselors</span>
         </a>
     </div>
 
     <div class="ls-admin-side__group">
-        <a class="ls-admin-link @(active == AdminSectionType.Students.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Students">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-people"></i></span>
-            <span class="ls-admin-link__text">Students</span>
+        <p class="ls-admin-side__group-label">Community</p>
+        <a class="ls-admin-link @(active == AdminSectionType.ForumModeration.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="ForumModeration"
+           aria-current="@(active == AdminSectionType.ForumModeration.ToString() ? "page" : null)">
+            <i class="bi bi-chat-square-dots" aria-hidden="true"></i>
+            <span>Forum Moderation</span>
         </a>
-        <a class="ls-admin-link @(active == AdminSectionType.Counselors.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Counselors">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-person-badge"></i></span>
-            <span class="ls-admin-link__text">Counselors</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.Volunteers.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Volunteers">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-hand-thumbs-up"></i></span>
-            <span class="ls-admin-link__text">Volunteers</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.Users.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Users">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-person"></i></span>
-            <span class="ls-admin-link__text">Users</span>
-        </a>
-    </div>
-
-    <div class="ls-admin-side__group ls-admin-side__group--wide">
-        <a class="ls-admin-link @(active == AdminSectionType.RiskMonitoring.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="RiskMonitoring">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-exclamation-triangle"></i></span>
-            <span class="ls-admin-link__text">Risk Monitoring</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.ForumModeration.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="ForumModeration">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-shield-lock"></i></span>
-            <span class="ls-admin-link__text">Forum Moderation</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.CounselorBookings.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="CounselorBookings">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-calendar2-week"></i></span>
-            <span class="ls-admin-link__text">Counselor Bookings</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.MoodJournals.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="MoodJournals">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-journal-text"></i></span>
-            <span class="ls-admin-link__text">Mood Journals</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.Reports.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Reports">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-file-earmark-text"></i></span>
-            <span class="ls-admin-link__text">Reports</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.Analytics.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Analytics">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-graph-up-arrow"></i></span>
-            <span class="ls-admin-link__text">Analytics</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.MachineLearning.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="MachineLearning">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-cpu"></i></span>
-            <span class="ls-admin-link__text">Machine Learning</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.BackgroundJobs.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="BackgroundJobs">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-hourglass-split"></i></span>
-            <span class="ls-admin-link__text">Background Jobs</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.Notifications.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Notifications">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-bell"></i></span>
-            <span class="ls-admin-link__text">Notifications</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.AuditLogs.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="AuditLogs">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-journal-check"></i></span>
-            <span class="ls-admin-link__text">Audit Logs</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.Settings.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Settings">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-gear"></i></span>
-            <span class="ls-admin-link__text">Settings</span>
-        </a>
-        <a class="ls-admin-link @(active == AdminSectionType.Profile.ToString() ? "is-active" : string.Empty)" asp-controller="Admin" asp-action="Profile">
-            <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-person-gear"></i></span>
-            <span class="ls-admin-link__text">Profile</span>
+        <a class="ls-admin-link @(active == AdminSectionType.Volunteers.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="Volunteers"
+           aria-current="@(active == AdminSectionType.Volunteers.ToString() ? "page" : null)">
+            <i class="bi bi-people" aria-hidden="true"></i>
+            <span>Volunteers</span>
         </a>
     </div>
 
-    <div class="ls-admin-side__footer">
-        <form asp-controller="Account" asp-action="Logout" method="post" class="ls-admin-side__logout">
-            <button type="submit" class="ls-admin-link ls-admin-link--logout">
-                <span class="ls-admin-link__icon" aria-hidden="true"><i class="bi bi-box-arrow-right"></i></span>
-                <span class="ls-admin-link__text">Logout</span>
-            </button>
-        </form>
+    <div class="ls-admin-side__group">
+        <p class="ls-admin-side__group-label">People &amp; Access</p>
+        <a class="ls-admin-link @(active == AdminSectionType.Students.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="Students"
+           aria-current="@(active == AdminSectionType.Students.ToString() ? "page" : null)">
+            <i class="bi bi-mortarboard" aria-hidden="true"></i>
+            <span>Students</span>
+        </a>
+        <a class="ls-admin-link @(active == AdminSectionType.Users.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="Users"
+           aria-current="@(active == AdminSectionType.Users.ToString() ? "page" : null)">
+            <i class="bi bi-person-lock" aria-hidden="true"></i>
+            <span>Users</span>
+        </a>
+    </div>
+
+    <div class="ls-admin-side__group">
+        <p class="ls-admin-side__group-label">System</p>
+        <a class="ls-admin-link @(active == AdminSectionType.Notifications.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="Notifications"
+           aria-current="@(active == AdminSectionType.Notifications.ToString() ? "page" : null)">
+            <i class="bi bi-bell" aria-hidden="true"></i>
+            <span>Notifications</span>
+        </a>
+        <a class="ls-admin-link @(active == AdminSectionType.AuditLogs.ToString() ? "is-active" : string.Empty)"
+           asp-controller="Admin"
+           asp-action="AuditLogs"
+           aria-current="@(active == AdminSectionType.AuditLogs.ToString() ? "page" : null)">
+            <i class="bi bi-journal-check" aria-hidden="true"></i>
+            <span>Audit Logs</span>
+        </a>
     </div>
 </nav>
+
+<div class="ls-admin-side__footer">
+    <p>Care operations console</p>
+    <span>Private workspace</span>
+</div>
