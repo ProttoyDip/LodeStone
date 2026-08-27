@@ -38,7 +38,9 @@ public class ForumRepository : GenericRepository<ForumPost>, IForumRepository
             .FirstOrDefaultAsync(p => p.Id == postId && !p.IsDeleted, cancellationToken);
 
     public async Task<ForumPost?> GetPostByIdAsync(int postId, CancellationToken cancellationToken = default)
-        => await Set.FirstOrDefaultAsync(p => p.Id == postId, cancellationToken);
+        => await Set
+            .Include(post => post.Flags)
+            .FirstOrDefaultAsync(post => post.Id == postId, cancellationToken);
 
     public async Task<IReadOnlyList<ForumPost>> GetFlaggedPostsAsync(CancellationToken cancellationToken = default)
         => await Set

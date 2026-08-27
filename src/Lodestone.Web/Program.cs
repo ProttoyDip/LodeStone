@@ -1,6 +1,7 @@
 using Hangfire;
 using Lodestone.Application;
 using Lodestone.Application.Interfaces;
+using Lodestone.Domain.Constants;
 using Lodestone.Infrastructure;
 using Lodestone.Infrastructure.Data;
 using Lodestone.Infrastructure.Identity;
@@ -80,7 +81,8 @@ app.MapHub<PeerChatHub>(PeerChatHub.Route);
 app.MapHub<AdminNotificationHub>(AdminNotificationHub.Route);
 if (useHangfire)
 {
-    app.MapHangfireDashboard();
+    app.MapHangfireDashboard()
+        .RequireAuthorization(PolicyConstants.CanAccessAdmin);
 }
 
 // ---- Startup work: migrate DB, seed roles, schedule recurring jobs ----
@@ -99,7 +101,18 @@ using (var scope = app.Services.CreateScope())
         var userManager = services.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<Lodestone.Domain.Entities.ApplicationUser>>();
         var adminPassword = builder.Configuration["SeedData:AdminPassword"]
             ?? Environment.GetEnvironmentVariable("LODESTONE_ADMIN_PASSWORD");
-        await AdminUserSeeder.SeedAsync(userManager, roleManager, adminPassword ?? string.Empty);
+        var resetAdminPassword = builder.Environment.IsDevelopment()
+            && builder.Configuration.GetValue("SeedData:ResetAdminPassword", false);
+        if (resetAdminPassword)
+        {
+            app.Logger.LogWarning("SeedData:ResetAdminPassword is set — the development admin password and lockout state will be overwritten on this startup.");
+        }
+
+        await AdminUserSeeder.SeedAsync(
+            userManager,
+            roleManager,
+            adminPassword ?? string.Empty,
+            resetAdminPassword);
     }
 
     if (useHangfire)

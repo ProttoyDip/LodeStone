@@ -11,5 +11,5 @@ public interface IForumService
     Task<ForumCommentDto> AddCommentAsync(CreateForumCommentDto dto, CancellationToken cancellationToken = default);
     Task FlagPostAsync(int postId, string reason, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ForumPostDto>> GetFlaggedPostsAsync(CancellationToken cancellationToken = default);
-    Task ReviewPostAsync(int postId, bool publish, CancellationToken cancellationToken = default);
+    Task<bool> ReviewPostAsync(int postId, bool publish, CancellationToken cancellationToken = default);
 }

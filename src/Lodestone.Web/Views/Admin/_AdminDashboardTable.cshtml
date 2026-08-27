@@ -1,0 +1,56 @@
+@model (IReadOnlyList<AdminSectionColumnDto> Columns, IReadOnlyList<AdminSectionRowDto> Rows)
+@{
+    var columns = Model.Columns;
+    var rows = Model.Rows;
+}
+
+<div class="ls-admin-table-wrap">
+    <table class="ls-admin-table ls-admin-table--compact">
+        <caption class="ls-admin-sr-only">Operational records</caption>
+        <thead>
+            <tr>
+                <th scope="col">Record</th>
+                @foreach (var column in columns)
+                {
+                    <th scope="col">@column.Label</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in rows)
+            {
+                <tr>
+                    <th scope="row" data-label="Record">
+                        <span class="ls-admin-table__primary">@row.PrimaryLabel</span>
+                        @if (!string.IsNullOrWhiteSpace(row.SecondaryLabel))
+                        {
+                            <span class="ls-admin-table__secondary">@row.SecondaryLabel</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(row.BadgeText))
+                        {
+                            <span class="ls-admin-badge ls-admin-badge--@row.BadgeClass">@row.BadgeText</span>
+                        }
+                    </th>
+                    @foreach (var column in columns)
+                    {
+                        row.Cells.TryGetValue(column.Key, out var value);
+                        <td data-label="@column.Label">
+                            @if (string.IsNullOrWhiteSpace(value))
+                            {
+                                <span aria-label="Not available">&mdash;</span>
+                            }
+                            else if (column.IsNumeric)
+                            {
+                                <span class="ls-admin-table__number">@value</span>
+                            }
+                            else
+                            {
+                                @value
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
