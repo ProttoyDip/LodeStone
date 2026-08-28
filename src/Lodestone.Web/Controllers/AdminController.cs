@@ -1,9 +1,13 @@
+using System.Text;
+using System.Text.Encodings.Web;
 using Lodestone.Application.DTOs.Admin;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
+using Lodestone.Infrastructure.Email;
 using Lodestone.Web.ViewModels.Admin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Lodestone.Web.Controllers;
 
@@ -12,13 +16,22 @@ public class AdminController : Controller
 {
     private readonly IAdminDashboardService _adminDashboardService;
     private readonly IForumService _forumService;
+    private readonly ICounselorProvisioningService _counselorProvisioningService;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<AdminController> _logger;
 
     public AdminController(
         IAdminDashboardService adminDashboardService,
-        IForumService forumService)
+        IForumService forumService,
+        ICounselorProvisioningService counselorProvisioningService,
+        IEmailService emailService,
+        ILogger<AdminController> logger)
     {
         _adminDashboardService = adminDashboardService;
         _forumService = forumService;
+        _counselorProvisioningService = counselorProvisioningService;
+        _emailService = emailService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -51,6 +64,61 @@ public class AdminController : Controller
     [HttpGet]
     public Task<IActionResult> Counselors(string? q, int page, CancellationToken cancellationToken)
         => RenderSectionAsync(AdminSectionType.Counselors, q, page, cancellationToken);
+
+    [HttpGet]
+    public async Task<IActionResult> CreateCounselor(CancellationToken cancellationToken)
+    {
+        ViewData["AdminShell"] = await _adminDashboardService.GetShellAsync(cancellationToken);
+        ViewData["AdminActiveSection"] = AdminSectionType.Counselors.ToString();
+        ViewData["Title"] = "Create counselor";
+        return View(new CreateCounselorViewModel());
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateCounselor(CreateCounselorViewModel model, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            ViewData["AdminShell"] = await _adminDashboardService.GetShellAsync(cancellationToken);
+            ViewData["AdminActiveSection"] = AdminSectionType.Counselors.ToString();
+            return View(model);
+        }
+
+        var result = await _counselorProvisioningService.CreateAsync(
+            new CreateCounselorDto(model.FullName, model.Email, model.Specialization), cancellationToken);
+        if (!result.Succeeded)
+        {
+            foreach (var error in result.Errors) ModelState.AddModelError(string.Empty, error);
+            ViewData["AdminShell"] = await _adminDashboardService.GetShellAsync(cancellationToken);
+            ViewData["AdminActiveSection"] = AdminSectionType.Counselors.ToString();
+            return View(model);
+        }
+
+        var sent = await SendCounselorSetupEmailAsync(result, cancellationToken);
+        TempData[sent ? "AdminSuccess" : "AdminError"] = sent
+            ? "Counselor account created and the setup link was sent."
+            : "Counselor account created, but the setup email could not be sent. Use Resend setup link.";
+        return RedirectToAction(nameof(Counselors));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ResendCounselorSetup(string email, CancellationToken cancellationToken)
+    {
+        var result = await _counselorProvisioningService.CreateSetupTokenAsync(email ?? string.Empty, cancellationToken);
+        if (!result.Succeeded)
+        {
+            TempData["AdminError"] = result.Errors.FirstOrDefault() ?? "The setup link could not be generated.";
+            return RedirectToAction(nameof(CreateCounselor));
+        }
+
+        var sent = await SendCounselorSetupEmailAsync(result, cancellationToken);
+        TempData[sent ? "AdminSuccess" : "AdminError"] = sent
+            ? "A new counselor setup link was sent."
+            : "The setup email could not be sent. Try again later.";
+        return RedirectToAction(nameof(CreateCounselor));
+    }
 
     [HttpGet]
     public Task<IActionResult> Volunteers(string? q, int page, CancellationToken cancellationToken)
@@ -142,4 +210,28 @@ public class AdminController : Controller
             AdminSectionType.Profile => "Profile",
             _ => "Support operations"
         };
+
+    private async Task<bool> SendCounselorSetupEmailAsync(CounselorProvisioningResult result, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(result.Email) || string.IsNullOrWhiteSpace(result.PasswordSetupToken)) return false;
+        var token = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(result.PasswordSetupToken));
+        var resetUrl = Url.Action("ResetPassword", "Account", new { email = result.Email, token }, Request.Scheme)!;
+        var safeUrl = HtmlEncoder.Default.Encode(resetUrl);
+        var body = EmailTemplate.Wrap(
+            EmailTemplate.Heading("Set up your counselor account")
+            + EmailTemplate.Para("An administrator created a Lodestone counselor account for you. Choose a password to finish setup.")
+            + EmailTemplate.Button(safeUrl, "Set password")
+            + EmailTemplate.SmallMuted("If you were not expecting this invitation, contact your Lodestone administrator."),
+            "Set up your Lodestone counselor account");
+        try
+        {
+            await _emailService.SendAsync(result.Email, "Set up your Lodestone counselor account", body, cancellationToken);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send counselor setup email to {Email}.", result.Email);
+            return false;
+        }
+    }
 }

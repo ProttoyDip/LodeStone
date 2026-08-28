@@ -8,6 +8,6 @@ public class ActivityLogConfiguration : IEntityTypeConfiguration<ActivityLog>
 {
     public void Configure(EntityTypeBuilder<ActivityLog> builder)
     {
-        // TODO: configure keys, indexes, relationships and column constraints for ActivityLog.
+        builder.HasIndex(item => new { item.StudentProfileId, item.OccurredAtUtc });
     }
 }

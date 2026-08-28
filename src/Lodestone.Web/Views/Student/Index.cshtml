@@ -1,7 +1,7 @@
+@model Lodestone.Application.DTOs.Student.StudentDashboardDto
 @{
     ViewData["Title"] = "Student Home";
-    var displayName = User.Identity?.Name;
-    var firstName = string.IsNullOrWhiteSpace(displayName) ? "there" : displayName.Split('@')[0];
+    var maxActions = Math.Max(1, Model.ActivityDays.Max(day => day.ActionCount));
 }
 
 @section Styles {
@@ -16,7 +16,7 @@
                     <span aria-hidden="true"></span>
                     Student wellbeing home
                 </p>
-                <h1 id="student-title">Hi @firstName, your support space is ready.</h1>
+                <h1 id="student-title">Hi @Model.DisplayName, your support space is ready.</h1>
                 <p class="student-hero__lead">
                     Check in privately, find peer support, book counselor time, and keep crisis resources within reach.
                 </p>
@@ -149,7 +149,7 @@
                     <span class="student-badge">Weekly</span>
                     <h3>Review your rhythm</h3>
                     <p>Learning activity patterns can suggest support, but they are not a diagnosis or grade.</p>
-                    <a asp-controller="Dashboard" asp-action="Index">Open dashboard <span aria-hidden="true">-&gt;</span></a>
+                    <a asp-controller="Student" asp-action="Index" asp-fragment="snapshot-title">Review your week <span aria-hidden="true">-&gt;</span></a>
                 </article>
                 <article>
                     <span class="student-badge student-badge--green">Moderated</span>
@@ -190,31 +190,43 @@
                 <div class="student-card__top">
                     <div>
                         <span class="student-eyebrow">Learning rhythm</span>
-                        <h3>Engagement is steady with one lighter day.</h3>
+                        <h3>@(Model.ActivityDays.Sum(day => day.ActionCount) == 0 ? "No Lodestone activity recorded yet." : "Your last seven days at a glance.")</h3>
                     </div>
                     <span class="student-badge student-badge--green">Low pressure</span>
                 </div>
-                <div class="rhythm-chart" aria-label="Weekly activity rhythm preview">
-                    <span style="height: 58%"><b>Mon</b></span>
-                    <span style="height: 72%"><b>Tue</b></span>
-                    <span style="height: 46%"><b>Wed</b></span>
-                    <span style="height: 66%"><b>Thu</b></span>
-                    <span style="height: 38%"><b>Fri</b></span>
+                <div class="rhythm-chart" aria-label="Lodestone actions during the last seven days">
+                    @foreach (var day in Model.ActivityDays)
+                    {
+                        var height = day.ActionCount == 0 ? 8 : Math.Max(18, (int)Math.Round(day.ActionCount * 100d / maxActions));
+                        <span style="height: @(height)%" title="@day.DayUtc.ToString("dddd"): @day.ActionCount actions">
+                            <i class="student-sr-only">@day.ActionCount actions on </i><b>@day.DayUtc.ToString("ddd")</b>
+                        </span>
+                    }
                 </div>
+                <p class="student-card__meta">@Model.LoginCount sign-ins · @Model.JournalCount check-ins · @Model.ForumInteractionCount forum interactions</p>
             </article>
 
             <article class="student-card student-reveal">
                 <span class="student-eyebrow">Next booking</span>
-                <h3>No session booked</h3>
-                <p>Choose a counselor slot when you want a private conversation.</p>
-                <a class="student-card__link" asp-controller="Booking" asp-action="Index">Find time</a>
+                @if (Model.NextBooking is null)
+                {
+                    <h3>No upcoming session</h3>
+                    <p>Choose a published counselor slot when you want a private conversation.</p>
+                    <a class="student-card__link" asp-controller="Booking" asp-action="Create">Find time</a>
+                }
+                else
+                {
+                    <h3>@Model.NextBooking.CounselorName</h3>
+                    <p><time datetime="@Model.NextBooking.StartUtc.ToString("O")" data-local-datetime>@Model.NextBooking.StartUtc.ToString("MMM d, yyyy 'at' HH:mm 'UTC'")</time></p>
+                    <a class="student-card__link" asp-controller="Booking" asp-action="Index">Manage appointment</a>
+                }
             </article>
 
             <article class="student-card student-reveal">
-                <span class="student-eyebrow">Nudge status</span>
-                <h3>No urgent alert</h3>
-                <p>Any check-in prompt stays optional and support-focused.</p>
-                <div class="mini-progress" aria-hidden="true"><span></span></div>
+                <span class="student-eyebrow">@Model.Recommendation.Eyebrow</span>
+                <h3>@Model.Recommendation.Title</h3>
+                <p>@Model.Recommendation.Detail</p>
+                <a class="student-card__link" asp-controller="@Model.Recommendation.Controller" asp-action="@Model.Recommendation.Action">@Model.Recommendation.LinkLabel</a>
             </article>
 
             <article class="student-card student-card--accent student-reveal">

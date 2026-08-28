@@ -29,11 +29,13 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();
+        services.AddScoped<IStudentDashboardService, StudentDashboardService>();
+        services.AddScoped<ICounselorProvisioningService, CounselorProvisioningService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
 
         // Repositories — interface-mapped so Application services can depend on abstractions.
         services.AddScoped(typeof(GenericRepository<>));
-        services.AddScoped<ActivityLogRepository>();
+        services.AddScoped<IActivityLogRepository, ActivityLogRepository>();
         services.AddScoped<RiskScoreRepository>();
         services.AddScoped<CounselorQueueRepository>();
         services.AddScoped<ICrisisResourceRepository, CrisisResourceRepository>();

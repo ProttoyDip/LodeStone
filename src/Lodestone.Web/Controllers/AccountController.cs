@@ -23,17 +23,20 @@ public class AccountController : Controller
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IEmailService _emailService;
+    private readonly IActivityLogService _activityLogService;
     private readonly ILogger<AccountController> _logger;
 
     public AccountController(
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
         IEmailService emailService,
+        IActivityLogService activityLogService,
         ILogger<AccountController> logger)
     {
         _signInManager = signInManager;
         _userManager = userManager;
         _emailService = emailService;
+        _activityLogService = activityLogService;
         _logger = logger;
     }
 
@@ -75,6 +78,7 @@ public class AccountController : Controller
                 await _userManager.UpdateAsync(user);
             }
             _logger.LogInformation("User {Email} signed in.", model.Email);
+            await RecordStudentLoginAsync(user);
             return await RedirectAfterSignInAsync(user, returnUrl);
         }
 
@@ -130,6 +134,7 @@ public class AccountController : Controller
         _logger.LogInformation("New student account created for {Email}.", model.Email);
 
         await _signInManager.SignInAsync(user, isPersistent: false);
+        await RecordStudentLoginAsync(user);
         // New students always land on the student dashboard.
         return await RedirectAfterSignInAsync(user, returnUrl);
     }
@@ -268,5 +273,18 @@ public class AccountController : Controller
             return RedirectToAction("Index", "Student");
 
         return RedirectToAction("Index", "Student");
+    }
+
+    private async Task RecordStudentLoginAsync(ApplicationUser? user)
+    {
+        if (user is null || !await _userManager.IsInRoleAsync(user, RoleConstants.Student)) return;
+        try
+        {
+            await _activityLogService.RecordLoginAsync(user.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not record student sign-in activity for {UserId}.", user.Id);
+        }
     }
 }

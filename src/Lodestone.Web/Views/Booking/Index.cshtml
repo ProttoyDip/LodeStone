@@ -1,5 +1,42 @@
+@model BookingIndexViewModel
 @{
     ViewData["Title"] = "Counselor Booking";
 }
-<h1>Counselor Booking</h1>
-<p>Lodestone — placeholder view. Wire up the view model in the corresponding controller action.</p>
+@section Styles { <link rel="stylesheet" href="~/css/booking.css" asp-append-version="true" /> }
+
+<div class="booking-page">
+    <header class="booking-hero">
+        <div><p class="booking-kicker">Private counselor support</p><h1>Your appointments</h1><p>Choose from times published by Lodestone counselors. Selected times are confirmed immediately.</p></div>
+        <a class="booking-btn booking-btn--primary" asp-action="Create">Find an appointment</a>
+    </header>
+    @if (TempData["Success"] is string success) { <div class="booking-alert booking-alert--success" role="status">@success</div> }
+    @if (TempData["Error"] is string error) { <div class="booking-alert booking-alert--error" role="alert">@error</div> }
+
+    <section class="booking-section" aria-labelledby="upcoming-title">
+        <div class="booking-section__head"><div><p class="booking-kicker">Next</p><h2 id="upcoming-title">Upcoming appointments</h2></div></div>
+        @if (Model.Upcoming.Count == 0)
+        {
+            <div class="booking-empty"><h3>No upcoming appointment</h3><p>Published counselor times will appear when you are ready.</p><a class="booking-btn booking-btn--secondary" asp-action="Create">Browse available times</a></div>
+        }
+        else
+        {
+            <div class="booking-list">
+                @foreach (var item in Model.Upcoming)
+                {
+                    <article class="booking-item">
+                        <div><span class="booking-status booking-status--confirmed">Confirmed</span><h3>@item.CounselorName</h3>@if (!string.IsNullOrWhiteSpace(item.Specialization)) { <p>@item.Specialization</p> }</div>
+                        <div class="booking-time"><time datetime="@item.StartUtc.ToString("O")" data-local-datetime>@item.StartUtc.ToString("MMM d, yyyy 'at' HH:mm 'UTC'")</time></div>
+                        @if (item.CanCancel) { <form asp-action="Cancel" method="post" data-confirm="Cancel this appointment and release the time?"><input type="hidden" name="id" value="@item.Id" /><button class="booking-btn booking-btn--danger" type="submit">Cancel appointment</button></form> }
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="booking-section" aria-labelledby="history-title">
+        <div class="booking-section__head"><div><p class="booking-kicker">Record</p><h2 id="history-title">Appointment history</h2></div></div>
+        @if (Model.History.Count == 0) { <p class="booking-muted">No past or cancelled appointments.</p> }
+        else { <div class="booking-history">@foreach (var item in Model.History) { <div><strong>@item.CounselorName</strong><time datetime="@item.StartUtc.ToString("O")" data-local-datetime>@item.StartUtc.ToString("MMM d, yyyy 'at' HH:mm 'UTC'")</time><span class="booking-status">@item.Status</span></div> }</div> }
+    </section>
+</div>
+@section Scripts { <script src="~/js/booking.js" asp-append-version="true" defer></script> }

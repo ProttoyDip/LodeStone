@@ -20,6 +20,7 @@ public static class DependencyInjection
         services.AddScoped<IForumService, ForumService>();
         services.AddScoped<IJournalService, JournalService>();
         services.AddScoped<IBookingService, BookingService>();
+        services.AddScoped<ICounselorAvailabilityService, CounselorAvailabilityService>();
         services.AddScoped<ICounselorQueueService, CounselorQueueService>();
         services.AddScoped<ICrisisResourceService, CrisisResourceService>();
         return services;

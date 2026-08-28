@@ -1,0 +1,50 @@
+@model CreateCounselorViewModel
+@{
+    Layout = "~/Views/Shared/_AdminLayout.cshtml";
+    ViewData["Title"] = "Create counselor";
+}
+
+<div class="ls-admin-page">
+    <header class="ls-admin-page-header">
+        <div class="ls-admin-page-header__content">
+            <p class="ls-admin-page-header__eyebrow">People &amp; access</p>
+            <h1>Create counselor</h1>
+            <p>Create the account without a shared password. The counselor receives a secure setup link.</p>
+        </div>
+        <a class="ls-admin-btn ls-admin-btn--secondary" asp-action="Counselors">Back to counselors</a>
+    </header>
+
+    @if (TempData["AdminSuccess"] is string success)
+    {
+        <div class="ls-admin-alert ls-admin-alert--success" role="status">@success</div>
+    }
+    @if (TempData["AdminError"] is string error)
+    {
+        <div class="ls-admin-alert ls-admin-alert--error" role="alert">@error</div>
+    }
+
+    <section class="ls-admin-panel" aria-labelledby="create-counselor-heading">
+        <header class="ls-admin-panel__header"><h2 id="create-counselor-heading">Account details</h2></header>
+        <div class="ls-admin-panel__body">
+            <form asp-action="CreateCounselor" method="post" class="ls-admin-form">
+                <div asp-validation-summary="ModelOnly" class="ls-admin-alert ls-admin-alert--error" role="alert"></div>
+                <div class="ls-admin-field"><label asp-for="FullName"></label><input class="ls-admin-input" asp-for="FullName" autocomplete="name" /><span asp-validation-for="FullName"></span></div>
+                <div class="ls-admin-field"><label asp-for="Email"></label><input class="ls-admin-input" asp-for="Email" autocomplete="email" /><span asp-validation-for="Email"></span></div>
+                <div class="ls-admin-field"><label asp-for="Specialization"></label><input class="ls-admin-input" asp-for="Specialization" /><span asp-validation-for="Specialization"></span></div>
+                <button class="ls-admin-btn ls-admin-btn--primary" type="submit">Create and send setup link</button>
+            </form>
+        </div>
+    </section>
+
+    <section class="ls-admin-panel" aria-labelledby="resend-heading">
+        <header class="ls-admin-panel__header"><h2 id="resend-heading">Resend setup link</h2></header>
+        <div class="ls-admin-panel__body">
+            <form asp-action="ResendCounselorSetup" method="post" class="ls-admin-form">
+                <div class="ls-admin-field"><label for="resend-email">Counselor email</label><input class="ls-admin-input" id="resend-email" name="email" type="email" required /></div>
+                <button class="ls-admin-btn ls-admin-btn--secondary" type="submit">Resend setup link</button>
+            </form>
+        </div>
+    </section>
+</div>
+
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

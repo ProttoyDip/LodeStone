@@ -71,4 +71,11 @@
 
     initReveals();
     initPlannerTabs();
+
+    root.querySelectorAll("[data-local-datetime]").forEach(function (element) {
+        var date = new Date(element.getAttribute("datetime"));
+        if (!Number.isNaN(date.getTime())) {
+            element.textContent = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+        }
+    });
 })();
