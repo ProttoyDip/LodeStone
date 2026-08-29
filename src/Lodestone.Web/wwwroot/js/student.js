@@ -69,8 +69,67 @@
         });
     }
 
+    function initRiskMonitoringChoice() {
+        var form = root.querySelector("[data-risk-monitoring-form]");
+        if (!form) return;
+
+        var toggle = form.querySelector("[data-risk-monitoring-toggle]");
+        var submit = form.querySelector("[data-risk-monitoring-submit]");
+        var status = form.querySelector(".privacy-status");
+        var initiallyEnabled = form.getAttribute("data-initially-enabled") === "true";
+        if (!toggle) return;
+
+        function renderChoice() {
+            if (!status) return;
+            status.textContent = toggle.checked ? "On" : "Off";
+            status.classList.toggle("is-on", toggle.checked);
+            status.classList.toggle("is-off", !toggle.checked);
+        }
+
+        toggle.addEventListener("change", renderChoice);
+        form.addEventListener("submit", function (event) {
+            if (initiallyEnabled && !toggle.checked) {
+                var confirmed = window.confirm(
+                    "Turn off weekly support monitoring? Learning-activity logs, imported snapshots, model scores, and support cases created for monitoring will be permanently deleted."
+                );
+                if (!confirmed) {
+                    event.preventDefault();
+                    toggle.checked = true;
+                    renderChoice();
+                    toggle.focus();
+                    return;
+                }
+            }
+
+            if (submit) {
+                submit.disabled = true;
+                submit.textContent = "Saving...";
+            }
+            form.setAttribute("aria-busy", "true");
+        });
+
+        renderChoice();
+    }
+
+    function initStudentNumberClaim() {
+        var form = root.querySelector("[data-student-number-form]");
+        if (!form) return;
+
+        var submit = form.querySelector("[data-student-number-submit]");
+        form.addEventListener("submit", function (event) {
+            if (event.defaultPrevented || !form.checkValidity()) return;
+            if (submit) {
+                submit.disabled = true;
+                submit.textContent = "Submitting...";
+            }
+            form.setAttribute("aria-busy", "true");
+        });
+    }
+
     initReveals();
     initPlannerTabs();
+    initStudentNumberClaim();
+    initRiskMonitoringChoice();
 
     root.querySelectorAll("[data-local-datetime]").forEach(function (element) {
         var date = new Date(element.getAttribute("datetime"));

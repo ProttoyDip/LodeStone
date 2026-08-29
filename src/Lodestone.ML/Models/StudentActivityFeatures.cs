@@ -1,17 +1,33 @@
-using Microsoft.ML.Data;
+using Lodestone.Application.DTOs.Risk;
 
 namespace Lodestone.ML.Models;
 
-/// <summary>Feature vector fed to the ML.NET model. Derived from OULAD-style behavioral signals.</summary>
+/// <summary>
+/// Version-one behavioral feature vector consumed by the risk model. Keep this type free of
+/// labels and identifiers so the saved model has the same input contract during training and
+/// inference.
+/// </summary>
 public class StudentActivityFeatures
 {
-    [LoadColumn(0)] public float LoginFrequency { get; set; }
-    [LoadColumn(1)] public float ActivitySpanDays { get; set; }
-    [LoadColumn(2)] public float DaysSinceLastAccess { get; set; }
-    [LoadColumn(3)] public float ForumParticipation { get; set; }
-    [LoadColumn(4)] public float CourseParticipation { get; set; }
-    [LoadColumn(5)] public float AssignmentLateness { get; set; }
+    public const string SchemaVersion = RiskFeatureSchema.Withdrawal28DayV1;
 
-    // Training label: true = disengaged / at-risk.
-    [LoadColumn(6)] public bool IsAtRisk { get; set; }
+    public static readonly IReadOnlyList<string> FeatureNames =
+    [
+        nameof(ActiveDayRate),
+        nameof(ActivitySpanDays),
+        nameof(DaysSinceLastAccess),
+        nameof(ForumInteractionCount),
+        nameof(CourseInteractionCount),
+        nameof(LateOrMissingAssignmentCount)
+    ];
+
+    public float ActiveDayRate { get; set; }
+    public float ActivitySpanDays { get; set; }
+    public float DaysSinceLastAccess { get; set; }
+    /// <summary>Clicks on OULAD sites whose activity_type is forumng.</summary>
+    public float ForumInteractionCount { get; set; }
+
+    /// <summary>Clicks on all non-forum OULAD VLE sites; forum clicks are intentionally excluded.</summary>
+    public float CourseInteractionCount { get; set; }
+    public float LateOrMissingAssignmentCount { get; set; }
 }

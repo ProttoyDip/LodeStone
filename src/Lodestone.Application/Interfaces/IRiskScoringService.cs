@@ -8,4 +8,11 @@ public interface IRiskScoringService
     Task<RiskScoreDto> ScoreStudentAsync(int studentProfileId, CancellationToken cancellationToken = default);
     Task ScoreAllStudentsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RiskQueueItemDto>> GetOpenQueueAsync(CancellationToken cancellationToken = default);
+    Task<RiskScoringResultDto> ScoreSnapshotAsync(
+        int snapshotId,
+        int? scoringRunId = null,
+        CancellationToken cancellationToken = default);
+    Task<RiskScoringRunDto> RunPendingSnapshotsAsync(
+        string? actorUserId = null,
+        CancellationToken cancellationToken = default);
 }

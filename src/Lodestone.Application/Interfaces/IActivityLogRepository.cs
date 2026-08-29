@@ -1,8 +1,10 @@
-using Lodestone.Domain.Entities;
-
 namespace Lodestone.Application.Interfaces;
 
 public interface IActivityLogRepository
 {
-    Task AddAsync(ActivityLog activity, CancellationToken cancellationToken = default);
+    /// <summary>Atomically records a login only while the student has active monitoring consent.</summary>
+    Task<bool> RecordLoginIfConsentedAsync(
+        string userId,
+        DateTime occurredAtUtc,
+        CancellationToken cancellationToken = default);
 }

@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Lodestone.Application.Interfaces;
 using Lodestone.Application.Services;
-using Lodestone.Domain.Entities;
 using Moq;
 using Xunit;
 
@@ -9,39 +8,43 @@ namespace Lodestone.UnitTests.Services;
 
 public class ActivityLogServiceTests
 {
+    private static readonly DateTimeOffset Now = new(2026, 8, 29, 8, 30, 0, TimeSpan.Zero);
+
     [Fact]
-    public async Task RecordLoginAsync_PersistsAStudentScopedLoginEvent()
+    public async Task RecordLoginAsync_DelegatesToAtomicConsentGatedRepository()
     {
-        ActivityLog? captured = null;
-        var profiles = new Mock<IStudentProfileRepository>();
-        profiles.Setup(value => value.GetIdByUserIdAsync("student-user", It.IsAny<CancellationToken>())).ReturnsAsync(7);
         var activities = new Mock<IActivityLogRepository>();
-        activities.Setup(value => value.AddAsync(It.IsAny<ActivityLog>(), It.IsAny<CancellationToken>()))
-            .Callback<ActivityLog, CancellationToken>((item, _) => captured = item)
-            .Returns(Task.CompletedTask);
-        var unitOfWork = new Mock<IUnitOfWork>();
-        unitOfWork.Setup(value => value.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        activities.Setup(value => value.RecordLoginIfConsentedAsync(
+                "student-user",
+                Now.UtcDateTime,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var service = new ActivityLogService(activities.Object, new FixedTimeProvider(Now));
 
-        await new ActivityLogService(activities.Object, profiles.Object, unitOfWork.Object).RecordLoginAsync("student-user");
+        await service.RecordLoginAsync(" student-user ");
 
-        captured.Should().NotBeNull();
-        captured!.StudentProfileId.Should().Be(7);
-        captured.LoginCount.Should().Be(1);
-        captured.OccurredAtUtc.Kind.Should().Be(DateTimeKind.Utc);
-        unitOfWork.Verify(value => value.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        activities.Verify(value => value.RecordLoginIfConsentedAsync(
+            "student-user",
+            Now.UtcDateTime,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task RecordLoginAsync_IgnoresUsersWithoutAStudentProfile()
+    public async Task RecordLoginAsync_IgnoresMissingUserIdentifier()
     {
-        var profiles = new Mock<IStudentProfileRepository>();
-        profiles.Setup(value => value.GetIdByUserIdAsync("counselor", It.IsAny<CancellationToken>())).ReturnsAsync((int?)null);
         var activities = new Mock<IActivityLogRepository>();
-        var unitOfWork = new Mock<IUnitOfWork>();
+        var service = new ActivityLogService(activities.Object, new FixedTimeProvider(Now));
 
-        await new ActivityLogService(activities.Object, profiles.Object, unitOfWork.Object).RecordLoginAsync("counselor");
+        await service.RecordLoginAsync("  ");
 
-        activities.Verify(value => value.AddAsync(It.IsAny<ActivityLog>(), It.IsAny<CancellationToken>()), Times.Never);
-        unitOfWork.Verify(value => value.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        activities.Verify(value => value.RecordLoginIfConsentedAsync(
+            It.IsAny<string>(),
+            It.IsAny<DateTime>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }

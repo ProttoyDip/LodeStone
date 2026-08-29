@@ -23,9 +23,12 @@
             </p>
         </div>
         <div class="ls-admin-page-actions">
-            <a class="ls-admin-btn ls-admin-btn--primary" asp-controller="Admin" asp-action="RiskMonitoring">
+            <a class="ls-admin-btn ls-admin-btn--primary" asp-controller="Counselor" asp-action="Queue">
                 Review support queue
                 <i class="bi bi-arrow-right" aria-hidden="true"></i>
+            </a>
+            <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Admin" asp-action="RiskMonitoring">
+                Risk operations
             </a>
         </div>
     </header>
@@ -58,10 +61,20 @@
                     <strong class="ls-admin-kpi__value">@kpi.Value</strong>
                     <div class="ls-admin-kpi__footer">
                         <span>@kpi.Detail</span>
-                        <a asp-controller="@kpi.Controller" asp-action="@kpi.Action" aria-label="Open @kpi.Label">
-                            View
-                            <i class="bi bi-arrow-up-right" aria-hidden="true"></i>
-                        </a>
+                        @if (string.Equals(kpi.Action, "RiskMonitoring", StringComparison.Ordinal))
+                        {
+                            <a asp-controller="Counselor" asp-action="Queue" aria-label="Open @kpi.Label">
+                                View
+                                <i class="bi bi-arrow-up-right" aria-hidden="true"></i>
+                            </a>
+                        }
+                        else
+                        {
+                            <a asp-controller="@kpi.Controller" asp-action="@kpi.Action" aria-label="Open @kpi.Label">
+                                View
+                                <i class="bi bi-arrow-up-right" aria-hidden="true"></i>
+                            </a>
+                        }
                     </div>
                 </article>
             }
@@ -76,7 +89,7 @@
                     <h2 id="support-queue-heading">Support queue</h2>
                     <p>Open high-priority signals, ordered by risk level and then by longest-waiting first.</p>
                 </div>
-                <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Admin" asp-action="RiskMonitoring">
+                <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Counselor" asp-action="Queue">
                     Open queue
                 </a>
             </header>

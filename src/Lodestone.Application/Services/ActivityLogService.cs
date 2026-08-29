@@ -5,27 +5,22 @@ namespace Lodestone.Application.Services;
 public class ActivityLogService : IActivityLogService
 {
     private readonly IActivityLogRepository _activityLogRepository;
-    private readonly IStudentProfileRepository _studentProfileRepository;
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly TimeProvider _timeProvider;
 
-    public ActivityLogService(IActivityLogRepository activityLogRepository, IStudentProfileRepository studentProfileRepository, IUnitOfWork unitOfWork)
+    public ActivityLogService(
+        IActivityLogRepository activityLogRepository,
+        TimeProvider timeProvider)
     {
         _activityLogRepository = activityLogRepository;
-        _studentProfileRepository = studentProfileRepository;
-        _unitOfWork = unitOfWork;
+        _timeProvider = timeProvider;
     }
 
     public async Task RecordLoginAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var studentProfileId = await _studentProfileRepository.GetIdByUserIdAsync(userId, cancellationToken);
-        if (!studentProfileId.HasValue) return;
-
-        await _activityLogRepository.AddAsync(new Lodestone.Domain.Entities.ActivityLog
-        {
-            StudentProfileId = studentProfileId.Value,
-            OccurredAtUtc = DateTime.UtcNow,
-            LoginCount = 1
-        }, cancellationToken);
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(userId)) return;
+        await _activityLogRepository.RecordLoginIfConsentedAsync(
+            userId.Trim(),
+            _timeProvider.GetUtcNow().UtcDateTime,
+            cancellationToken);
     }
 }

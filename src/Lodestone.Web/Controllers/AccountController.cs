@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Encodings.Web;
+using Lodestone.Application.DTOs.Student;
 using Lodestone.Application.Interfaces;
 using Lodestone.Infrastructure.Email;
 using Lodestone.Domain.Constants;
@@ -24,6 +25,8 @@ public class AccountController : Controller
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IEmailService _emailService;
     private readonly IActivityLogService _activityLogService;
+    private readonly IRiskMonitoringConsentService _riskMonitoringConsentService;
+    private readonly IStudentNumberVerificationService _studentNumberVerificationService;
     private readonly ILogger<AccountController> _logger;
 
     public AccountController(
@@ -31,12 +34,16 @@ public class AccountController : Controller
         UserManager<ApplicationUser> userManager,
         IEmailService emailService,
         IActivityLogService activityLogService,
+        IRiskMonitoringConsentService riskMonitoringConsentService,
+        IStudentNumberVerificationService studentNumberVerificationService,
         ILogger<AccountController> logger)
     {
         _signInManager = signInManager;
         _userManager = userManager;
         _emailService = emailService;
         _activityLogService = activityLogService;
+        _riskMonitoringConsentService = riskMonitoringConsentService;
+        _studentNumberVerificationService = studentNumberVerificationService;
         _logger = logger;
     }
 
@@ -119,6 +126,8 @@ public class AccountController : Controller
             FullName = model.FullName.Trim(),
             CreatedAtUtc = DateTime.UtcNow,
             IsActive = true,
+            // Student numbers are never self-verified. Registration creates the
+            // profile first, then submits the supplied number for Admin review.
             StudentProfile = new StudentProfile()
         };
 
@@ -132,6 +141,44 @@ public class AccountController : Controller
 
         await _userManager.AddToRoleAsync(user, RoleConstants.Student);
         _logger.LogInformation("New student account created for {Email}.", model.Email);
+
+        try
+        {
+            var claim = await _studentNumberVerificationService.SubmitAsync(
+                user.Id,
+                model.StudentNumber,
+                HttpContext.RequestAborted);
+
+            if (claim.Outcome == StudentNumberClaimOutcome.Submitted)
+            {
+                TempData["StudentIdentitySuccess"] =
+                    "Your student number was submitted for Admin verification. Learning-activity imports will wait until it is approved.";
+            }
+            else
+            {
+                TempData["StudentIdentityError"] = RegistrationClaimFailureMessage(claim.Outcome);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not submit the initial student-number claim for user {UserId}.", user.Id);
+            TempData["StudentIdentityError"] =
+                "Your account was created, but the student number could not be submitted. Submit it again from Privacy.";
+        }
+
+        try
+        {
+            await _riskMonitoringConsentService.SetAsync(user.Id, model.EnableRiskMonitoring);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not save the initial risk-monitoring choice for user {UserId}.", user.Id);
+            if (model.EnableRiskMonitoring)
+            {
+                TempData["StudentPrivacyError"] =
+                    "Your account was created, but weekly monitoring could not be enabled. It remains off until you enable it from Privacy.";
+            }
+        }
 
         await _signInManager.SignInAsync(user, isPersistent: false);
         await RecordStudentLoginAsync(user);
@@ -287,4 +334,16 @@ public class AccountController : Controller
             _logger.LogWarning(ex, "Could not record student sign-in activity for {UserId}.", user.Id);
         }
     }
+
+    private static string RegistrationClaimFailureMessage(StudentNumberClaimOutcome outcome)
+        => outcome switch
+        {
+            StudentNumberClaimOutcome.InvalidStudentNumber =>
+                "Your account was created, but the student number was not valid. Submit it again from Privacy.",
+            StudentNumberClaimOutcome.PendingClaimExists =>
+                "Your account was created and already has a student number awaiting Admin verification.",
+            StudentNumberClaimOutcome.AlreadyVerified =>
+                "Your account was created and its student number is already verified.",
+            _ => "Your account was created, but the student number could not be submitted. Submit it again from Privacy."
+        };
 }

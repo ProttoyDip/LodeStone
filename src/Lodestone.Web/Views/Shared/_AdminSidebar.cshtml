@@ -30,12 +30,18 @@
 
     <div class="ls-admin-side__group">
         <p class="ls-admin-side__group-label">Care Operations</p>
+        <a class="ls-admin-link"
+           asp-controller="Counselor"
+           asp-action="Queue">
+            <i class="bi bi-life-preserver" aria-hidden="true"></i>
+            <span>Support Queue</span>
+        </a>
         <a class="ls-admin-link @(active == AdminSectionType.RiskMonitoring.ToString() ? "is-active" : string.Empty)"
            asp-controller="Admin"
            asp-action="RiskMonitoring"
            aria-current="@(active == AdminSectionType.RiskMonitoring.ToString() ? "page" : null)">
-            <i class="bi bi-shield-exclamation" aria-hidden="true"></i>
-            <span>Support Queue</span>
+            <i class="bi bi-cpu" aria-hidden="true"></i>
+            <span>Risk Operations</span>
         </a>
         <a class="ls-admin-link @(active == AdminSectionType.CounselorBookings.ToString() ? "is-active" : string.Empty)"
            asp-controller="Admin"
