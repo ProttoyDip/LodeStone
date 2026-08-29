@@ -7,7 +7,7 @@ public class BookingRequestValidator : AbstractValidator<CreateBookingDto>
 {
     public BookingRequestValidator()
     {
-        RuleFor(x => x.CounselorProfileId).GreaterThan(0);
-        RuleFor(x => x.ScheduledForUtc).GreaterThan(DateTime.UtcNow);
+        RuleFor(x => x.AvailabilitySlotId).GreaterThan(0);
+        RuleFor(x => x.Notes).MaximumLength(1000);
     }
 }

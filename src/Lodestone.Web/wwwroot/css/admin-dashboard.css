@@ -713,6 +713,16 @@ body.ls-admin {
     gap: .28rem;
 }
 
+.ls-admin-form {
+    display: grid;
+    max-width: 680px;
+    gap: 1rem;
+}
+
+.ls-admin-form .ls-admin-btn {
+    width: max-content;
+}
+
 .ls-admin-field label {
     color: var(--ink-soft);
     font-size: .72rem;

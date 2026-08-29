@@ -10,4 +10,10 @@ public class RiskPrediction
 
     public float Probability { get; set; }
     public float Score { get; set; }
+
+    [NoColumn]
+    public string ModelVersion { get; set; } = string.Empty;
+
+    [NoColumn]
+    public float DecisionThreshold { get; set; } = 0.5f;
 }

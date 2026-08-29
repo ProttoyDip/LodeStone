@@ -2,9 +2,16 @@ using Lodestone.Application.DTOs.Booking;
 
 namespace Lodestone.Web.ViewModels.Booking;
 
-public class BookingViewModel
+public sealed class BookingIndexViewModel
 {
-    public IReadOnlyList<BookingDto> Bookings { get; set; } = new List<BookingDto>();
-    public IReadOnlyList<CounselorSummaryDto> CounselorList { get; set; } = new List<CounselorSummaryDto>();
-    public CreateBookingDto NewBooking { get; set; } = new(0, null, DateTime.UtcNow.AddDays(1), null);
+    public IReadOnlyList<BookingDto> Upcoming { get; init; } = Array.Empty<BookingDto>();
+    public IReadOnlyList<BookingDto> History { get; init; } = Array.Empty<BookingDto>();
+}
+
+public sealed class BookingCreateViewModel
+{
+    public IReadOnlyList<CounselorSummaryDto> Counselors { get; init; } = Array.Empty<CounselorSummaryDto>();
+    public IReadOnlyList<BookingSlotDto> Slots { get; init; } = Array.Empty<BookingSlotDto>();
+    public int? SelectedCounselorId { get; init; }
+    public CreateBookingDto NewBooking { get; init; } = new(0, null);
 }

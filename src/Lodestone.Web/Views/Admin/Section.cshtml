@@ -41,6 +41,13 @@
             <p>@Model.Page.Subtitle</p>
         </div>
         <div class="ls-admin-page-actions">
+            @if (Model.Page.Section == AdminSectionType.Counselors)
+            {
+                <a class="ls-admin-btn ls-admin-btn--primary" asp-controller="Admin" asp-action="CreateCounselor">
+                    <i class="bi bi-person-plus" aria-hidden="true"></i>
+                    Create counselor
+                </a>
+            }
             @if (hasUnreadNotifications)
             {
                 <form asp-controller="Admin" asp-action="MarkAllNotificationsRead" method="post">

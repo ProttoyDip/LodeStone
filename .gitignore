@@ -21,6 +21,8 @@ src/Lodestone.ML/Data/*
 !src/Lodestone.ML/Data/.gitkeep
 src/Lodestone.ML/Reports/*
 !src/Lodestone.ML/Reports/.gitkeep
+src/Lodestone.Web/App_Data/ml/*
+!src/Lodestone.Web/App_Data/ml/.gitkeep
 
 ## Database backups
 database/backup/*

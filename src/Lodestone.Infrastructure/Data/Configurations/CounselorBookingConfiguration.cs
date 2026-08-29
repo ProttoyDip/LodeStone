@@ -8,6 +8,7 @@ public class CounselorBookingConfiguration : IEntityTypeConfiguration<CounselorB
 {
     public void Configure(EntityTypeBuilder<CounselorBooking> builder)
     {
-        // TODO: configure keys, indexes, relationships and column constraints for CounselorBooking.
+        builder.HasIndex(item => new { item.StudentProfileId, item.ScheduledForUtc });
+        builder.HasIndex(item => new { item.CounselorProfileId, item.ScheduledForUtc });
     }
 }

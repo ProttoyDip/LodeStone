@@ -25,10 +25,28 @@
             @*  Mobile dropdown menu (also holds desktop links via CSS)  *@
             <nav class="ls-nav__menu" id="ls-primary-nav" aria-label="Primary">
                 <ul class="ls-nav__links">
-                    <li><a asp-controller="Student"  asp-action="Index">Dashboard</a></li>
-                    <li><a asp-controller="Journal"  asp-action="Index">Journal</a></li>
-                    <li><a asp-controller="Forum"    asp-action="Index">Forum</a></li>
-                    <li><a asp-controller="Booking"  asp-action="Index">Booking</a></li>
+                    @if (User.IsInRole(RoleConstants.Student))
+                    {
+                        <li><a asp-controller="Student" asp-action="Index">Dashboard</a></li>
+                        <li><a asp-controller="Journal" asp-action="Index">Journal</a></li>
+                        <li><a asp-controller="Forum" asp-action="Index">Forum</a></li>
+                        <li><a asp-controller="Booking" asp-action="Index">Booking</a></li>
+                    }
+                    else if (User.IsInRole(RoleConstants.Counselor))
+                    {
+                        <li><a asp-controller="Counselor" asp-action="Queue">Support queue</a></li>
+                        <li><a asp-controller="CounselorAvailability" asp-action="Index">Availability</a></li>
+                        <li><a asp-controller="Forum" asp-action="Index">Forum</a></li>
+                    }
+                    else if (User.IsInRole(RoleConstants.Volunteer))
+                    {
+                        <li><a asp-controller="Forum" asp-action="Index">Forum</a></li>
+                        <li><a asp-controller="Forum" asp-action="Moderation">Moderation</a></li>
+                    }
+                    else
+                    {
+                        <li><a asp-controller="CrisisResource" asp-action="Index">Crisis resources</a></li>
+                    }
                 </ul>
 
                 @if (User.Identity?.IsAuthenticated == true)

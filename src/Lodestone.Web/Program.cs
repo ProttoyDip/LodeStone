@@ -10,7 +10,9 @@ using Lodestone.Jobs.Scheduling;
 using Lodestone.ML;
 using Lodestone.Reporting;
 using Lodestone.Web;
+using Lodestone.Web.Health;
 using Lodestone.Web.Hubs;
+using Lodestone.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 var useHangfire = builder.Configuration.GetValue("Startup:UseHangfire", true);
@@ -30,15 +32,18 @@ if (builder.Environment.IsDevelopment())
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddHealthChecks()
+    .AddCheck<RiskModelHealthCheck>("risk-model", tags: ["ready", "ml"]);
 
 // ---- Authorization policies (defined in Infrastructure/Identity) ----
 builder.Services.AddAuthorization(IdentityPolicySeeder.AddPolicies);
 
 // ---- Clean Architecture layer registrations ----
 builder.Services.AddApplication();
+// Override Application's transport-neutral no-op with Web's authorized SignalR refresh signal.
+builder.Services.AddScoped<IRiskQueueNotifier, SignalRRiskQueueNotifier>();
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddMachineLearning(
-    Path.Combine(builder.Environment.ContentRootPath, "..", "Lodestone.ML", "SavedModels", "risk-model.zip"));
+builder.Services.AddMachineLearning(builder.Configuration, builder.Environment.ContentRootPath);
 if (useHangfire)
 {
     builder.Services.AddJobs(builder.Configuration);
@@ -76,6 +81,26 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 app.MapRazorPages();
+app.MapHealthChecks("/health/ml", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ml"),
+    ResponseWriter = static async (context, report) =>
+    {
+        context.Response.ContentType = "application/json; charset=utf-8";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            status = report.Status.ToString(),
+            checks = report.Entries.ToDictionary(
+                entry => entry.Key,
+                entry => new
+                {
+                    status = entry.Value.Status.ToString(),
+                    description = entry.Value.Description,
+                    data = entry.Value.Data
+                })
+        }, context.RequestAborted);
+    }
+});
 app.MapHub<CounselorQueueHub>(CounselorQueueHub.Route);
 app.MapHub<PeerChatHub>(PeerChatHub.Route);
 app.MapHub<AdminNotificationHub>(AdminNotificationHub.Route);
@@ -118,7 +143,20 @@ using (var scope = app.Services.CreateScope())
     if (useHangfire)
     {
         var recurringJobs = services.GetRequiredService<IRecurringJobManager>();
-        RecurringJobScheduler.RegisterRecurringJobs(recurringJobs);
+        var riskModelStatus = services
+            .GetRequiredService<Lodestone.ML.Models.IRiskModelStatusProvider>()
+            .Status;
+        RecurringJobScheduler.RegisterRecurringJobs(
+            recurringJobs,
+            builder.Configuration,
+            riskModelStatus.IsAvailable);
+
+        if (riskModelStatus.IsEnabled && !riskModelStatus.IsAvailable)
+        {
+            app.Logger.LogError(
+                "Weekly risk scoring was not scheduled because the configured model is unavailable: {Reason}",
+                riskModelStatus.UnavailableReason);
+        }
     }
 }
 
