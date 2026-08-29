@@ -1,0 +1,238 @@
+@model Lodestone.Web.ViewModels.Volunteer.VolunteerApplicationViewModel
+@{
+    ViewData["Title"] = "Become a Volunteer";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/volunteer.css" asp-append-version="true" />
+}
+
+<div class="volunteer-page">
+
+    @* ============================================================= Hero ==== *@
+    <section class="volunteer-hero" aria-labelledby="volunteer-title">
+        <div class="ls-shell volunteer-hero__grid">
+            <div class="volunteer-hero__copy">
+                <p class="volunteer-kicker">
+                    <span class="volunteer-kicker__dot" aria-hidden="true"></span>
+                    <span class="mono-label">Peer support &middot; Community care</span>
+                </p>
+                <h1 id="volunteer-title">Lend your time.<br>Lighten someone&rsquo;s load.</h1>
+                <p class="volunteer-hero__lead">
+                    Volunteers are the calm presence behind Lodestone&rsquo;s peer forum — 
+                    moderating discussions, triaging concerns, and making sure every student 
+                    feels heard in a safe space.
+                </p>
+                <div class="volunteer-hero__cta">
+                    <a class="ls-btn ls-btn--clay" href="#apply">Apply now</a>
+                    <a class="link-underline" href="#how-it-works">How it works <span class="arrow" aria-hidden="true">&rarr;</span></a>
+                </div>
+            </div>
+            <div class="volunteer-hero__visual" aria-hidden="true">
+                <div class="volunteer-orbit">
+                    <div class="volunteer-orbit__ring"></div>
+                    <div class="volunteer-card volunteer-card--main">
+                        <span class="volunteer-card__label">Forum moderation</span>
+                        <p>Keep discussions thoughtful and safe</p>
+                    </div>
+                    <div class="volunteer-card volunteer-card--support">
+                        <span class="volunteer-card__label">Triage &amp; review</span>
+                        <p>Route concerns with care</p>
+                    </div>
+                    <div class="volunteer-chip">Peer-first</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    @* ===================================================== Benefits ==== *@
+    <section class="volunteer-section" aria-labelledby="benefits-title">
+        <div class="ls-shell">
+            <div class="sec-head reveal">
+                <span class="sec-head__index">01 &middot; Why volunteer</span>
+                <h2 id="benefits-title">Small actions, real impact.</h2>
+                <p>Volunteering with Lodestone is a chance to make a tangible difference in your community&rsquo;s wellbeing.</p>
+            </div>
+
+            <div class="volunteer-benefits">
+                <article class="volunteer-benefit reveal">
+                    <span class="volunteer-benefit__no">01</span>
+                    <h3>Support peers directly</h3>
+                    <p>Help create a space where students can share experiences and find encouragement without fear of judgement.</p>
+                </article>
+                <article class="volunteer-benefit reveal">
+                    <span class="volunteer-benefit__no">02</span>
+                    <h3>Develop transferable skills</h3>
+                    <p>Build communication, conflict resolution, and community management skills that are valued everywhere.</p>
+                </article>
+                <article class="volunteer-benefit reveal">
+                    <span class="volunteer-benefit__no">03</span>
+                    <h3>Be part of something larger</h3>
+                    <p>Join a team that believes support should be proactive, private, and genuinely helpful — not just a buzzword.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    @* ============================================== Responsibilities ==== *@
+    <section class="volunteer-section volunteer-section--alt" aria-labelledby="responsibilities-title">
+        <div class="ls-shell">
+            <div class="sec-head reveal">
+                <span class="sec-head__index">02 &middot; What you&rsquo;ll do</span>
+                <h2 id="responsibilities-title">Responsibilities.</h2>
+                <p>Volunteers keep the peer forum a safe, supportive place. Here is what that looks like in practice.</p>
+            </div>
+
+            <div class="volunteer-responsibilities">
+                <article class="volunteer-responsibility reveal">
+                    <span class="volunteer-responsibility__marker" aria-hidden="true"></span>
+                    <span class="mono-label volunteer-responsibility__label">Duty 01</span>
+                    <h3>Moderate forum discussions</h3>
+                    <p>Review posts and comments against community guidelines. Approve healthy discussions and remove content that could harm or distress others.</p>
+                </article>
+                <article class="volunteer-responsibility reveal">
+                    <span class="volunteer-responsibility__marker" aria-hidden="true"></span>
+                    <span class="mono-label volunteer-responsibility__label">Duty 02</span>
+                    <h3>Triage flagged content</h3>
+                    <p>When a post is reported, assess the concern carefully and decide whether it should remain available to the community or be removed.</p>
+                </article>
+                <article class="volunteer-responsibility reveal">
+                    <span class="volunteer-responsibility__marker" aria-hidden="true"></span>
+                    <span class="mono-label volunteer-responsibility__label">Duty 03</span>
+                    <h3>Uphold privacy and respect</h3>
+                    <p>Protect the confidentiality of everyone in the forum. Never share personal details, and always lead with empathy.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    @* =============================================== How it works ==== *@
+    <section class="volunteer-section" id="how-it-works" aria-labelledby="how-title">
+        <div class="ls-shell">
+            <div class="sec-head reveal">
+                <span class="sec-head__index">03 &middot; How it works</span>
+                <h2 id="how-title">From application to impact.</h2>
+                <p>Becoming a Lodestone volunteer is straightforward. Here are the four steps.</p>
+            </div>
+
+            <div class="volunteer-steps">
+                <span class="volunteer-steps__rail" aria-hidden="true"></span>
+                <article class="volunteer-step reveal">
+                    <span class="volunteer-step__marker" aria-hidden="true"></span>
+                    <span class="mono-label volunteer-step__label">Step 01</span>
+                    <h3>Submit your application</h3>
+                    <p>Fill in the form below with your details and a short note about why you want to volunteer.</p>
+                </article>
+                <article class="volunteer-step reveal">
+                    <span class="volunteer-step__marker" aria-hidden="true"></span>
+                    <span class="mono-label volunteer-step__label">Step 02</span>
+                    <h3>Admin review</h3>
+                    <p>An administrator will review your application to ensure it aligns with the community&rsquo;s values and safety standards.</p>
+                </article>
+                <article class="volunteer-step reveal">
+                    <span class="volunteer-step__marker" aria-hidden="true"></span>
+                    <span class="mono-label volunteer-step__label">Step 03</span>
+                    <h3>Account activation</h3>
+                    <p>Once approved, your volunteer account is activated and you can sign in to the moderation tools.</p>
+                </article>
+                <article class="volunteer-step reveal">
+                    <span class="volunteer-step__marker" aria-hidden="true"></span>
+                    <span class="mono-label volunteer-step__label">Step 04</span>
+                    <h3>Start supporting</h3>
+                    <p>Access the peer forum and moderation queue. Review flagged posts, approve healthy discussions, and help keep the community safe.</p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    @* ============================================ Application form ==== *@
+    <section class="volunteer-section volunteer-section--form" id="apply" aria-labelledby="apply-title">
+        <div class="ls-shell">
+            <div class="sec-head reveal">
+                <span class="sec-head__index">04 &middot; Apply</span>
+                <h2 id="apply-title">Ready to help?</h2>
+                <p>Complete the form below and we&rsquo;ll be in touch once your application has been reviewed.</p>
+            </div>
+
+            <div class="volunteer-form-wrap reveal">
+                @if (TempData["VolunteerSuccess"] is string success)
+                {
+                    <div class="volunteer-alert volunteer-alert--success" role="status">
+                        <span class="volunteer-alert__mark" aria-hidden="true">
+                            <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" /></svg>
+                        </span>
+                        @success
+                    </div>
+                }
+
+                <form asp-action="Apply" method="post" class="volunteer-form" data-disable-on-submit>
+                    <div asp-validation-summary="ModelOnly" class="volunteer-alert volunteer-alert--error" role="alert"></div>
+
+                    <div class="volunteer-field">
+                        <label class="volunteer-label" asp-for="FullName"></label>
+                        <input class="volunteer-input" asp-for="FullName" autocomplete="name" placeholder="Alex Rahman" autofocus />
+                        <span class="volunteer-field-error" asp-validation-for="FullName"></span>
+                    </div>
+
+                    <div class="volunteer-field">
+                        <label class="volunteer-label" asp-for="Email">Email</label>
+                        <input class="volunteer-input" asp-for="Email" autocomplete="email" placeholder="you@university.edu" />
+                        <span class="volunteer-field-error" asp-validation-for="Email"></span>
+                    </div>
+
+                    <div class="volunteer-field">
+                        <label class="volunteer-label" asp-for="Password">Password</label>
+                        <input class="volunteer-input" asp-for="Password" autocomplete="new-password" placeholder="At least 8 characters" />
+                        <span class="volunteer-field-error" asp-validation-for="Password"></span>
+                    </div>
+
+                    <div class="volunteer-field">
+                        <label class="volunteer-label" asp-for="ConfirmPassword">Confirm password</label>
+                        <input class="volunteer-input" asp-for="ConfirmPassword" autocomplete="new-password" placeholder="Re-enter your password" />
+                        <span class="volunteer-field-error" asp-validation-for="ConfirmPassword"></span>
+                    </div>
+
+                    <div class="volunteer-field">
+                        <label class="volunteer-label" asp-for="Bio">Tell us about yourself</label>
+                        <textarea class="volunteer-input volunteer-textarea" asp-for="Bio" rows="5" placeholder="Share your motivation for volunteering and any relevant experience."></textarea>
+                        <span class="volunteer-field-error" asp-validation-for="Bio"></span>
+                    </div>
+
+                    <div class="volunteer-consent">
+                        <label class="volunteer-check">
+                            <input asp-for="AcceptPrivacy" />
+                            <span>
+                                <strong>Privacy commitment <em>Required</em></strong>
+                                I agree to Lodestone&rsquo;s privacy commitment for account and support services.
+                            </span>
+                        </label>
+                        <span class="volunteer-field-error" asp-validation-for="AcceptPrivacy"></span>
+                    </div>
+
+                    <button class="ls-btn ls-btn--clay volunteer-submit" type="submit">Submit application</button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    @* ===================================================== Footer ==== *@
+    <footer class="volunteer-footer">
+        <div class="ls-shell volunteer-footer__inner">
+            <a class="ls-brand" asp-controller="Home" asp-action="Index" aria-label="Lodestone home">
+                Lodestone<span class="ls-brand__dot" aria-hidden="true"></span>
+            </a>
+            <ul class="volunteer-footer__links">
+                <li><a asp-controller="Home" asp-action="Index">Home</a></li>
+                <li><a asp-controller="CrisisResource" asp-action="Index">Crisis resources</a></li>
+                <li><a asp-controller="Account" asp-action="Login">Sign in</a></li>
+                <li><a asp-controller="Account" asp-action="Register">Get started</a></li>
+            </ul>
+            <small>&copy; @DateTime.Now.Year Lodestone &middot; Privacy-first student wellbeing</small>
+        </div>
+    </footer>
+
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

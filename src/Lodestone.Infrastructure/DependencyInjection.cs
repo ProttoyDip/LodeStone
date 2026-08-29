@@ -9,6 +9,8 @@ using Lodestone.Shared.Constants;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.DataProtection;
+using System.IO;
 
 namespace Lodestone.Infrastructure;
 
@@ -47,7 +49,10 @@ public static class DependencyInjection
         services.AddScoped<IBookingRepository, BookingRepository>();
         services.AddScoped<IForumRepository, ForumRepository>();
 
-        services.AddDataProtection();
+        services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(
+                AppContext.BaseDirectory,
+                configuration.GetValue<string>("Encryption:KeyRingPath") ?? "keys")));
         services.AddScoped<DataProtectionService>();
 
         return services;

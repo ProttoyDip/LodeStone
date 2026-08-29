@@ -1,0 +1,51 @@
+## .NET / Visual Studio
+bin/
+obj/
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+.vscode/
+
+## Build / publish output
+artifacts/
+publish/
+deployment/publish/*
+!deployment/publish/.gitkeep
+
+## ML artifacts (keep folders, ignore heavy binaries/data)
+src/Lodestone.ML/SavedModels/*
+!src/Lodestone.ML/SavedModels/.gitkeep
+src/Lodestone.ML/Data/*
+!src/Lodestone.ML/Data/.gitkeep
+src/Lodestone.ML/Reports/*
+!src/Lodestone.ML/Reports/.gitkeep
+src/Lodestone.Web/App_Data/ml/*
+!src/Lodestone.Web/App_Data/ml/.gitkeep
+
+## Database backups
+database/backup/*
+!database/backup/.gitkeep
+
+## Secrets
+appsettings.*.Local.json
+*.pfx
+keys/
+
+## Tests / tools / docs (not needed in Docker context)
+tests/
+tools/
+docs/
+
+## IDE
+.zed/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Logs
+*.err.log
+*.out.log
+UpgradeLog.htm
