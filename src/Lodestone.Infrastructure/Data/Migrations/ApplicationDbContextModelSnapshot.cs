@@ -53,9 +53,12 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StudentProfileId");
+                    b.HasIndex("StudentProfileId", "OccurredAtUtc");
 
-                    b.ToTable("ActivityLogs");
+                    b.ToTable("ActivityLogs", t =>
+                        {
+                            t.HasCheckConstraint("CK_ActivityLogs_NonNegativeCounts", "[LoginCount] >= 0 AND [ForumInteractions] >= 0 AND [CourseInteractions] >= 0 AND [DaysSinceLastAccess] >= 0 AND [AssignmentsLateCount] >= 0");
+                        });
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.ApplicationUser", b =>
@@ -197,12 +200,18 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTime>("StartUtc")
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CounselorProfileId");
+                    b.HasIndex("CounselorProfileId", "StartUtc");
 
                     b.ToTable("CounselorAvailabilitySlots");
                 });
@@ -249,9 +258,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("AvailabilitySlotId");
 
-                    b.HasIndex("CounselorProfileId");
+                    b.HasIndex("CounselorProfileId", "ScheduledForUtc");
 
-                    b.HasIndex("StudentProfileId");
+                    b.HasIndex("StudentProfileId", "ScheduledForUtc");
 
                     b.ToTable("CounselorBookings");
                 });
@@ -697,6 +706,171 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.ToTable("Nudges");
                 });
 
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskFeatureSnapshot", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<float>("ActiveDayRate")
+                        .HasColumnType("real");
+
+                    b.Property<float>("ActivitySpanDays")
+                        .HasColumnType("real");
+
+                    b.Property<float>("CourseInteractionCount")
+                        .HasColumnType("real");
+
+                    b.Property<string>("CourseKey")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<float>("DaysSinceLastAccess")
+                        .HasColumnType("real");
+
+                    b.Property<string>("FeatureSchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<float>("ForumInteractionCount")
+                        .HasColumnType("real");
+
+                    b.Property<float>("LateOrMissingAssignmentCount")
+                        .HasColumnType("real");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ObservedDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceFileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("nvarchar(260)");
+
+                    b.Property<string>("SourceFileSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int>("StudentProfileId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("WindowEndUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeatureSchemaVersion", "WindowEndUtc");
+
+                    b.HasIndex("StudentProfileId", "CourseKey", "WindowEndUtc", "FeatureSchemaVersion")
+                        .IsUnique()
+                        .HasDatabaseName("UX_RiskFeatureSnapshots_Student_Course_Window_Schema");
+
+                    b.ToTable("RiskFeatureSnapshots", t =>
+                        {
+                            t.HasCheckConstraint("CK_RiskFeatureSnapshots_Features", "[ActiveDayRate] >= 0 AND [ActiveDayRate] <= 1 AND [ActivitySpanDays] >= 0 AND [ActivitySpanDays] <= [ObservedDays] AND [DaysSinceLastAccess] >= 0 AND [DaysSinceLastAccess] <= [ObservedDays] AND [ForumInteractionCount] >= 0 AND [CourseInteractionCount] >= 0 AND [LateOrMissingAssignmentCount] >= 0");
+
+                            t.HasCheckConstraint("CK_RiskFeatureSnapshots_ObservedDays", "[ObservedDays] > 0 AND [ObservedDays] <= 365");
+                        });
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskMonitoringConsent", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ConsentedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsConsented")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("StudentProfileId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("WithdrawnAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StudentProfileId")
+                        .IsUnique();
+
+                    b.ToTable("RiskMonitoringConsents", t =>
+                        {
+                            t.HasCheckConstraint("CK_RiskMonitoringConsents_State", "[IsConsented] = 0 OR ([ConsentedAtUtc] IS NOT NULL AND [WithdrawnAtUtc] IS NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskMonitoringConsentHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ChangedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("IsConsented")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("StudentProfileId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StudentProfileId", "ChangedAtUtc");
+
+                    b.ToTable("RiskMonitoringConsentHistory");
+                });
+
             modelBuilder.Entity("Lodestone.Domain.Entities.RiskQueueEntry", b =>
                 {
                     b.Property<int>("Id")
@@ -714,6 +888,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<bool>("IsResolved")
                         .HasColumnType("bit");
 
+                    b.Property<DateTime>("LastSignaledAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("Level")
                         .HasColumnType("int");
 
@@ -727,21 +904,43 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("ResolvedByUserId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<int>("RiskScoreId")
                         .HasColumnType("int");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<int>("StudentProfileId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TriggerRiskScoreId")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("RiskScoreId");
 
-                    b.HasIndex("StudentProfileId");
+                    b.HasIndex("StudentProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_RiskQueueEntries_OneOpenPerStudent")
+                        .HasFilter("[IsResolved] = 0");
 
-                    b.ToTable("RiskQueueEntries");
+                    b.HasIndex("TriggerRiskScoreId");
+
+                    b.HasIndex("IsResolved", "Level", "LastSignaledAtUtc");
+
+                    b.ToTable("RiskQueueEntries", t =>
+                        {
+                            t.HasCheckConstraint("CK_RiskQueueEntries_Level", "[Level] >= 0 AND [Level] <= 3");
+
+                            t.HasCheckConstraint("CK_RiskQueueEntries_Resolution", "([IsResolved] = 0 AND [ResolvedAtUtc] IS NULL AND [ResolvedByUserId] IS NULL) OR ([IsResolved] = 1 AND [ResolvedAtUtc] IS NOT NULL AND [ResolvedByUserId] IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.RiskScore", b =>
@@ -752,17 +951,29 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CourseKey")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("FeatureSchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<int>("Level")
                         .HasColumnType("int");
 
                     b.Property<string>("ModelVersion")
-                        .HasColumnType("nvarchar(max)");
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<DateTime?>("ModifiedAtUtc")
                         .HasColumnType("datetime2");
@@ -773,17 +984,182 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<double>("Probability")
                         .HasColumnType("float");
 
+                    b.Property<int>("RiskFeatureSnapshotId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RiskScoringRunId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("ScoredAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<int>("StudentProfileId")
                         .HasColumnType("int");
 
+                    b.Property<DateTime>("WindowEndUtc")
+                        .HasColumnType("datetime2");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("StudentProfileId");
+                    b.HasIndex("RiskScoringRunId");
 
-                    b.ToTable("RiskScores");
+                    b.HasIndex("RiskFeatureSnapshotId", "ModelVersion")
+                        .IsUnique()
+                        .HasDatabaseName("UX_RiskScores_Snapshot_Model");
+
+                    b.HasIndex("StudentProfileId", "ScoredAtUtc");
+
+                    b.ToTable("RiskScores", t =>
+                        {
+                            t.HasCheckConstraint("CK_RiskScores_Level", "[Level] >= 0 AND [Level] <= 3");
+
+                            t.HasCheckConstraint("CK_RiskScores_Probability", "[Probability] >= 0 AND [Probability] <= 1");
+                        });
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskScoringRun", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CandidateCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("FailedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FailureSummary")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("FeatureSchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ModelVersion")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("QueueCreatedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("QueueEscalatedCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RunKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ScoredCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunKey")
+                        .IsUnique();
+
+                    b.HasIndex("StartedAtUtc");
+
+                    b.ToTable("RiskScoringRuns", t =>
+                        {
+                            t.HasCheckConstraint("CK_RiskScoringRuns_Counts", "[CandidateCount] >= 0 AND [ScoredCount] >= 0 AND [SkippedCount] >= 0 AND [FailedCount] >= 0 AND [QueueCreatedCount] >= 0 AND [QueueEscalatedCount] >= 0");
+
+                            t.HasCheckConstraint("CK_RiskScoringRuns_Status", "[Status] >= 0 AND [Status] <= 4");
+                        });
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.StudentNumberClaim", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ClaimedStudentNumber")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ReviewedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StudentProfileId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("SubmittedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StudentProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_StudentNumberClaims_OnePendingPerStudent")
+                        .HasFilter("[Status] = 0");
+
+                    b.HasIndex("ClaimedStudentNumber", "Status");
+
+                    b.HasIndex("Status", "SubmittedAtUtc");
+
+                    b.ToTable("StudentNumberClaims", t =>
+                        {
+                            t.HasCheckConstraint("CK_StudentNumberClaims_Review", "([Status] = 0 AND [ReviewedAtUtc] IS NULL AND [ReviewedByUserId] IS NULL) OR ([Status] IN (1, 2) AND [ReviewedAtUtc] IS NOT NULL AND [ReviewedByUserId] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_StudentNumberClaims_Status", "[Status] >= 0 AND [Status] <= 2");
+                        });
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.StudentProfile", b =>
@@ -810,16 +1186,24 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Program")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("StudentNumber")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("UserId")
                         .IsRequired()
+                        .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("StudentNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_StudentProfiles_StudentNumber")
+                        .HasFilter("[StudentNumber] IS NOT NULL");
 
                     b.HasIndex("UserId")
                         .IsUnique();
@@ -1122,6 +1506,39 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Navigation("StudentProfile");
                 });
 
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskFeatureSnapshot", b =>
+                {
+                    b.HasOne("Lodestone.Domain.Entities.StudentProfile", "StudentProfile")
+                        .WithMany("RiskFeatureSnapshots")
+                        .HasForeignKey("StudentProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StudentProfile");
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskMonitoringConsent", b =>
+                {
+                    b.HasOne("Lodestone.Domain.Entities.StudentProfile", "StudentProfile")
+                        .WithOne("RiskMonitoringConsent")
+                        .HasForeignKey("Lodestone.Domain.Entities.RiskMonitoringConsent", "StudentProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StudentProfile");
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskMonitoringConsentHistory", b =>
+                {
+                    b.HasOne("Lodestone.Domain.Entities.StudentProfile", "StudentProfile")
+                        .WithMany("RiskMonitoringConsentHistory")
+                        .HasForeignKey("StudentProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StudentProfile");
+                });
+
             modelBuilder.Entity("Lodestone.Domain.Entities.RiskQueueEntry", b =>
                 {
                     b.HasOne("Lodestone.Domain.Entities.RiskScore", "RiskScore")
@@ -1131,20 +1548,53 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.HasOne("Lodestone.Domain.Entities.StudentProfile", "StudentProfile")
-                        .WithMany()
+                        .WithMany("RiskQueueEntries")
                         .HasForeignKey("StudentProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Lodestone.Domain.Entities.RiskScore", "TriggerRiskScore")
+                        .WithMany()
+                        .HasForeignKey("TriggerRiskScoreId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("RiskScore");
 
                     b.Navigation("StudentProfile");
+
+                    b.Navigation("TriggerRiskScore");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.RiskScore", b =>
                 {
+                    b.HasOne("Lodestone.Domain.Entities.RiskFeatureSnapshot", "RiskFeatureSnapshot")
+                        .WithMany("RiskScores")
+                        .HasForeignKey("RiskFeatureSnapshotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Lodestone.Domain.Entities.RiskScoringRun", "RiskScoringRun")
+                        .WithMany("RiskScores")
+                        .HasForeignKey("RiskScoringRunId");
+
                     b.HasOne("Lodestone.Domain.Entities.StudentProfile", "StudentProfile")
                         .WithMany("RiskScores")
+                        .HasForeignKey("StudentProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RiskFeatureSnapshot");
+
+                    b.Navigation("RiskScoringRun");
+
+                    b.Navigation("StudentProfile");
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.StudentNumberClaim", b =>
+                {
+                    b.HasOne("Lodestone.Domain.Entities.StudentProfile", "StudentProfile")
+                        .WithMany("StudentNumberClaims")
                         .HasForeignKey("StudentProfileId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -1258,11 +1708,31 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Navigation("Flags");
                 });
 
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskFeatureSnapshot", b =>
+                {
+                    b.Navigation("RiskScores");
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.RiskScoringRun", b =>
+                {
+                    b.Navigation("RiskScores");
+                });
+
             modelBuilder.Entity("Lodestone.Domain.Entities.StudentProfile", b =>
                 {
                     b.Navigation("ActivityLogs");
 
+                    b.Navigation("RiskFeatureSnapshots");
+
+                    b.Navigation("RiskMonitoringConsent");
+
+                    b.Navigation("RiskMonitoringConsentHistory");
+
+                    b.Navigation("RiskQueueEntries");
+
                     b.Navigation("RiskScores");
+
+                    b.Navigation("StudentNumberClaims");
                 });
 #pragma warning restore 612, 618
         }

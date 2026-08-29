@@ -1,0 +1,34 @@
+@model Lodestone.Application.DTOs.Counselor.CounselorAvailabilityPageDto
+@{
+    ViewData["Title"] = "Counselor Availability";
+}
+@section Styles { <link rel="stylesheet" href="~/css/booking.css" asp-append-version="true" /> }
+
+<div class="booking-page booking-page--narrow">
+    <header class="booking-hero"><div><p class="booking-kicker">Counselor workspace</p><h1>Published availability</h1><p>Welcome, @Model.CounselorName. Students can immediately confirm any open time you publish.</p></div></header>
+    @if (TempData["Success"] is string success) { <div class="booking-alert booking-alert--success" role="status">@success</div> }
+    @if (TempData["Error"] is string error) { <div class="booking-alert booking-alert--error" role="alert">@error</div> }
+
+    <section class="booking-section" aria-labelledby="publish-title">
+        <div class="booking-section__head"><div><p class="booking-kicker">Add time</p><h2 id="publish-title">Publish a slot</h2></div></div>
+        <form asp-action="Publish" method="post" class="booking-form" data-availability-form>
+            <div class="slot-grid">
+                <label class="booking-field"><span>Starts</span><input type="datetime-local" data-start-local required /></label>
+                <label class="booking-field"><span>Ends</span><input type="datetime-local" data-end-local required /></label>
+            </div>
+            <input type="hidden" name="StartUtc" data-start-utc /><input type="hidden" name="EndUtc" data-end-utc />
+            <p class="booking-muted">Slots must be in the future, last 30–120 minutes, and not overlap another published time.</p>
+            <button class="booking-btn booking-btn--primary" type="submit">Publish availability</button>
+        </form>
+    </section>
+
+    <section class="booking-section" aria-labelledby="slots-title">
+        <div class="booking-section__head"><div><p class="booking-kicker">Schedule</p><h2 id="slots-title">Upcoming slots</h2></div></div>
+        @if (Model.Slots.Count == 0) { <div class="booking-empty"><h3>No future slots</h3><p>Publish a time above when you are ready to accept appointments.</p></div> }
+        else
+        {
+            <div class="booking-list">@foreach (var slot in Model.Slots) { <article class="booking-item"><div><span class="booking-status @(slot.IsBooked ? "booking-status--confirmed" : "")">@(slot.IsBooked ? "Booked" : "Open")</span><h3><time datetime="@slot.StartUtc.ToString("O")" data-local-date>@slot.StartUtc.ToString("MMM d, yyyy")</time></h3></div><div class="booking-time"><time datetime="@slot.StartUtc.ToString("O")" data-local-time>@slot.StartUtc.ToString("HH:mm")</time>–<time datetime="@slot.EndUtc.ToString("O")" data-local-time>@slot.EndUtc.ToString("HH:mm")</time></div>@if (!slot.IsBooked) { <form asp-action="Remove" method="post" data-confirm="Remove this published time?"><input type="hidden" name="id" value="@slot.Id" /><button class="booking-btn booking-btn--danger" type="submit">Remove</button></form> }</article> }</div>
+        }
+    </section>
+</div>
+@section Scripts { <script src="~/js/booking.js" asp-append-version="true" defer></script><script src="~/js/counselor-availability.js" asp-append-version="true" defer></script> }

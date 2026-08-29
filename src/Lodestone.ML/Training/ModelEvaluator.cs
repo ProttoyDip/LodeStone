@@ -1,15 +1,151 @@
 using Lodestone.ML.Models;
 using Microsoft.ML;
+using Microsoft.ML.Data;
 
 namespace Lodestone.ML.Training;
 
-/// <summary>Computes metrics on a held-out test split.</summary>
-public class ModelEvaluator
+/// <summary>Scores held-out rows, chooses a constrained validation threshold and reports test metrics.</summary>
+public sealed class ModelEvaluator
 {
     private readonly MLContext _mlContext;
 
     public ModelEvaluator(MLContext mlContext) => _mlContext = mlContext;
 
+    public float SelectThreshold(
+        ITransformer model,
+        IDataView validationData,
+        double minimumRecall = 0.70,
+        double minimumPrecision = 0.30)
+    {
+        var rows = Score(model, validationData);
+        ValidateBothClasses(rows, "validation");
+
+        var candidates = rows.Select(row => row.Probability)
+            .Append(0f)
+            .Distinct()
+            .OrderBy(value => value)
+            .ToArray();
+
+        ThresholdMetrics? best = null;
+        foreach (var threshold in candidates)
+        {
+            var metrics = Calculate(rows, threshold);
+            if (metrics.Recall + 1e-12 < minimumRecall || metrics.Precision + 1e-12 < minimumPrecision)
+                continue;
+
+            if (best is null
+                || metrics.F1 > best.F1 + 1e-12
+                || (NearlyEqual(metrics.F1, best.F1) && metrics.Recall > best.Recall + 1e-12)
+                || (NearlyEqual(metrics.F1, best.F1) && NearlyEqual(metrics.Recall, best.Recall)
+                    && metrics.Precision > best.Precision + 1e-12)
+                || (NearlyEqual(metrics.F1, best.F1) && NearlyEqual(metrics.Recall, best.Recall)
+                    && NearlyEqual(metrics.Precision, best.Precision) && threshold > best.Threshold))
+            {
+                best = metrics;
+            }
+        }
+
+        if (best is null)
+        {
+            throw new ModelQualityGateException(
+                $"No validation threshold satisfies recall >= {minimumRecall:F2} and precision >= {minimumPrecision:F2}.");
+        }
+
+        return best.Threshold;
+    }
+
     public ModelMetrics Evaluate(ITransformer model, IDataView testData)
-        => throw new NotImplementedException();
+        => Evaluate(model, testData, 0.5f);
+
+    public ModelMetrics Evaluate(ITransformer model, IDataView data, float threshold, string? modelVersion = null)
+    {
+        var scoredData = model.Transform(data);
+        var rows = _mlContext.Data.CreateEnumerable<ScoredObservation>(scoredData, reuseRowObject: false).ToArray();
+        ValidateBothClasses(rows, "evaluation");
+        var thresholdMetrics = Calculate(rows, threshold);
+        var builtIn = _mlContext.BinaryClassification.Evaluate(
+            scoredData,
+            labelColumnName: "Label",
+            scoreColumnName: nameof(RiskPrediction.Score),
+            probabilityColumnName: nameof(RiskPrediction.Probability));
+
+        return new ModelMetrics
+        {
+            Accuracy = thresholdMetrics.Accuracy,
+            AreaUnderRocCurve = builtIn.AreaUnderRocCurve,
+            F1Score = thresholdMetrics.F1,
+            Precision = thresholdMetrics.Precision,
+            Recall = thresholdMetrics.Recall,
+            DecisionThreshold = threshold,
+            RowCount = rows.Length,
+            PositiveCount = rows.Count(row => row.Label),
+            NegativeCount = rows.Count(row => !row.Label),
+            TruePositive = thresholdMetrics.TruePositive,
+            FalsePositive = thresholdMetrics.FalsePositive,
+            TrueNegative = thresholdMetrics.TrueNegative,
+            FalseNegative = thresholdMetrics.FalseNegative,
+            ModelVersion = modelVersion
+        };
+    }
+
+    public IReadOnlyList<ScoredObservation> Score(ITransformer model, IDataView data)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(data);
+        return _mlContext.Data.CreateEnumerable<ScoredObservation>(model.Transform(data), reuseRowObject: false).ToArray();
+    }
+
+    private static ThresholdMetrics Calculate(IReadOnlyList<ScoredObservation> rows, float threshold)
+    {
+        var tp = 0;
+        var fp = 0;
+        var tn = 0;
+        var fn = 0;
+        foreach (var row in rows)
+        {
+            var predicted = row.Probability >= threshold;
+            if (predicted && row.Label) tp++;
+            else if (predicted) fp++;
+            else if (row.Label) fn++;
+            else tn++;
+        }
+
+        var precision = tp + fp == 0 ? 0d : tp / (double)(tp + fp);
+        var recall = tp + fn == 0 ? 0d : tp / (double)(tp + fn);
+        var f1 = precision + recall == 0 ? 0d : 2 * precision * recall / (precision + recall);
+        var accuracy = rows.Count == 0 ? 0d : (tp + tn) / (double)rows.Count;
+        return new ThresholdMetrics(threshold, accuracy, precision, recall, f1, tp, fp, tn, fn);
+    }
+
+    private static void ValidateBothClasses(IReadOnlyList<ScoredObservation> rows, string partition)
+    {
+        if (rows.Count == 0)
+            throw new InvalidDataException($"The {partition} partition contains no observations.");
+        if (!rows.Any(row => row.Label) || !rows.Any(row => !row.Label))
+            throw new InvalidDataException($"The {partition} partition must contain both withdrawal and non-withdrawal observations.");
+        if (rows.Any(row => !float.IsFinite(row.Probability) || row.Probability is < 0 or > 1))
+            throw new InvalidDataException($"The model produced an invalid probability in the {partition} partition.");
+    }
+
+    private static bool NearlyEqual(double left, double right) => Math.Abs(left - right) <= 1e-12;
+
+    private sealed record ThresholdMetrics(
+        float Threshold,
+        double Accuracy,
+        double Precision,
+        double Recall,
+        double F1,
+        int TruePositive,
+        int FalsePositive,
+        int TrueNegative,
+        int FalseNegative);
+}
+
+public sealed class ScoredObservation
+{
+    [ColumnName("Label")]
+    public bool Label { get; set; }
+
+    public float Probability { get; set; }
+    public float Score { get; set; }
 }

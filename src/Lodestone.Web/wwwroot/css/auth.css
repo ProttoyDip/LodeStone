@@ -160,6 +160,12 @@ body.auth {
 .auth__form { display: grid; gap: 1.1rem; }
 
 .auth__field { display: grid; gap: 0.4rem; }
+
+.auth__field-help {
+    color: var(--muted);
+    font-size: .72rem;
+    line-height: 1.45;
+}
 .auth__label {
     font-size: 0.82rem;
     font-weight: 600;
@@ -206,10 +212,86 @@ body.auth {
 }
 .auth__check input[type="checkbox"] {
     margin-top: 0.15rem;
-    width: 1rem;
-    height: 1rem;
+    width: 1.15rem;
+    height: 1.15rem;
     accent-color: var(--clay);
     flex: none;
+}
+
+.auth__sr-only {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
+
+.auth__consent-group {
+    display: grid;
+    gap: .65rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.auth__consent-group legend {
+    margin-bottom: .1rem;
+    color: var(--ink-soft);
+    font-size: .82rem;
+    font-weight: 600;
+}
+
+.auth__consent-item {
+    padding: .8rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: rgba(251, 247, 239, .72);
+}
+
+.auth__consent-item--required {
+    border-color: var(--line-strong);
+}
+
+.auth__consent-item .auth__check > span {
+    display: grid;
+    gap: .28rem;
+    line-height: 1.5;
+}
+
+.auth__consent-item strong {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem;
+    color: var(--ink);
+    font-size: .88rem;
+}
+
+.auth__consent-item em {
+    padding: .08rem .34rem;
+    border-radius: var(--r-xs);
+    background: var(--paper-2);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: .61rem;
+    font-style: normal;
+    font-weight: 500;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.auth__consent-item--required em {
+    background: var(--clay-wash);
+    color: var(--clay-deep);
+}
+
+.auth__consent-item:focus-within {
+    border-color: var(--clay);
+    box-shadow: 0 0 0 3px rgba(188, 81, 56, .12);
 }
 
 /* Links */

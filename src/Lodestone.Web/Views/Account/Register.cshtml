@@ -27,6 +27,18 @@
     </div>
 
     <div class="auth__field">
+        <label class="auth__label" asp-for="StudentNumber"></label>
+        <input class="auth__input"
+               asp-for="StudentNumber"
+               autocomplete="off"
+               spellcheck="false"
+               placeholder="Your university student number"
+               aria-describedby="student-number-help" />
+        <small class="auth__field-help" id="student-number-help">Use the number shown in your university learning system. It will be submitted for Admin verification and will not connect imports until approved.</small>
+        <span class="field-validation-error" asp-validation-for="StudentNumber"></span>
+    </div>
+
+    <div class="auth__field">
         <label class="auth__label" asp-for="Password">Password</label>
         <input class="auth__input" asp-for="Password" autocomplete="new-password" placeholder="At least 8 characters" />
         <span class="field-validation-error" asp-validation-for="Password"></span>
@@ -38,11 +50,30 @@
         <span class="field-validation-error" asp-validation-for="ConfirmPassword"></span>
     </div>
 
-    <label class="auth__check">
-        <input asp-for="AcceptPrivacy" />
-        <span>I understand Lodestone reads learning signals to offer gentle support, and I agree to the <a class="auth__link" href="/Home/Privacy" target="_blank">privacy commitment</a>.</span>
-    </label>
-    <span class="field-validation-error" asp-validation-for="AcceptPrivacy"></span>
+    <fieldset class="auth__consent-group">
+        <legend>Privacy choices</legend>
+
+        <div class="auth__consent-item auth__consent-item--required">
+            <label class="auth__check">
+                <input asp-for="AcceptPrivacy" />
+                <span>
+                    <strong>Privacy commitment <em>Required</em></strong>
+                    I agree to Lodestone's <a class="auth__link" asp-controller="Home" asp-action="Index" asp-fragment="privacy" target="_blank" rel="noopener">privacy commitment<span class="auth__sr-only"> (opens in a new tab)</span></a> for account and support services.
+                </span>
+            </label>
+            <span class="field-validation-error" asp-validation-for="AcceptPrivacy"></span>
+        </div>
+
+        <div class="auth__consent-item">
+            <label class="auth__check">
+                <input asp-for="EnableRiskMonitoring" />
+                <span>
+                    <strong>Weekly support monitoring <em>Optional</em></strong>
+                    Use 28-day learning-activity summaries to identify when a counselor check-in may help. You can opt in now, but imports begin only after an Admin approves your student number. This is not a diagnosis or grade. Turning it off deletes monitoring activity logs, snapshots, scores, and support cases.
+                </span>
+            </label>
+        </div>
+    </fieldset>
 
     <button class="auth__btn" type="submit">Create account</button>
 </form>

@@ -1,0 +1,508 @@
+@model Lodestone.Web.ViewModels.Admin.RiskOperationsViewModel
+@using Lodestone.Domain.Enums
+@{
+    Layout = "~/Views/Shared/_AdminLayout.cshtml";
+    ViewData["Title"] = "Risk model operations";
+
+    var successMessage = TempData["RiskOperationsSuccess"] as string;
+    var warningMessage = TempData["RiskOperationsWarning"] as string;
+    var errorMessage = TempData["RiskOperationsError"] as string;
+    var status = Model.SnapshotStatus;
+    var latestRun = status?.LatestRun;
+
+    static string RunTone(RiskScoringRunStatus runStatus) => runStatus switch
+    {
+        RiskScoringRunStatus.Completed => "positive",
+        RiskScoringRunStatus.PartiallyCompleted => "warning",
+        RiskScoringRunStatus.Failed => "critical",
+        _ => "info"
+    };
+
+    static string FriendlyRunStatus(RiskScoringRunStatus runStatus) => runStatus switch
+    {
+        RiskScoringRunStatus.PartiallyCompleted => "Partially completed",
+        _ => runStatus.ToString()
+    };
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/risk-operations.css" asp-append-version="true" />
+}
+
+<div class="ls-admin-page risk-ops" data-risk-operations>
+    <header class="ls-admin-page-header">
+        <div class="ls-admin-page-header__content">
+            <p class="ls-admin-page-header__eyebrow">Machine learning</p>
+            <h1>Risk model operations</h1>
+            <p>Import consented students' 28-day activity snapshots, verify model readiness, and run scoring. Predictions support counselor review; they are not diagnoses or grades.</p>
+        </div>
+        <div class="ls-admin-page-actions">
+            <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Counselor" asp-action="Queue">
+                <i class="bi bi-life-preserver" aria-hidden="true"></i>
+                Support queue
+            </a>
+            <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Admin" asp-action="Index">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Dashboard
+            </a>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="ls-admin-alert ls-admin-alert--success" role="status">
+            <i class="bi bi-check-circle" aria-hidden="true"></i>
+            <span>@successMessage</span>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(warningMessage))
+    {
+        <div class="risk-ops-alert risk-ops-alert--warning" role="alert">
+            <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+            <span>@warningMessage</span>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="ls-admin-alert ls-admin-alert--error" role="alert">
+            <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+            <span>@errorMessage</span>
+        </div>
+    }
+
+    <section class="ls-admin-panel risk-identities" aria-labelledby="student-number-verification-title">
+        <header class="ls-admin-panel__header">
+            <div>
+                <p class="ls-admin-panel__eyebrow">Identity verification</p>
+                <h2 id="student-number-verification-title">Student-number claims</h2>
+                <p>Approve a number only after checking it against the university learning system. Snapshot imports match verified numbers only.</p>
+            </div>
+            <span class="risk-ops-badge @(Model.PendingStudentNumberClaims.Count > 0 ? "risk-ops-badge--warning" : "risk-ops-badge--positive")">
+                @Model.PendingStudentNumberClaims.Count pending
+            </span>
+        </header>
+        <div class="ls-admin-panel__body risk-identities__body">
+            @if (!string.IsNullOrWhiteSpace(Model.VerificationError))
+            {
+                <div class="risk-ops-alert risk-ops-alert--critical" role="alert">
+                    <i class="bi bi-person-x" aria-hidden="true"></i>
+                    <span>@Model.VerificationError</span>
+                </div>
+            }
+            else if (Model.PendingStudentNumberClaims.Count == 0)
+            {
+                <div class="risk-ops-empty">
+                    <i class="bi bi-person-check" aria-hidden="true"></i>
+                    <div><strong>No claims awaiting review</strong><span>New student-number submissions will appear here.</span></div>
+                </div>
+            }
+            else
+            {
+                <ul class="risk-identity-list" aria-label="Pending student-number claims">
+                    @foreach (var claim in Model.PendingStudentNumberClaims)
+                    {
+                        <li>
+                            <div class="risk-identity-list__student">
+                                <strong>@claim.StudentName</strong>
+                                <span>@(string.IsNullOrWhiteSpace(claim.StudentEmail) ? "Email unavailable" : claim.StudentEmail)</span>
+                            </div>
+                            <div class="risk-identity-list__number">
+                                <span>Claimed number</span>
+                                <code>@claim.ClaimedStudentNumber</code>
+                            </div>
+                            <div class="risk-identity-list__time">
+                                <span>Submitted</span>
+                                <time datetime="@claim.SubmittedAtUtc.ToString("O")" data-local-datetime>@claim.SubmittedAtUtc.ToString("dd MMM yyyy, HH:mm") UTC</time>
+                            </div>
+                            <div class="risk-identity-list__actions" aria-label="Review @claim.StudentName's claim">
+                                <form asp-action="ApproveStudentNumberClaim" method="post">
+                                    <input type="hidden" name="claimId" value="@claim.Id" />
+                                    <input type="hidden" name="rowVersionToken" value="@claim.RowVersionToken" />
+                                    <button class="ls-admin-btn ls-admin-btn--small" type="submit" data-risk-submit>
+                                        <i class="bi bi-check2" aria-hidden="true"></i>
+                                        Approve
+                                    </button>
+                                </form>
+                                <form asp-action="RejectStudentNumberClaim"
+                                      method="post"
+                                      data-risk-confirm="Reject this student-number claim? The student can correct and resubmit it.">
+                                    <input type="hidden" name="claimId" value="@claim.Id" />
+                                    <input type="hidden" name="rowVersionToken" value="@claim.RowVersionToken" />
+                                    <button class="ls-admin-btn ls-admin-btn--small ls-admin-btn--secondary" type="submit" data-risk-submit>
+                                        <i class="bi bi-x" aria-hidden="true"></i>
+                                        Reject
+                                    </button>
+                                </form>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+
+            @if (string.IsNullOrWhiteSpace(Model.VerificationError))
+            {
+                <details class="risk-verified-mappings">
+                    <summary>
+                        <span>Verified mappings</span>
+                        <span class="risk-ops-badge risk-ops-badge--info">@Model.VerifiedStudentNumbers.Count</span>
+                    </summary>
+                    <p>Reset only when a verified number is wrong or must be reassigned. Resetting disables monitoring, deletes derived monitoring data, and requires the student to submit a new claim and consent again.</p>
+                    @if (Model.VerifiedStudentNumbers.Count == 0)
+                    {
+                        <div class="risk-ops-empty">
+                            <i class="bi bi-person-vcard" aria-hidden="true"></i>
+                            <div><strong>No verified mappings</strong><span>Approved student numbers will appear here.</span></div>
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="risk-identity-list risk-identity-list--verified" aria-label="Verified student-number mappings">
+                            @foreach (var student in Model.VerifiedStudentNumbers)
+                            {
+                                <li>
+                                    <div class="risk-identity-list__student">
+                                        <strong>@student.StudentName</strong>
+                                        <span>@(string.IsNullOrWhiteSpace(student.StudentEmail) ? "Email unavailable" : student.StudentEmail)</span>
+                                    </div>
+                                    <div class="risk-identity-list__number">
+                                        <span>Verified number</span>
+                                        <code>@student.StudentNumber</code>
+                                    </div>
+                                    <div class="risk-identity-list__time">
+                                        <span>Verified</span>
+                                        @if (student.VerifiedAtUtc is { } verifiedAt)
+                                        {
+                                            <time datetime="@verifiedAt.ToString("O")" data-local-datetime>@verifiedAt.ToString("dd MMM yyyy, HH:mm") UTC</time>
+                                        }
+                                        else
+                                        {
+                                            <span>Review time unavailable</span>
+                                        }
+                                    </div>
+                                    <div class="risk-identity-list__actions">
+                                        <form asp-action="ResetVerifiedStudentNumber"
+                                              method="post"
+                                              data-risk-confirm="Reset this verified mapping? This permanently disables weekly monitoring and deletes its activity logs, imported snapshots, model scores, and support cases. The student must submit a new claim and consent again.">
+                                            <input type="hidden" name="studentProfileId" value="@student.StudentProfileId" />
+                                            <button class="ls-admin-btn ls-admin-btn--small ls-admin-btn--danger" type="submit" data-risk-submit>
+                                                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+                                                Reset mapping
+                                            </button>
+                                        </form>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </details>
+            }
+        </div>
+    </section>
+
+    <section class="risk-ops-model risk-ops-model--@Model.ModelStateTone" aria-labelledby="model-readiness-title">
+        <div class="risk-ops-model__state" aria-hidden="true">
+            <i class="bi @(Model.ModelStatus.IsAvailable ? "bi-check2-circle" : Model.ModelStatus.IsEnabled ? "bi-x-octagon" : "bi-pause-circle")"></i>
+        </div>
+        <div class="risk-ops-model__content">
+            <p class="ls-admin-panel__eyebrow">Runtime readiness</p>
+            <div class="risk-ops-model__heading">
+                <h2 id="model-readiness-title">Risk model @Model.ModelStateLabel.ToLowerInvariant()</h2>
+                <span class="risk-ops-badge risk-ops-badge--@Model.ModelStateTone">@Model.ModelStateLabel</span>
+            </div>
+            @if (Model.ModelStatus.IsAvailable)
+            {
+                <p>The validated artifact is loaded for this application process. A scoring batch will use this model version from start to finish.</p>
+            }
+            else
+            {
+                <p>@Model.ModelUnavailableReason</p>
+            }
+        </div>
+        <dl class="risk-ops-model__facts">
+            <div>
+                <dt>Version</dt>
+                <dd>@(Model.ModelStatus.ModelVersion ?? "Not loaded")</dd>
+            </div>
+            <div>
+                <dt>Feature schema</dt>
+                <dd>@(status?.Model?.FeatureSchemaVersion ?? "Not loaded")</dd>
+            </div>
+            <div>
+                <dt>Activation</dt>
+                <dd>Application restart</dd>
+            </div>
+        </dl>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(Model.StatusError))
+    {
+        <div class="risk-ops-alert risk-ops-alert--@(Model.ModelStatus.IsEnabled ? "critical" : "info")" role="@(Model.ModelStatus.IsEnabled ? "alert" : "status")">
+            <i class="bi bi-info-circle" aria-hidden="true"></i>
+            <span>@Model.StatusError</span>
+        </div>
+    }
+
+    <section aria-labelledby="snapshot-summary-title">
+        <h2 class="ls-admin-sr-only" id="snapshot-summary-title">Snapshot summary</h2>
+        <div class="risk-ops-metrics">
+            <article>
+                <span>Stored snapshots</span>
+                <strong>@(status?.SnapshotCount.ToString("N0") ?? "—")</strong>
+                <small>Consent-gated imports</small>
+            </article>
+            <article>
+                <span>Consented students</span>
+                <strong>@(status?.ConsentedStudentCount.ToString("N0") ?? "—")</strong>
+                <small>Eligible for monitoring</small>
+            </article>
+            <article class="@(status is { PendingSnapshotCount: > 0 } ? "has-attention" : null)">
+                <span>Pending snapshots</span>
+                <strong>@(status?.PendingSnapshotCount.ToString("N0") ?? "—")</strong>
+                <small>Ready for a scoring run</small>
+            </article>
+            <article>
+                <span>Latest window</span>
+                <strong class="risk-ops-metric-date">
+                    @if (status?.LatestWindowEndUtc is { } latestWindow)
+                    {
+                        <time datetime="@latestWindow.ToString("O")" data-local-datetime>@latestWindow.ToString("dd MMM yyyy, HH:mm") UTC</time>
+                    }
+                    else
+                    {
+                        <span>None</span>
+                    }
+                </strong>
+                <small>Most recent observation end</small>
+            </article>
+        </div>
+    </section>
+
+    <div class="risk-ops-grid">
+        <section class="ls-admin-panel" aria-labelledby="snapshot-import-title">
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Data intake</p>
+                    <h2 id="snapshot-import-title">Import activity snapshots</h2>
+                    <p>Upload one RFC 4180 CSV using student numbers and the <code>withdrawal-28d-v1</code> feature schema.</p>
+                </div>
+                <a class="ls-admin-btn ls-admin-btn--secondary"
+                   asp-action="DownloadRiskSnapshotTemplate">
+                    <i class="bi bi-download" aria-hidden="true"></i>
+                    CSV template
+                </a>
+            </header>
+            <div class="ls-admin-panel__body">
+                <form asp-action="ImportRiskSnapshots"
+                      method="post"
+                      enctype="multipart/form-data"
+                      class="risk-ops-upload"
+                      data-risk-upload-form>
+                    <div asp-validation-summary="ModelOnly" class="risk-ops-validation" role="alert"></div>
+                    <label for="risk-snapshot-file">Snapshot CSV</label>
+                    <div class="risk-ops-file">
+                        <input id="risk-snapshot-file"
+                               name="snapshotCsv"
+                               type="file"
+                               accept=".csv,text/csv"
+                               required
+                               aria-describedby="risk-file-help risk-file-name"
+                               data-risk-file />
+                        <span id="risk-file-name" data-risk-file-name>No file selected</span>
+                    </div>
+                    <p id="risk-file-help" class="risk-ops-help">Maximum 25 MB. Malformed rows and conflicting duplicates reject the file. Exact duplicates are skipped; unknown, inactive, or unconsented students are not imported and are reported by row.</p>
+                    <button class="ls-admin-btn ls-admin-btn--primary" type="submit" data-risk-submit>
+                        <i class="bi bi-upload" aria-hidden="true"></i>
+                        Validate and import
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <section class="ls-admin-panel" aria-labelledby="run-scoring-title">
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Manual operation</p>
+                    <h2 id="run-scoring-title">Score pending snapshots</h2>
+                    <p>Run the same idempotent batch used by the weekly scheduled job.</p>
+                </div>
+            </header>
+            <div class="ls-admin-panel__body risk-ops-run">
+                @if (!Model.ModelStatus.IsAvailable)
+                {
+                    <div class="risk-ops-run__state risk-ops-run__state--blocked">
+                        <i class="bi bi-shield-x" aria-hidden="true"></i>
+                        <div>
+                            <strong>Scoring is unavailable</strong>
+                            <span>A missing, disabled, corrupt, or incompatible model never falls back to estimated scores.</span>
+                        </div>
+                    </div>
+                }
+                else if (status is null)
+                {
+                    <div class="risk-ops-run__state risk-ops-run__state--blocked">
+                        <i class="bi bi-database-x" aria-hidden="true"></i>
+                        <div>
+                            <strong>Status is unavailable</strong>
+                            <span>Scoring is restricted until snapshot status can be verified.</span>
+                        </div>
+                    </div>
+                }
+                else if (status.PendingSnapshotCount == 0)
+                {
+                    <div class="risk-ops-run__state">
+                        <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                        <div>
+                            <strong>No snapshots are pending</strong>
+                            <span>Import a fresh snapshot file or wait for the next scheduled intake.</span>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="risk-ops-run__state risk-ops-run__state--ready">
+                        <i class="bi bi-play-circle" aria-hidden="true"></i>
+                        <div>
+                            <strong>@status.PendingSnapshotCount.ToString("N0") ready to score</strong>
+                            <span>Only fresh snapshots for currently consented students are candidates.</span>
+                        </div>
+                    </div>
+                }
+
+                <form asp-action="RunRiskScoring"
+                      method="post"
+                      data-risk-run-form
+                      data-risk-confirm="Start scoring for all verified pending snapshots now?">
+                    <button class="ls-admin-btn ls-admin-btn--primary"
+                            type="submit"
+                            disabled="@(!Model.CanRunScoring)"
+                            data-risk-submit>
+                        <i class="bi bi-play-fill" aria-hidden="true"></i>
+                        Run scoring now
+                    </button>
+                </form>
+
+                @if (status?.Model is { } descriptor)
+                {
+                    <dl class="risk-ops-contract">
+                        <div><dt>Feature schema</dt><dd>@descriptor.FeatureSchemaVersion</dd></div>
+                        <div><dt>Observation window</dt><dd>@descriptor.ObservedDays days</dd></div>
+                        <div><dt>Queue threshold</dt><dd>@descriptor.QueueThreshold.ToString("P1")</dd></div>
+                    </dl>
+                }
+            </div>
+        </section>
+    </div>
+
+    @if (Model.ImportResult is { } import)
+    {
+        var importTone = import.RejectedRows > 0 && import.ImportedRows > 0
+            ? "warning"
+            : import.RejectedRows > 0
+                ? "critical"
+                : import.ImportedRows > 0
+                    ? "positive"
+                    : "info";
+        <section class="ls-admin-panel risk-ops-result" aria-labelledby="import-result-title" tabindex="-1" data-import-result>
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Import result</p>
+                    <h2 id="import-result-title">@import.FileName</h2>
+                    <p>
+                        @(import.RejectedRows > 0 && import.ImportedRows > 0
+                            ? "Eligible rows were imported; the reported students or rows were not imported."
+                            : import.RejectedRows > 0
+                                ? "No rows were imported. Review the reported issues before trying again."
+                                : "Validation completed and eligible rows were processed.")
+                    </p>
+                </div>
+                <span class="risk-ops-badge risk-ops-badge--@importTone">
+                    @(import.RejectedRows > 0 && import.ImportedRows > 0
+                        ? "Completed with skips"
+                        : import.RejectedRows > 0
+                            ? "Not imported"
+                            : "Processed")
+                </span>
+            </header>
+            <div class="ls-admin-panel__body">
+                <dl class="risk-ops-result__counts risk-ops-result__counts--import">
+                    <div><dt>Rows read</dt><dd>@import.TotalRows.ToString("N0")</dd></div>
+                    <div><dt>Imported</dt><dd>@import.ImportedRows.ToString("N0")</dd></div>
+                    <div><dt>Duplicates</dt><dd>@import.DuplicateRows.ToString("N0")</dd></div>
+                    <div><dt>Not imported</dt><dd>@import.RejectedRows.ToString("N0")</dd></div>
+                </dl>
+
+                @if (import.Errors.Count > 0)
+                {
+                    <div class="risk-ops-errors">
+                        <h3>Rows to review</h3>
+                        <div class="risk-ops-errors__table-wrap">
+                            <table>
+                                <caption class="ls-admin-sr-only">Snapshot import validation errors</caption>
+                                <thead><tr><th scope="col">Row</th><th scope="col">Issue</th></tr></thead>
+                                <tbody>
+                                @foreach (var issue in import.Errors)
+                                {
+                                    <tr><th scope="row">@issue.RowNumber</th><td>@issue.Message</td></tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
+    <section class="ls-admin-panel" aria-labelledby="latest-run-title">
+        <header class="ls-admin-panel__header">
+            <div>
+                <p class="ls-admin-panel__eyebrow">Audit trail</p>
+                <h2 id="latest-run-title">Latest scoring run</h2>
+                <p>The newest recorded manual or scheduled batch.</p>
+            </div>
+            @if (latestRun is not null)
+            {
+                <span class="risk-ops-badge risk-ops-badge--@RunTone(latestRun.Status)">@FriendlyRunStatus(latestRun.Status)</span>
+            }
+        </header>
+        <div class="ls-admin-panel__body">
+            @if (latestRun is null)
+            {
+                <div class="risk-ops-empty">
+                    <i class="bi bi-clock-history" aria-hidden="true"></i>
+                    <div><strong>No scoring run recorded</strong><span>A completed run will appear here after eligible snapshots are available.</span></div>
+                </div>
+            }
+            else
+            {
+                <div class="risk-ops-run-summary">
+                    <dl>
+                        <div><dt>Run key</dt><dd><code>@latestRun.RunKey.ToString("N")</code></dd></div>
+                        <div><dt>Started</dt><dd><time datetime="@latestRun.StartedAtUtc.ToString("O")" data-local-datetime>@latestRun.StartedAtUtc.ToString("dd MMM yyyy, HH:mm") UTC</time></dd></div>
+                        <div><dt>Completed</dt><dd>@if (latestRun.CompletedAtUtc is { } completed) { <time datetime="@completed.ToString("O")" data-local-datetime>@completed.ToString("dd MMM yyyy, HH:mm") UTC</time> } else { <span>In progress</span> }</dd></div>
+                        <div><dt>Model</dt><dd>@latestRun.ModelVersion</dd></div>
+                    </dl>
+                    <dl class="risk-ops-result__counts">
+                        <div><dt>Candidates</dt><dd>@latestRun.CandidateCount.ToString("N0")</dd></div>
+                        <div><dt>Scored</dt><dd>@latestRun.ScoredCount.ToString("N0")</dd></div>
+                        <div><dt>Skipped</dt><dd>@latestRun.SkippedCount.ToString("N0")</dd></div>
+                        <div><dt>Failed</dt><dd>@latestRun.FailedCount.ToString("N0")</dd></div>
+                        <div><dt>Cases opened</dt><dd>@latestRun.QueueCreatedCount.ToString("N0")</dd></div>
+                        <div><dt>Cases escalated</dt><dd>@latestRun.QueueEscalatedCount.ToString("N0")</dd></div>
+                    </dl>
+                    @if (!string.IsNullOrWhiteSpace(latestRun.FailureSummary))
+                    {
+                        <div class="risk-ops-alert risk-ops-alert--critical" role="alert">
+                            <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+                            <span>@latestRun.FailureSummary</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@section Scripts {
+    <script src="~/js/risk-operations.js" asp-append-version="true" defer></script>
+}

@@ -1,5 +1,170 @@
+@model Lodestone.Web.ViewModels.Counselor.CounselorQueueViewModel
+@using Lodestone.Domain.Enums
 @{
-    ViewData["Title"] = "Risk Queue";
+    ViewData["Title"] = "Support queue";
+    var successMessage = TempData["QueueSuccess"] as string;
+    var conflictMessage = TempData["QueueConflict"] as string;
+    var errorMessage = TempData["QueueError"] as string;
+
+    static string LevelClass(RiskLevel level) => level switch
+    {
+        RiskLevel.Critical => "critical",
+        RiskLevel.High => "high",
+        RiskLevel.Moderate => "moderate",
+        _ => "low"
+    };
 }
-<h1>Risk Queue</h1>
-<p>Lodestone — placeholder view. Wire up the view model in the corresponding controller action.</p>
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/counselor-queue.css" asp-append-version="true" />
+}
+
+<div class="queue-page" data-counselor-queue>
+    <div class="queue-shell">
+        <header class="queue-header">
+            <div>
+                <p class="queue-eyebrow">Counselor workspace</p>
+                <h1>Support queue</h1>
+                <p>Review current learning-risk signals and close a case after follow-up. Signals guide human review; they are not diagnoses.</p>
+            </div>
+            <div class="queue-header__meta">
+                <span class="queue-live-dot is-connecting" aria-hidden="true" data-queue-connection-dot></span>
+                <span data-queue-connection-label>Connecting live updates</span>
+                <time datetime="@Model.RefreshedAtUtc.ToString("O")" data-local-datetime>
+                    Updated @Model.RefreshedAtUtc.ToString("HH:mm 'UTC'")
+                </time>
+            </div>
+        </header>
+
+        <div class="queue-sr-only" role="status" aria-live="polite" aria-atomic="true" data-queue-live></div>
+
+        @if (!string.IsNullOrWhiteSpace(successMessage))
+        {
+            <div class="queue-alert queue-alert--success" role="status">
+                <span aria-hidden="true">&#10003;</span>
+                <p>@successMessage</p>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(conflictMessage))
+        {
+            <div class="queue-alert queue-alert--warning" role="alert">
+                <span aria-hidden="true">!</span>
+                <p>@conflictMessage</p>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <div class="queue-alert queue-alert--error" role="alert">
+                <span aria-hidden="true">!</span>
+                <p>@errorMessage</p>
+            </div>
+        }
+
+        @if (Model.LoadFailed)
+        {
+            <section class="queue-state queue-state--error" aria-labelledby="queue-error-title">
+                <span class="queue-state__mark" aria-hidden="true">!</span>
+                <div>
+                    <h2 id="queue-error-title">The queue is temporarily unavailable</h2>
+                    <p>@Model.ErrorMessage</p>
+                    <a class="queue-btn queue-btn--secondary" asp-action="Queue">Try again</a>
+                </div>
+            </section>
+        }
+        else if (Model.Items.Count == 0)
+        {
+            <section class="queue-state" aria-labelledby="queue-empty-title">
+                <span class="queue-state__mark queue-state__mark--clear" aria-hidden="true">&#10003;</span>
+                <div>
+                    <h2 id="queue-empty-title">The queue is clear</h2>
+                    <p>There are no open support signals waiting for counselor review.</p>
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="queue-panel" aria-labelledby="queue-cases-title">
+                <header class="queue-panel__header">
+                    <div>
+                        <p class="queue-eyebrow">Open cases</p>
+                        <h2 id="queue-cases-title">@Model.Items.Count waiting for review</h2>
+                    </div>
+                    <p>Highest priority first, then longest waiting.</p>
+                </header>
+
+                <div class="queue-table-wrap">
+                    <table class="queue-table">
+                        <caption class="queue-sr-only">Open student support cases</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Student</th>
+                                <th scope="col">Priority / latest signal</th>
+                                <th scope="col">Course</th>
+                                <th scope="col">28-day context</th>
+                                <th scope="col">Queued</th>
+                                <th scope="col">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var item in Model.Items)
+                        {
+                            <tr>
+                                <th scope="row" data-label="Student">
+                                    <strong class="queue-student">@item.StudentName</strong>
+                                    <span class="queue-student-id">
+                                        @(string.IsNullOrWhiteSpace(item.StudentNumber) ? "Student number unavailable" : $"Student {item.StudentNumber}")
+                                    </span>
+                                </th>
+                                <td data-label="Priority / latest signal">
+                                    <span class="queue-level queue-level--@LevelClass(item.Level)">Peak @item.Level</span>
+                                    <span class="queue-probability">@item.Probability.ToString("P0") latest model probability</span>
+                                </td>
+                                <td data-label="Course">
+                                    <span>@(string.IsNullOrWhiteSpace(item.CourseKey) ? "Not provided" : item.CourseKey)</span>
+                                </td>
+                                <td data-label="28-day context">
+                                    <dl class="queue-context">
+                                        <div>
+                                            <dt>Active days</dt>
+                                            <dd>@item.ActiveDayRate.ToString("P0")</dd>
+                                        </div>
+                                        <div>
+                                            <dt>Since access</dt>
+                                            <dd>@item.DaysSinceLastAccess.ToString("0.#") days</dd>
+                                        </div>
+                                        <div>
+                                            <dt>Late/missing</dt>
+                                            <dd>@item.LateOrMissingAssignmentCount.ToString("0.#")</dd>
+                                        </div>
+                                    </dl>
+                                </td>
+                                <td data-label="Queued">
+                                    <time datetime="@item.CreatedAtUtc.ToString("O")" data-local-datetime>@item.CreatedAtUtc.ToString("dd MMM yyyy, HH:mm") UTC</time>
+                                    @if (item.ScoredAtUtc != default)
+                                    {
+                                        <span class="queue-scored">Scored <time datetime="@item.ScoredAtUtc.ToString("O")" data-local-datetime>@item.ScoredAtUtc.ToString("dd MMM, HH:mm") UTC</time></span>
+                                    }
+                                </td>
+                                <td class="queue-table__action" data-label="Action">
+                                    <form asp-action="Resolve" method="post" data-resolve-form data-queue-confirm="Mark this case as resolved? This removes it from the open queue.">
+                                        <input type="hidden" name="queueEntryId" value="@item.QueueEntryId" />
+                                        <input type="hidden" name="rowVersionToken" value="@item.RowVersionToken" />
+                                        <button class="queue-btn queue-btn--resolve" type="submit" data-resolve-button>
+                                            Mark resolved
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.0/dist/browser/signalr.min.js" crossorigin="anonymous"></script>
+    <script src="~/js/counselor-queue.js" asp-append-version="true" defer></script>
+}

@@ -11,6 +11,8 @@ public static class DependencyInjection
     public static IServiceCollection AddJobs(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddHangfireJobs(configuration);
+        services.Configure<RiskScoringJobOptions>(
+            configuration.GetSection(RiskScoringJobOptions.SectionName));
 
         services.AddScoped<WeeklyRiskScoringJob>();
         services.AddScoped<NudgeNotificationJob>();

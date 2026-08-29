@@ -1,0 +1,26 @@
+@model BookingCreateViewModel
+@{
+    ViewData["Title"] = "Choose Counselor Time";
+}
+@section Styles { <link rel="stylesheet" href="~/css/booking.css" asp-append-version="true" /> }
+
+<div class="booking-page booking-page--narrow">
+    <header class="booking-hero"><div><p class="booking-kicker">New appointment</p><h1>Choose a counselor time</h1><p>Times are shown in your local timezone and confirmed when you submit.</p></div><a class="booking-btn booking-btn--secondary" asp-action="Index">Back to appointments</a></header>
+    <section class="booking-section">
+        <form method="get" class="booking-filter"><label for="counselorId">Counselor</label><select id="counselorId" name="counselorId">@foreach (var counselor in Model.Counselors) { <option value="@counselor.Id" selected="@(Model.SelectedCounselorId == counselor.Id ? "selected" : null)">@counselor.FullName@(string.IsNullOrWhiteSpace(counselor.Specialization) ? "" : $" — {counselor.Specialization}")</option> }</select><button class="booking-btn booking-btn--secondary" type="submit">Show times</button></form>
+        @if (Model.Counselors.Count == 0)
+        { <div class="booking-empty"><h2>No counselors available</h2><p>No counselor is accepting bookings right now. Please check again later or use crisis resources if support is urgent.</p><a class="booking-btn booking-btn--secondary" asp-controller="CrisisResource" asp-action="Index">View crisis resources</a></div> }
+        else if (Model.Slots.Count == 0)
+        { <div class="booking-empty"><h2>No published times</h2><p>This counselor has no open future times. Choose another counselor or check again later.</p></div> }
+        else
+        {
+            <form asp-action="Create" asp-route-counselorId="@Model.SelectedCounselorId" method="post" class="booking-form" data-disable-on-submit>
+                <div asp-validation-summary="All" class="booking-alert booking-alert--error" role="alert"></div>
+                <fieldset><legend>Available times</legend><div class="slot-grid">@foreach (var slot in Model.Slots) { <label class="slot-option"><input type="radio" name="AvailabilitySlotId" value="@slot.Id" checked="@(Model.NewBooking.AvailabilitySlotId == slot.Id ? "checked" : null)" /><span><strong><time datetime="@slot.StartUtc.ToString("O")" data-local-date>@slot.StartUtc.ToString("MMM d, yyyy")</time></strong><small><time datetime="@slot.StartUtc.ToString("O")" data-local-time>@slot.StartUtc.ToString("HH:mm 'UTC'")</time>–<time datetime="@slot.EndUtc.ToString("O")" data-local-time>@slot.EndUtc.ToString("HH:mm 'UTC'")</time></small></span></label> }</div></fieldset>
+                <label class="booking-field" for="Notes"><span>Notes for the counselor <small>Optional · maximum 1,000 characters</small></span><textarea id="Notes" name="Notes" maxlength="1000" rows="5">@Model.NewBooking.Notes</textarea></label>
+                <button class="booking-btn booking-btn--primary" type="submit">Confirm appointment</button>
+            </form>
+        }
+    </section>
+</div>
+@section Scripts { <script src="~/js/booking.js" asp-append-version="true" defer></script> }

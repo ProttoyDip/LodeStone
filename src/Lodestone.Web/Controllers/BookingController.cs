@@ -1,98 +1,92 @@
 using Lodestone.Application.DTOs.Booking;
+using Lodestone.Application.Exceptions;
 using Lodestone.Application.Interfaces;
-using Lodestone.Domain.Entities;
-using Lodestone.Infrastructure.Data;
+using Lodestone.Domain.Constants;
+using Lodestone.Domain.Enums;
 using Lodestone.Web.ViewModels.Booking;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace Lodestone.Web.Controllers;
 
-[Authorize]
+[Authorize(Roles = RoleConstants.Student)]
 public class BookingController : Controller
 {
-    private readonly IBookingService _bookingService;
-    private readonly UserManager<ApplicationUser> _userManager;
-    private readonly ApplicationDbContext _db;
+    private readonly IBookingService _bookings;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IStudentProfileRepository _students;
 
-    public BookingController(
-        IBookingService bookingService,
-        UserManager<ApplicationUser> userManager,
-        ApplicationDbContext db)
-    {
-        _bookingService = bookingService;
-        _userManager    = userManager;
-        _db             = db;
-    }
+    public BookingController(IBookingService bookings, ICurrentUserService currentUser, IStudentProfileRepository students)
+        => (_bookings, _currentUser, _students) = (bookings, currentUser, students);
 
+    [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        var profileId = await GetStudentProfileIdAsync();
-        if (profileId is null) return Challenge();
-
-        var bookings   = await _bookingService.GetStudentBookingsAsync(profileId.Value, cancellationToken);
-        var counselors = await _bookingService.GetCounselorsAsync(cancellationToken);
-
-        var vm = new BookingViewModel
+        var studentId = await GetStudentIdAsync(cancellationToken);
+        if (!studentId.HasValue) return Forbid();
+        var all = await _bookings.GetStudentBookingsAsync(studentId.Value, cancellationToken);
+        var nowUtc = DateTime.UtcNow;
+        return View(new BookingIndexViewModel
         {
-            Bookings      = bookings,
-            CounselorList = counselors,
-            NewBooking    = new CreateBookingDto(0, null, DateTime.UtcNow.AddDays(1), null),
-        };
-        return View(vm);
+            Upcoming = all.Where(item => item.Status == BookingStatus.Confirmed && item.StartUtc > nowUtc).OrderBy(item => item.StartUtc).ToList(),
+            History = all.Where(item => item.Status != BookingStatus.Confirmed || item.StartUtc <= nowUtc).OrderByDescending(item => item.StartUtc).ToList()
+        });
     }
 
     [HttpGet]
-    public async Task<IActionResult> Create(CancellationToken cancellationToken)
-    {
-        var counselors = await _bookingService.GetCounselorsAsync(cancellationToken);
-        var vm = new BookingViewModel
-        {
-            CounselorList = counselors,
-            NewBooking    = new CreateBookingDto(0, null, DateTime.UtcNow.AddDays(1), null),
-        };
-        return View(vm);
-    }
+    public async Task<IActionResult> Create(int? counselorId, CancellationToken cancellationToken)
+        => View(await BuildCreateViewModelAsync(counselorId, null, cancellationToken));
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(CreateBookingDto model, CancellationToken cancellationToken)
+    public async Task<IActionResult> Create(CreateBookingDto model, int? counselorId, CancellationToken cancellationToken)
     {
-        var profileId = await GetStudentProfileIdAsync();
-        if (profileId is null) return Challenge();
+        var studentId = await GetStudentIdAsync(cancellationToken);
+        if (!studentId.HasValue) return Forbid();
+        if (model.AvailabilitySlotId <= 0) ModelState.AddModelError(nameof(model.AvailabilitySlotId), "Select an available time.");
+        if (model.Notes?.Length > 1000) ModelState.AddModelError(nameof(model.Notes), "Notes cannot exceed 1,000 characters.");
+        if (!ModelState.IsValid) return View(await BuildCreateViewModelAsync(counselorId, model, cancellationToken));
 
-        if (!ModelState.IsValid || model.CounselorProfileId == 0)
+        try
         {
-            ModelState.AddModelError(string.Empty, "Please select a counselor.");
-            var counselors = await _bookingService.GetCounselorsAsync(cancellationToken);
-            return View(new BookingViewModel { CounselorList = counselors, NewBooking = model });
+            await _bookings.CreateBookingAsync(studentId.Value, model, cancellationToken);
+            TempData["Success"] = "Your counselor appointment is confirmed.";
+            return RedirectToAction(nameof(Index));
         }
-
-        await _bookingService.CreateBookingAsync(profileId.Value, model, cancellationToken);
-        TempData["Success"] = "Booking requested successfully.";
-        return RedirectToAction(nameof(Index));
+        catch (BookingSlotUnavailableException ex)
+        {
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return View(await BuildCreateViewModelAsync(counselorId, model, cancellationToken));
+        }
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Cancel(int id, CancellationToken cancellationToken)
     {
-        await _bookingService.CancelAsync(id, cancellationToken);
-        TempData["Success"] = "Booking cancelled.";
+        var studentId = await GetStudentIdAsync(cancellationToken);
+        if (!studentId.HasValue) return Forbid();
+        var result = await _bookings.CancelAsync(studentId.Value, id, cancellationToken);
+        if (result == BookingCancellationResult.NotFound) return NotFound();
+        TempData[result == BookingCancellationResult.Cancelled ? "Success" : "Error"] = result == BookingCancellationResult.Cancelled
+            ? "Your appointment was cancelled and the time is available again."
+            : "This appointment can no longer be cancelled.";
         return RedirectToAction(nameof(Index));
     }
 
-    // --- Helpers ---
-
-    private async Task<int?> GetStudentProfileIdAsync()
+    private async Task<BookingCreateViewModel> BuildCreateViewModelAsync(int? counselorId, CreateBookingDto? model, CancellationToken cancellationToken)
     {
-        var userId = _userManager.GetUserId(User);
-        if (userId is null) return null;
-        var profile = await _db.StudentProfiles
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.UserId == userId);
-        return profile?.Id;
+        var counselors = await _bookings.GetCounselorsAsync(cancellationToken);
+        var selected = counselorId ?? counselors.FirstOrDefault()?.Id;
+        return new BookingCreateViewModel
+        {
+            Counselors = counselors,
+            SelectedCounselorId = selected,
+            Slots = selected.HasValue ? await _bookings.GetAvailableSlotsAsync(selected, cancellationToken) : Array.Empty<BookingSlotDto>(),
+            NewBooking = model ?? new CreateBookingDto(0, null)
+        };
     }
+
+    private async Task<int?> GetStudentIdAsync(CancellationToken cancellationToken)
+        => string.IsNullOrWhiteSpace(_currentUser.UserId) ? null : await _students.GetIdByUserIdAsync(_currentUser.UserId, cancellationToken);
 }

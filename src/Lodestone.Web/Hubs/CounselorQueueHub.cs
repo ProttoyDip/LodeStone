@@ -3,12 +3,12 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Lodestone.Web.Hubs;
 
-/// <summary>Real-time counselor risk-queue updates.</summary>
+/// <summary>
+/// Authorized, server-push-only endpoint for counselor queue notifications.
+/// Queue mutations broadcast through IHubContext; clients cannot publish events.
+/// </summary>
 [Authorize(Policy = "CanViewRiskQueue")]
 public class CounselorQueueHub : Hub
 {
     public const string Route = "/hubs/counselor-queue";
-
-    public async Task BroadcastQueueUpdate(object payload)
-        => await Clients.All.SendAsync("QueueUpdated", payload);
 }

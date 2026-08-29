@@ -15,11 +15,6 @@ public static class AdminUserSeeder
         bool resetExistingPassword = false,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(adminPassword))
-        {
-            throw new InvalidOperationException("Admin seed password is missing. Set SeedData:AdminPassword or LODESTONE_ADMIN_PASSWORD.");
-        }
-
         if (!await roleManager.RoleExistsAsync(RoleConstants.Admin))
         {
             await roleManager.CreateAsync(new IdentityRole(RoleConstants.Admin));
@@ -28,6 +23,7 @@ public static class AdminUserSeeder
         var admin = await userManager.FindByEmailAsync(AdminEmail);
         if (admin is null)
         {
+            RequirePassword(adminPassword, "create the initial Admin account");
             admin = new ApplicationUser
             {
                 UserName = AdminEmail,
@@ -47,6 +43,7 @@ public static class AdminUserSeeder
         }
         else if (resetExistingPassword)
         {
+            RequirePassword(adminPassword, "reset the existing Admin account");
             var resetToken = await userManager.GeneratePasswordResetTokenAsync(admin);
             var resetResult = await userManager.ResetPasswordAsync(admin, resetToken, adminPassword);
             if (!resetResult.Succeeded)
@@ -73,6 +70,15 @@ public static class AdminUserSeeder
         if (!await userManager.IsInRoleAsync(admin, RoleConstants.Admin))
         {
             await userManager.AddToRoleAsync(admin, RoleConstants.Admin);
+        }
+    }
+
+    private static void RequirePassword(string adminPassword, string operation)
+    {
+        if (string.IsNullOrWhiteSpace(adminPassword))
+        {
+            throw new InvalidOperationException(
+                $"Admin seed password is required to {operation}. Set SeedData:AdminPassword or LODESTONE_ADMIN_PASSWORD.");
         }
     }
 }

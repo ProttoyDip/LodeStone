@@ -7,4 +7,10 @@ public record RiskScoreDto(
     string StudentName,
     double Probability,
     RiskLevel Level,
-    DateTime ScoredAtUtc);
+    DateTime ScoredAtUtc,
+    int RiskScoreId = 0,
+    int RiskFeatureSnapshotId = 0,
+    string CourseKey = "",
+    DateTime WindowEndUtc = default,
+    string FeatureSchemaVersion = "",
+    string ModelVersion = "");

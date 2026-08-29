@@ -1,7 +1,12 @@
+@model Lodestone.Web.ViewModels.Student.StudentHomeViewModel
 @{
     ViewData["Title"] = "Student Home";
-    var displayName = User.Identity?.Name;
-    var firstName = string.IsNullOrWhiteSpace(displayName) ? "there" : displayName.Split('@')[0];
+    var dashboard = Model.Dashboard;
+    var maxActions = Math.Max(1, dashboard.ActivityDays.Max(day => day.ActionCount));
+    var privacySuccess = TempData["StudentPrivacySuccess"] as string;
+    var privacyError = TempData["StudentPrivacyError"] as string;
+    var identitySuccess = TempData["StudentIdentitySuccess"] as string;
+    var identityError = TempData["StudentIdentityError"] as string;
 }
 
 @section Styles {
@@ -16,7 +21,7 @@
                     <span aria-hidden="true"></span>
                     Student wellbeing home
                 </p>
-                <h1 id="student-title">Hi @firstName, your support space is ready.</h1>
+                <h1 id="student-title">Hi @dashboard.DisplayName, your support space is ready.</h1>
                 <p class="student-hero__lead">
                     Check in privately, find peer support, book counselor time, and keep crisis resources within reach.
                 </p>
@@ -149,7 +154,7 @@
                     <span class="student-badge">Weekly</span>
                     <h3>Review your rhythm</h3>
                     <p>Learning activity patterns can suggest support, but they are not a diagnosis or grade.</p>
-                    <a asp-controller="Dashboard" asp-action="Index">Open dashboard <span aria-hidden="true">-&gt;</span></a>
+                    <a asp-controller="Student" asp-action="Index" asp-fragment="snapshot-title">Review your week <span aria-hidden="true">-&gt;</span></a>
                 </article>
                 <article>
                     <span class="student-badge student-badge--green">Moderated</span>
@@ -190,31 +195,43 @@
                 <div class="student-card__top">
                     <div>
                         <span class="student-eyebrow">Learning rhythm</span>
-                        <h3>Engagement is steady with one lighter day.</h3>
+                        <h3>@(dashboard.ActivityDays.Sum(day => day.ActionCount) == 0 ? "No Lodestone activity recorded yet." : "Your last seven days at a glance.")</h3>
                     </div>
                     <span class="student-badge student-badge--green">Low pressure</span>
                 </div>
-                <div class="rhythm-chart" aria-label="Weekly activity rhythm preview">
-                    <span style="height: 58%"><b>Mon</b></span>
-                    <span style="height: 72%"><b>Tue</b></span>
-                    <span style="height: 46%"><b>Wed</b></span>
-                    <span style="height: 66%"><b>Thu</b></span>
-                    <span style="height: 38%"><b>Fri</b></span>
+                <div class="rhythm-chart" aria-label="Lodestone actions during the last seven days">
+                    @foreach (var day in dashboard.ActivityDays)
+                    {
+                        var height = day.ActionCount == 0 ? 8 : Math.Max(18, (int)Math.Round(day.ActionCount * 100d / maxActions));
+                        <span style="height: @(height)%" title="@day.DayUtc.ToString("dddd"): @day.ActionCount actions">
+                            <i class="student-sr-only">@day.ActionCount actions on </i><b>@day.DayUtc.ToString("ddd")</b>
+                        </span>
+                    }
                 </div>
+                <p class="student-card__meta">@dashboard.LoginCount sign-ins · @dashboard.JournalCount check-ins · @dashboard.ForumInteractionCount forum interactions</p>
             </article>
 
             <article class="student-card student-reveal">
                 <span class="student-eyebrow">Next booking</span>
-                <h3>No session booked</h3>
-                <p>Choose a counselor slot when you want a private conversation.</p>
-                <a class="student-card__link" asp-controller="Booking" asp-action="Index">Find time</a>
+                @if (dashboard.NextBooking is null)
+                {
+                    <h3>No upcoming session</h3>
+                    <p>Choose a published counselor slot when you want a private conversation.</p>
+                    <a class="student-card__link" asp-controller="Booking" asp-action="Create">Find time</a>
+                }
+                else
+                {
+                    <h3>@dashboard.NextBooking.CounselorName</h3>
+                    <p><time datetime="@dashboard.NextBooking.StartUtc.ToString("O")" data-local-datetime>@dashboard.NextBooking.StartUtc.ToString("MMM d, yyyy 'at' HH:mm 'UTC'")</time></p>
+                    <a class="student-card__link" asp-controller="Booking" asp-action="Index">Manage appointment</a>
+                }
             </article>
 
             <article class="student-card student-reveal">
-                <span class="student-eyebrow">Nudge status</span>
-                <h3>No urgent alert</h3>
-                <p>Any check-in prompt stays optional and support-focused.</p>
-                <div class="mini-progress" aria-hidden="true"><span></span></div>
+                <span class="student-eyebrow">@dashboard.Recommendation.Eyebrow</span>
+                <h3>@dashboard.Recommendation.Title</h3>
+                <p>@dashboard.Recommendation.Detail</p>
+                <a class="student-card__link" asp-controller="@dashboard.Recommendation.Controller" asp-action="@dashboard.Recommendation.Action">@dashboard.Recommendation.LinkLabel</a>
             </article>
 
             <article class="student-card student-card--accent student-reveal">
@@ -265,19 +282,150 @@
                 <span class="section-index">04</span>
                 <h2 id="privacy-title">Privacy stays part of the support plan.</h2>
                 <p>Lodestone is designed to route care, not to expose private student life.</p>
+
+                @if (!string.IsNullOrWhiteSpace(privacySuccess))
+                {
+                    <div class="privacy-alert privacy-alert--success" role="status">@privacySuccess</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(privacyError))
+                {
+                    <div class="privacy-alert privacy-alert--error" role="alert">@privacyError</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(identitySuccess))
+                {
+                    <div class="privacy-alert privacy-alert--success" role="status">@identitySuccess</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(identityError))
+                {
+                    <div class="privacy-alert privacy-alert--error" role="alert">@identityError</div>
+                }
+
+                <section class="privacy-identity" aria-labelledby="student-number-title">
+                    <div class="privacy-identity__heading">
+                        <div>
+                            <h3 id="student-number-title">University student number</h3>
+                            <span class="privacy-status is-@Model.StudentNumberStateTone">@Model.StudentNumberStateLabel</span>
+                        </div>
+                        @if (Model.IsStudentNumberVerified)
+                        {
+                            <p>Your verified number is used only to match consented learning-activity imports to your account. It is read-only; contact an Admin if it is incorrect.</p>
+                        }
+                        else if (Model.NumberVerification?.HasPendingClaim == true)
+                        {
+                            <p>An Admin must approve this number before any learning-activity import can connect to your account.</p>
+                        }
+                        else if (Model.NumberVerification?.LatestClaim?.Status == Lodestone.Domain.Enums.StudentNumberClaimStatus.Rejected)
+                        {
+                            <p>The previous submission was not verified. Check the number shown in your university learning system and submit it again.</p>
+                        }
+                        else
+                        {
+                            <p>Submit the number shown in your university learning system. Monitoring consent can be saved now, but imports wait for Admin approval.</p>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(Model.DisplayStudentNumber))
+                    {
+                        <div class="privacy-identity__value">
+                            <span>@(Model.IsStudentNumberVerified ? "Verified number" : "Submitted number")</span>
+                            <code>@Model.DisplayStudentNumber</code>
+                        </div>
+                    }
+
+                    @if (Model.CanSubmitStudentNumber)
+                    {
+                        <form class="privacy-identity__form"
+                              asp-controller="Student"
+                              asp-action="SubmitStudentNumber"
+                              method="post"
+                              data-student-number-form>
+                            <label for="student-number-claim">Student number</label>
+                            <div>
+                                <input id="student-number-claim"
+                                       name="StudentNumber"
+                                       type="text"
+                                       required
+                                       minlength="1"
+                                       maxlength="64"
+                                       pattern="[A-Za-z0-9][A-Za-z0-9._/-]{0,63}"
+                                       autocomplete="off"
+                                       spellcheck="false"
+                                       aria-describedby="student-number-claim-help" />
+                                <button class="privacy-save" type="submit" data-student-number-submit>
+                                    @(Model.NumberVerification?.LatestClaim?.Status == Lodestone.Domain.Enums.StudentNumberClaimStatus.Rejected
+                                        ? "Resubmit for review"
+                                        : "Submit for review")
+                                </button>
+                            </div>
+                            <small id="student-number-claim-help">1-64 letters, numbers, periods, underscores, slashes, or hyphens.</small>
+                        </form>
+                    }
+                    else if (Model.NumberVerification?.LatestClaim is { } latestClaim)
+                    {
+                        <small class="privacy-identity__meta">
+                            @(Model.IsStudentNumberVerified ? "Reviewed" : "Submitted")
+                            <time datetime="@((latestClaim.ReviewedAtUtc ?? latestClaim.SubmittedAtUtc).ToString("O"))" data-local-datetime>
+                                @((latestClaim.ReviewedAtUtc ?? latestClaim.SubmittedAtUtc).ToString("dd MMM yyyy, HH:mm")) UTC
+                            </time>
+                        </small>
+                    }
+                </section>
+
+                <form class="privacy-monitoring"
+                      asp-controller="Student"
+                      asp-action="UpdateRiskMonitoring"
+                      method="post"
+                      data-risk-monitoring-form
+                      data-initially-enabled="@Model.IsRiskMonitoringEnabled.ToString().ToLowerInvariant()">
+                    <div class="privacy-monitoring__heading">
+                        <div>
+                            <strong>Weekly support monitoring</strong>
+                            <span class="privacy-status @(Model.IsRiskMonitoringEnabled ? "is-on" : "is-off")">
+                                @(Model.IsRiskMonitoringEnabled ? "On" : "Off")
+                            </span>
+                        </div>
+                        <p>Optional. Uses 28-day summaries of access, course, forum, and deadline activity to help counselors prioritize follow-up. It never reads journal or message text.</p>
+                        @if (!Model.IsStudentNumberVerified)
+                        {
+                            <p class="privacy-monitoring__notice">Your choice can be saved now. Learning-activity imports will begin only after an Admin verifies your student number.</p>
+                        }
+                    </div>
+
+                    <label class="privacy-switch">
+                        <input type="checkbox"
+                               name="enabled"
+                               value="true"
+                               checked="@Model.IsRiskMonitoringEnabled"
+                               data-risk-monitoring-toggle />
+                        <input type="hidden" name="enabled" value="false" />
+                        <span class="privacy-switch__track" aria-hidden="true"><span></span></span>
+                        <span>Allow weekly monitoring</span>
+                    </label>
+
+                    <button class="privacy-save" type="submit" data-risk-monitoring-submit>Save choice</button>
+                    @if (Model.ConsentChangedAtUtc.HasValue)
+                    {
+                        <small>
+                            Last changed
+                            <time datetime="@Model.ConsentChangedAtUtc.Value.ToString("O")" data-local-datetime>
+                                @Model.ConsentChangedAtUtc.Value.ToString("dd MMM yyyy, HH:mm") UTC
+                            </time>
+                        </small>
+                    }
+                </form>
             </div>
             <div class="privacy-list student-reveal">
                 <article>
-                    <strong>Journal entries are private</strong>
-                    <span>They are not shown in public forums or raw activity views.</span>
+                    <strong>Only learning-activity summaries are used</strong>
+                    <span>Monitoring uses access, course, forum, and deadline counts&mdash;never journal or message text.</span>
                 </article>
                 <article>
                     <strong>Risk signals are not diagnoses</strong>
-                    <span>They only suggest when a human support pathway may help.</span>
+                    <span>They only suggest when a counselor review may help. They do not affect grades.</span>
                 </article>
                 <article>
-                    <strong>Crisis access stays visible</strong>
-                    <span>Urgent resources are available outside the authenticated app.</span>
+                    <strong>You can withdraw at any time</strong>
+                    <span>Turning monitoring off deletes monitoring activity logs, imported snapshots, scores, and support cases.</span>
                 </article>
             </div>
         </div>
@@ -285,5 +433,5 @@
 </div>
 
 @section Scripts {
-    <script src="~/js/student.js"></script>
+    <script src="~/js/student.js" asp-append-version="true" defer></script>
 }

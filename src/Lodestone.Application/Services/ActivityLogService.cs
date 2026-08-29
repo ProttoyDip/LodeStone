@@ -4,13 +4,23 @@ namespace Lodestone.Application.Services;
 
 public class ActivityLogService : IActivityLogService
 {
-    private readonly IUnitOfWork _unitOfWork;
+    private readonly IActivityLogRepository _activityLogRepository;
+    private readonly TimeProvider _timeProvider;
 
-    public ActivityLogService(IUnitOfWork unitOfWork) => _unitOfWork = unitOfWork;
+    public ActivityLogService(
+        IActivityLogRepository activityLogRepository,
+        TimeProvider timeProvider)
+    {
+        _activityLogRepository = activityLogRepository;
+        _timeProvider = timeProvider;
+    }
 
-    public Task RecordLoginAsync(int studentProfileId, CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
-
-    public Task IngestBatchAsync(CancellationToken cancellationToken = default)
-        => throw new NotImplementedException();
+    public async Task RecordLoginAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return;
+        await _activityLogRepository.RecordLoginIfConsentedAsync(
+            userId.Trim(),
+            _timeProvider.GetUtcNow().UtcDateTime,
+            cancellationToken);
+    }
 }
