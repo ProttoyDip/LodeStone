@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      SA_PASSWORD: "Your_strong_Pass123"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    depends_on:
+      - db
+    environment:
+      ConnectionStrings__DefaultConnection: "Server=db;Database=Lodestone;User Id=sa;Password=Your_strong_Pass123;TrustServerCertificate=True"
+      LODESTONE_ADMIN_PASSWORD: "Admin@12345"
+    ports:
+      - "8080:8080"
