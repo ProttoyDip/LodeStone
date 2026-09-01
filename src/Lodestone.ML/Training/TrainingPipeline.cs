@@ -69,11 +69,19 @@ public sealed class TrainingPipeline
         // The cohort percentile is fit only from the training partition. Applying it to validation
         // and test never adds their observations to the reference distribution.
         CohortFeatureCalibrator? cohortCalibrator = null;
-        if (string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal))
+        if (GroupedCrossValidator.UsesCohortCalibration(schema))
         {
             cohortCalibrator = CohortFeatureCalibrator.Fit(split.Training);
             cohortCalibrator.Apply(split.Training);
             cohortCalibrator.Apply(split.Validation);
+        }
+
+        // Grouped cross-validation selects a candidate using class-balanced weights (see
+        // GroupedCrossValidator.ApplyClassWeights); the final fit below must use the same
+        // weighting so the published model matches the candidate that was actually selected.
+        if (options.UseV2Experiment)
+        {
+            GroupedCrossValidator.ApplyClassWeights(split.Training);
         }
 
         var trainingData = _mlContext.Data.LoadFromEnumerable(split.Training);
@@ -118,7 +126,9 @@ public sealed class TrainingPipeline
                 includeLockedTestPopulationDrift: false);
             var failurePath = WriteFailureReport(reportPath, modelVersion, report);
             throw new ModelQualityGateException(
-                "No validation candidate satisfies AUC >= 0.70, recall >= 0.70, and precision >= 0.30. The locked test partition was not evaluated.",
+                $"No validation candidate satisfies AUC >= {options.MinimumTestAreaUnderRocCurve:F2}, " +
+                $"recall >= {options.MinimumRecall:F2}, and precision >= {options.MinimumPrecision:F2}. " +
+                "The locked test partition was not evaluated.",
                 report,
                 failurePath);
         }
@@ -276,10 +286,13 @@ public sealed class TrainingPipeline
             float threshold;
             try
             {
+                // Select against a raised recall floor so the operating point keeps headroom above
+                // the gate it must clear on the locked test partition. Without it the F1 optimum
+                // sits exactly on the gate and cohort sampling noise decides publication.
                 threshold = _evaluator.SelectThreshold(
                     model,
                     validationData,
-                    options.MinimumRecall,
+                    options.MinimumRecall + options.RecallSelectionMargin,
                     options.MinimumPrecision);
             }
             catch (ModelQualityGateException)
@@ -454,6 +467,11 @@ public sealed class TrainingPipeline
             nameof(StudentActivityObservation.AssessmentLateOrMissingRate) => row.AssessmentLateOrMissingRate,
             nameof(StudentActivityObservation.CourseProgressRatio) => row.CourseProgressRatio,
             nameof(StudentActivityObservation.CohortActivityPercentile) => row.CohortActivityPercentile,
+            nameof(StudentActivityObservation.ActivityTrendAcceleration) => row.ActivityTrendAcceleration,
+            nameof(StudentActivityObservation.ClickVolatility) => row.ClickVolatility,
+            nameof(StudentActivityObservation.ForumEngagementShare) => row.ForumEngagementShare,
+            nameof(StudentActivityObservation.InactiveWeekRate) => row.InactiveWeekRate,
+            nameof(StudentActivityObservation.AssessmentMissStreak) => row.AssessmentMissStreak,
             _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Unsupported feature name.")
         };
 

@@ -14,8 +14,8 @@ public sealed class ModelEvaluator
     public float SelectThreshold(
         ITransformer model,
         IDataView validationData,
-        double minimumRecall = 0.70,
-        double minimumPrecision = 0.30)
+        double minimumRecall = ModelQualityGates.MinimumRecall,
+        double minimumPrecision = ModelQualityGates.MinimumPrecision)
     {
         var rows = Score(model, validationData);
         ValidateBothClasses(rows, "validation");

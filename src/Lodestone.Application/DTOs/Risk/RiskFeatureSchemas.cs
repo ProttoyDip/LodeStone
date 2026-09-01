@@ -75,8 +75,38 @@ public static class RiskFeatureSchemas
             "CohortActivityPercentile"
         ]);
 
+    /// <summary>
+    /// Adds four richer, leakage-safe behavioral signals on top of v2, all derived only from the
+    /// clickstream and assessment tables (the same source data class as LodeStone's own
+    /// ActivityLog): a three-period activity acceleration, daily click volatility, forum-vs-course
+    /// engagement mix, weekly inactivity coverage, and a trailing assessment-miss streak. No
+    /// demographic or registration data is used, matching v1/v2.
+    /// </summary>
+    public static readonly RiskFeatureSchemaDefinition Withdrawal28DayV3 = new(
+        RiskFeatureSchema.Withdrawal28DayV3,
+        RiskFeatureSchema.Withdrawal28DayObservedDays,
+        [
+            "RecentActiveDayRate",
+            "PriorActiveDayRate",
+            "ActiveDayRateTrend",
+            "RecentCourseClickRate",
+            "PriorCourseClickRate",
+            "CourseClickRateTrend",
+            "InactivityStreakDays",
+            "AssessmentDueRate",
+            "AssessmentOnTimeRate",
+            "AssessmentLateOrMissingRate",
+            "CourseProgressRatio",
+            "CohortActivityPercentile",
+            "ActivityTrendAcceleration",
+            "ClickVolatility",
+            "ForumEngagementShare",
+            "InactiveWeekRate",
+            "AssessmentMissStreak"
+        ]);
+
     private static readonly IReadOnlyDictionary<string, RiskFeatureSchemaDefinition> ByVersion =
-        new[] { Withdrawal28DayV1, Withdrawal28DayV2 }
+        new[] { Withdrawal28DayV1, Withdrawal28DayV2, Withdrawal28DayV3 }
             .ToDictionary(schema => schema.Version, StringComparer.Ordinal);
 
     public static bool TryGet(string? version, out RiskFeatureSchemaDefinition schema)

@@ -53,7 +53,7 @@ public sealed class GroupedCrossValidator
                         .Select(Clone)
                         .ToArray();
                     ApplyClassWeights(fit);
-                    if (string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal))
+                    if (UsesCohortCalibration(schema))
                     {
                         var calibrator = CohortFeatureCalibrator.Fit(fit);
                         calibrator.Apply(fit);
@@ -130,7 +130,11 @@ public sealed class GroupedCrossValidator
         for (var index = 0; index < students.Length; index++) result.Add(students[index], index % FoldCount);
     }
 
-    private static void ApplyClassWeights(IReadOnlyList<StudentActivityObservation> rows)
+    internal static bool UsesCohortCalibration(RiskFeatureSchemaDefinition schema)
+        => string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
+           || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal);
+
+    internal static void ApplyClassWeights(IReadOnlyList<StudentActivityObservation> rows)
     {
         var positives = rows.Count(row => row.IsAtRisk);
         var negatives = rows.Count - positives;
@@ -161,6 +165,11 @@ public sealed class GroupedCrossValidator
         AssessmentLateOrMissingRate = source.AssessmentLateOrMissingRate,
         CourseProgressRatio = source.CourseProgressRatio,
         CohortActivityPercentile = source.CohortActivityPercentile,
+        ActivityTrendAcceleration = source.ActivityTrendAcceleration,
+        ClickVolatility = source.ClickVolatility,
+        ForumEngagementShare = source.ForumEngagementShare,
+        InactiveWeekRate = source.InactiveWeekRate,
+        AssessmentMissStreak = source.AssessmentMissStreak,
         IsAtRisk = source.IsAtRisk,
         StudentGroupKey = source.StudentGroupKey,
         EnrollmentKey = source.EnrollmentKey,

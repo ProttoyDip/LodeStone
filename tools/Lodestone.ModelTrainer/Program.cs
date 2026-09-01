@@ -32,8 +32,10 @@ internal static class Program
             return command switch
             {
                 "download" => await DownloadAsync(options),
-                "train" => Train(options, experimentV2: false),
-                "experiment-v2" => Train(options, experimentV2: true),
+                "train" => Train(options, schemaVersion: RiskFeatureSchema.Withdrawal28DayV1),
+                "experiment-v2" => Train(options, schemaVersion: RiskFeatureSchema.Withdrawal28DayV2),
+                "experiment-v3" => Train(options, schemaVersion: RiskFeatureSchema.Withdrawal28DayV3),
+                "analyze" => Analyze(options),
                 _ => throw new CliUsageException($"Unknown command '{args[0]}'.")
             };
         }
@@ -130,12 +132,20 @@ internal static class Program
         }
     }
 
-    private static int Train(IReadOnlyDictionary<string, string> options, bool experimentV2)
+    private static int Train(IReadOnlyDictionary<string, string> options, string schemaVersion)
     {
         EnsureOnly(
             options,
             "data", "model", "metadata", "report", "version", "source-url", "source-sha256",
             "seed");
+        var isExperiment = !string.Equals(schemaVersion, RiskFeatureSchema.Withdrawal28DayV1, StringComparison.Ordinal);
+        var experimentSlug = schemaVersion switch
+        {
+            RiskFeatureSchema.Withdrawal28DayV2 => "v2",
+            RiskFeatureSchema.Withdrawal28DayV3 => "v3",
+            _ => "v1"
+        };
+        var experimentName = isExperiment ? $"experiment-{experimentSlug}" : "train-v1";
         var dataPath = Path.GetFullPath(Get(options, "data", Path.Combine("src", "Lodestone.ML", "Data", "OULAD")));
         // The default publishes directly to the same content-root-relative location consumed by
         // src/Lodestone.Web/appsettings.json, so a successful train integrates on next restart.
@@ -150,15 +160,15 @@ internal static class Program
         var reportPath = Path.GetFullPath(Get(
             options,
             "report",
-            experimentV2
-                ? Path.Combine("src", "Lodestone.ML", "Reports", "experiments", "risk-model.v2.report.json")
+            isExperiment
+                ? Path.Combine("src", "Lodestone.ML", "Reports", "experiments", $"risk-model.{experimentSlug}.report.json")
                 : Path.Combine("src", "Lodestone.ML", "Reports", "risk-model.report.json")));
         var provenance = ReadProvenance(dataPath);
         var sourceUrl = options.GetValueOrDefault("source-url") ?? provenance?.SourceUrl;
         var sourceHash = options.GetValueOrDefault("source-sha256") ?? provenance?.Sha256;
         ValidateOptionalHash(sourceHash, "--source-sha256");
 
-        var seed = ParseInt(options, "seed", experimentV2 ? 20260831 : 42);
+        var seed = ParseInt(options, "seed", isExperiment ? 20260831 : 42);
         var mlContext = new MLContext(seed: seed);
         var loader = new OuladDataLoader(mlContext);
         var features = new FeatureEngineering(mlContext);
@@ -175,11 +185,9 @@ internal static class Program
             SourceUrl = sourceUrl,
             SourceSha256 = sourceHash,
             Seed = seed,
-            FeatureSchemaVersion = experimentV2
-                ? RiskFeatureSchema.Withdrawal28DayV2
-                : RiskFeatureSchema.Withdrawal28DayV1,
-            UseV2Experiment = experimentV2,
-            ExperimentName = experimentV2 ? "experiment-v2" : "train-v1"
+            FeatureSchemaVersion = schemaVersion,
+            UseV2Experiment = isExperiment,
+            ExperimentName = experimentName
         });
 
         Console.WriteLine($"Model accepted: {result.Metadata.ModelVersion}");
@@ -192,6 +200,64 @@ internal static class Program
             $"recall={result.Report.TestMetrics.Recall:F3}, " +
             $"precision={result.Report.TestMetrics.Precision:F3}, " +
             $"threshold={result.Metadata.DecisionThreshold:F4}");
+        return 0;
+    }
+
+    /// <summary>
+    /// Diagnostic-only. Reports what precision is actually attainable at each recall floor so gate
+    /// values can be chosen from measurements. Publishes nothing and never touches locked test.
+    /// </summary>
+    private static int Analyze(IReadOnlyDictionary<string, string> options)
+    {
+        EnsureOnly(options, "data", "schema", "report", "seed", "candidate");
+        var dataPath = Path.GetFullPath(Get(options, "data", Path.Combine("src", "Lodestone.ML", "Data", "OULAD")));
+        var schemaVersion = Get(options, "schema", RiskFeatureSchema.Withdrawal28DayV3);
+        _ = RiskFeatureSchemas.GetRequired(schemaVersion);
+        var seed = ParseInt(options, "seed", 20260831);
+        var reportPath = Path.GetFullPath(Get(
+            options,
+            "report",
+            Path.Combine("src", "Lodestone.ML", "Reports", "experiments", $"threshold-analysis.{schemaVersion}.json")));
+
+        var requestedCandidate = options.GetValueOrDefault("candidate");
+        var candidates = string.IsNullOrWhiteSpace(requestedCandidate)
+            ? ModelTrainingCandidate.V2Candidates
+                .Where(item => item.Id is "fasttree-200-31-10-0.05" or "lightgbm-300-31-20-0.05")
+                .ToArray()
+            : ModelTrainingCandidate.V2Candidates
+                .Where(item => string.Equals(item.Id, requestedCandidate, StringComparison.Ordinal))
+                .ToArray();
+        if (candidates.Length == 0)
+            throw new CliUsageException($"Unknown candidate '{requestedCandidate}'.");
+
+        var mlContext = new MLContext(seed: seed);
+        var analyzer = new ThresholdAnalyzer(
+            mlContext,
+            new OuladDataLoader(mlContext),
+            new FeatureEngineering(mlContext),
+            new global::Lodestone.ML.Training.ModelTrainer(mlContext),
+            new ModelEvaluator(mlContext));
+        var report = analyzer.Analyze(dataPath, schemaVersion, candidates, seed);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+        File.WriteAllText(reportPath, JsonSerializer.Serialize(report, JsonOptions));
+
+        Console.WriteLine($"Schema: {report.FeatureSchemaVersion}");
+        Console.WriteLine(
+            $"Validation rows: {report.ValidationRows:N0}, positives: {report.ValidationPositives:N0} " +
+            $"({report.ValidationPositiveRate:P2} base rate)");
+        foreach (var candidate in report.Candidates)
+        {
+            Console.WriteLine($"\n{candidate.CandidateId} ({candidate.Algorithm}) — best precision at each recall floor:");
+            foreach (var point in candidate.BestPrecisionAtOrAboveRecall)
+            {
+                Console.WriteLine(point.IsAttainable
+                    ? $"  recall >= {point.RecallFloor:F2} -> precision {point.BestPrecision:F4} (at recall {point.RecallAtBestPrecision:F3}, threshold {point.ThresholdAtBestPrecision:F4})"
+                    : $"  recall >= {point.RecallFloor:F2} -> unattainable");
+            }
+        }
+
+        Console.WriteLine($"\nReport: {reportPath}");
         return 0;
     }
 
@@ -319,11 +385,24 @@ internal static class Program
             candidate is atomically published to the same application artifact location:
               dotnet run --project tools/Lodestone.ModelTrainer -- experiment-v2 [--data <directory>] [--model <risk-model.zip>] [--metadata <json>] [--report <json>] [--version <id>] [--source-url <url>] [--source-sha256 <hash>] [--seed <number>]
 
+            Same protocol as experiment-v2, using the seventeen-feature v3 schema (v2's twelve
+            features plus activity acceleration, click volatility, forum-engagement share, weekly
+            inactivity coverage, and an assessment-miss streak; still clickstream/assessment-only,
+            no demographic or registration data):
+              dotnet run --project tools/Lodestone.ModelTrainer -- experiment-v3 [--data <directory>] [--model <risk-model.zip>] [--metadata <json>] [--report <json>] [--version <id>] [--source-url <url>] [--source-sha256 <hash>] [--seed <number>]
+
             By default train publishes model and metadata to src/Lodestone.Web/App_Data/ml, the
             location consumed by the Web app after MachineLearning:Enabled is set true, and writes
             its evaluation report to src/Lodestone.ML/Reports (v2 reports use Reports/experiments).
 
-            Every command uses the fixed AUC >= .70, recall >= .70, precision >= .30 gate. The
+            Report what precision is attainable at each recall floor, to choose gate values from
+            measurement rather than assumption. Trains on the training split and scores validation
+            only; it publishes nothing and never touches the locked test partition:
+              dotnet run --project tools/Lodestone.ModelTrainer -- analyze [--data <directory>] [--schema <feature-schema>] [--report <json>] [--seed <number>] [--candidate <id>]
+
+            Every command uses the fixed AUC >= .70, recall >= .70, precision >= .05 gate. The
+            precision gate reflects the measured frontier for a ~2.6% base-rate event, not a target
+            classifier accuracy; published models are triage-ranking aids, not precise classifiers. The
             locked test partition is never evaluated if validation fails. Exit code 3 leaves any
             previously published application artifact untouched; failure reports stay outside the
             Web App_Data/ml directory.

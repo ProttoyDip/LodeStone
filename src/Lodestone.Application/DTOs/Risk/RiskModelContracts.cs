@@ -5,6 +5,7 @@ public static class RiskFeatureSchema
 {
     public const string Withdrawal28DayV1 = "withdrawal-28d-v1";
     public const string Withdrawal28DayV2 = "withdrawal-28d-v2";
+    public const string Withdrawal28DayV3 = "withdrawal-28d-v3";
     public const int Withdrawal28DayObservedDays = 28;
 }
 

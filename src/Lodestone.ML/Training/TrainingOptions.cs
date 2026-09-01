@@ -26,6 +26,15 @@ public sealed class TrainingOptions
     public double MinimumRecall { get; init; } = ModelQualityGates.MinimumRecall;
     public double MinimumPrecision { get; init; } = ModelQualityGates.MinimumPrecision;
 
+    /// <summary>
+    /// Recall headroom demanded of the validation-selected threshold, above <see cref="MinimumRecall"/>.
+    /// Threshold selection maximises F1 subject to the recall floor, and because precision rises as
+    /// recall falls, the optimum otherwise lands exactly on that floor with no margin -- so ordinary
+    /// validation-to-test sampling variation decides whether the locked-test gate passes. Selecting
+    /// against a raised floor keeps the published operating point clear of the gate it must satisfy.
+    /// </summary>
+    public double RecallSelectionMargin { get; init; } = .03;
+
     public string ResolveMetadataPath()
         => MetadataOutputPath ?? Path.ChangeExtension(ModelOutputPath, ".metadata.json");
 
@@ -49,21 +58,28 @@ public sealed class TrainingOptions
         ValidateRate(MinimumTestAreaUnderRocCurve, nameof(MinimumTestAreaUnderRocCurve));
         ValidateRate(MinimumRecall, nameof(MinimumRecall));
         ValidateRate(MinimumPrecision, nameof(MinimumPrecision));
+        ValidateRate(RecallSelectionMargin, nameof(RecallSelectionMargin));
+        if (MinimumRecall + RecallSelectionMargin > 1d)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(RecallSelectionMargin),
+                "The recall gate plus its selection margin cannot exceed 1.0.");
+        }
         if (MinimumTestAreaUnderRocCurve < ModelQualityGates.MinimumAreaUnderRocCurve ||
             MinimumRecall < ModelQualityGates.MinimumRecall ||
             MinimumPrecision < ModelQualityGates.MinimumPrecision)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(MinimumTestAreaUnderRocCurve),
-                "Publication gates cannot be lowered below AUC 0.70, recall 0.70, and precision 0.30.");
+                $"Publication gates cannot be lowered below AUC {ModelQualityGates.MinimumAreaUnderRocCurve:F2}, " +
+                $"recall {ModelQualityGates.MinimumRecall:F2}, and precision {ModelQualityGates.MinimumPrecision:F2}.");
         }
         _ = Lodestone.Application.DTOs.Risk.RiskFeatureSchemas.GetRequired(FeatureSchemaVersion);
-        if (UseV2Experiment && !string.Equals(
-                FeatureSchemaVersion,
-                Lodestone.Application.DTOs.Risk.RiskFeatureSchema.Withdrawal28DayV2,
-                StringComparison.Ordinal))
+        if (UseV2Experiment
+            && !string.Equals(FeatureSchemaVersion, Lodestone.Application.DTOs.Risk.RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
+            && !string.Equals(FeatureSchemaVersion, Lodestone.Application.DTOs.Risk.RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal))
         {
-            throw new ArgumentException("UseV2Experiment requires withdrawal-28d-v2.", nameof(FeatureSchemaVersion));
+            throw new ArgumentException("UseV2Experiment requires withdrawal-28d-v2 or withdrawal-28d-v3.", nameof(FeatureSchemaVersion));
         }
         if (string.IsNullOrWhiteSpace(ExperimentName) || ExperimentName.Trim().Length > 80)
             throw new ArgumentException("ExperimentName must contain 1-80 characters.", nameof(ExperimentName));

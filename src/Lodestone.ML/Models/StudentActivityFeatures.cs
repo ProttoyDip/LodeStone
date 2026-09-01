@@ -45,4 +45,16 @@ public class StudentActivityFeatures
     public float AssessmentLateOrMissingRate { get; set; }
     public float CourseProgressRatio { get; set; }
     public float CohortActivityPercentile { get; set; }
+
+    // withdrawal-28d-v3: additive on top of v2, still window-bounded and leakage-safe.
+    /// <summary>Second difference of active-day rate across three equal window periods.</summary>
+    public float ActivityTrendAcceleration { get; set; }
+    /// <summary>Population standard deviation of total daily clicks across the window.</summary>
+    public float ClickVolatility { get; set; }
+    /// <summary>Share of window clicks that were forum activity rather than course material.</summary>
+    public float ForumEngagementShare { get; set; }
+    /// <summary>Fraction of the window's four 7-day weeks with zero active days.</summary>
+    public float InactiveWeekRate { get; set; }
+    /// <summary>Count of the most recent consecutive due assessments that were late or missing.</summary>
+    public float AssessmentMissStreak { get; set; }
 }

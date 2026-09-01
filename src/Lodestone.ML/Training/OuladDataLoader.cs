@@ -274,21 +274,29 @@ public sealed class OuladDataLoader
                 var lateOrMissing = 0;
                 var assessmentsDue = 0;
                 var assessmentsOnTime = 0;
-                foreach (var assessment in assessments.Where(item => item.DueDay >= windowStart && item.DueDay <= anchor))
+                var dueAssessmentsWindow = new List<(int DueDay, bool IsLateOrMissing)>();
+                foreach (var assessment in assessments
+                             .Where(item => item.DueDay >= windowStart && item.DueDay <= anchor)
+                             .OrderBy(item => item.DueDay))
                 {
                     if (enrollment.Submissions.TryGetValue(assessment.Id, out var submission) && submission.IsBanked)
                         continue;
                     assessmentsDue++;
+                    bool isLateOrMissing;
                     if (!enrollment.Submissions.TryGetValue(assessment.Id, out submission)
                         || submission.SubmittedDay > anchor
                         || submission.SubmittedDay > assessment.DueDay)
                     {
                         lateOrMissing++;
+                        isLateOrMissing = true;
                     }
                     else
                     {
                         assessmentsOnTime++;
+                        isLateOrMissing = false;
                     }
+
+                    dueAssessmentsWindow.Add((assessment.DueDay!.Value, isLateOrMissing));
                 }
 
                 var withdrawal = enrollment.UnregistrationDay.HasValue
@@ -311,7 +319,9 @@ public sealed class OuladDataLoader
                     WithdrawalDay = withdrawal ? enrollment.UnregistrationDay : null
                 };
 
-                if (string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal))
+                var isV2OrV3 = string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
+                               || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal);
+                if (isV2OrV3)
                 {
                     PopulateV2Features(
                         observation,
@@ -322,6 +332,11 @@ public sealed class OuladDataLoader
                         assessmentsDue,
                         assessmentsOnTime,
                         lateOrMissing);
+                }
+
+                if (string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal))
+                {
+                    PopulateV3Features(observation, active, windowStart, anchor, dueAssessmentsWindow);
                 }
 
                 result.Add(observation);
@@ -369,6 +384,66 @@ public sealed class OuladDataLoader
         observation.CourseProgressRatio = Math.Clamp((anchor + 1) / (float)courseLength, 0, 1);
         // Fit/apply below after the grouped split. A default is not used for model training.
         observation.CohortActivityPercentile = 0;
+    }
+
+    private static void PopulateV3Features(
+        StudentActivityObservation observation,
+        IReadOnlyList<KeyValuePair<int, DailyActivity>> active,
+        int windowStart,
+        int anchor,
+        IReadOnlyList<(int DueDay, bool IsLateOrMissing)> dueAssessmentsWindow)
+    {
+        const int thirdWindowDays = ObservationWindowDays / 3;
+        var earlyEnd = windowStart + thirdWindowDays - 1;
+        var midEnd = earlyEnd + thirdWindowDays;
+        var lateWindowDays = anchor - midEnd;
+        var earlyRate = active.Count(pair => pair.Key <= earlyEnd) / (float)thirdWindowDays;
+        var midRate = active.Count(pair => pair.Key > earlyEnd && pair.Key <= midEnd) / (float)thirdWindowDays;
+        var lateRate = active.Count(pair => pair.Key > midEnd) / (float)lateWindowDays;
+        observation.ActivityTrendAcceleration = (lateRate - midRate) - (midRate - earlyRate);
+
+        var activityByDay = active.ToDictionary(pair => pair.Key, pair => pair.Value);
+        var dailyTotals = new float[ObservationWindowDays];
+        for (var day = windowStart; day <= anchor; day++)
+        {
+            dailyTotals[day - windowStart] = activityByDay.TryGetValue(day, out var dailyActivity)
+                ? dailyActivity.ForumClicks + dailyActivity.CourseClicks
+                : 0f;
+        }
+        var meanDailyClicks = dailyTotals.Average();
+        var variance = dailyTotals.Average(value => (value - meanDailyClicks) * (value - meanDailyClicks));
+        observation.ClickVolatility = (float)Math.Sqrt(variance);
+
+        var forumClicks = active.Sum(pair => pair.Value.ForumClicks);
+        var courseClicks = active.Sum(pair => pair.Value.CourseClicks);
+        observation.ForumEngagementShare = forumClicks + courseClicks == 0
+            ? 0f
+            : forumClicks / (float)(forumClicks + courseClicks);
+
+        const int weekDays = 7;
+        const int weekCount = ObservationWindowDays / weekDays;
+        var activeDays = active.Select(pair => pair.Key).ToHashSet();
+        var inactiveWeeks = 0;
+        for (var week = 0; week < weekCount; week++)
+        {
+            var weekStart = windowStart + week * weekDays;
+            if (!Enumerable.Range(weekStart, weekDays).Any(activeDays.Contains))
+                inactiveWeeks++;
+        }
+        observation.InactiveWeekRate = inactiveWeeks / (float)weekCount;
+
+        observation.AssessmentMissStreak = TrailingAssessmentMissStreak(dueAssessmentsWindow);
+    }
+
+    private static int TrailingAssessmentMissStreak(IReadOnlyList<(int DueDay, bool IsLateOrMissing)> dueAssessmentsWindow)
+    {
+        var streak = 0;
+        for (var index = dueAssessmentsWindow.Count - 1; index >= 0; index--)
+        {
+            if (!dueAssessmentsWindow[index].IsLateOrMissing) break;
+            streak++;
+        }
+        return streak;
     }
 
     private static int TrailingInactivityStreak(
