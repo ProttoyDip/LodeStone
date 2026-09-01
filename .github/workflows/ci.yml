@@ -43,7 +43,7 @@ jobs:
 
       - name: Check EF model drift
         run: >-
-          dotnet tool run dotnet-ef -- migrations has-pending-model-changes --no-build
+          dotnet tool run dotnet-ef -- migrations has-pending-model-changes --no-build --configuration Release
           --project src/Lodestone.Infrastructure/Lodestone.Infrastructure.csproj
           --startup-project src/Lodestone.Web/Lodestone.Web.csproj
 
