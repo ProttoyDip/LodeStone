@@ -6,6 +6,8 @@
     var dashboard = Model.Dashboard;
     var successMessage = TempData["Success"] as string ?? TempData["AdminSuccess"] as string;
     var errorMessage = TempData["Error"] as string ?? TempData["AdminError"] as string;
+    var riskRuntime = Model.RiskRuntime;
+    var latestRiskRun = riskRuntime?.LatestRun;
     var maximumRiskSignals = Math.Max(1, dashboard.RiskTrend.Count == 0
         ? 0
         : dashboard.RiskTrend.Max(point => point.Total));
@@ -80,6 +82,86 @@
             }
         </div>
     </section>
+
+    @if (riskRuntime is not null)
+    {
+        <section class="ls-admin-panel" aria-labelledby="runtime-model-heading">
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Machine learning</p>
+                    <h2 id="runtime-model-heading">Runtime model status</h2>
+                    <p>Only a validated model can score consented, verified student snapshots.</p>
+                </div>
+                <span class="ls-admin-badge tone-@riskRuntime.StateTone">@riskRuntime.StateLabel</span>
+            </header>
+            <div class="ls-admin-panel__body">
+                @if (!riskRuntime.ModelStatus.IsAvailable)
+                {
+                    <div class="ls-admin-alert tone-@riskRuntime.StateTone" role="@(riskRuntime.ModelStatus.IsEnabled ? "alert" : "status")">
+                        <i class="bi @(riskRuntime.ModelStatus.IsEnabled ? "bi-shield-x" : "bi-pause-circle")" aria-hidden="true"></i>
+                        <span>
+                            @riskRuntime.StateDescription
+                            @if (!string.IsNullOrWhiteSpace(riskRuntime.UnavailableReason))
+                            {
+                                <text> @riskRuntime.UnavailableReason</text>
+                            }
+                        </span>
+                    </div>
+                }
+                else if (!string.IsNullOrWhiteSpace(riskRuntime.StatusError))
+                {
+                    <div class="ls-admin-alert tone-warning" role="alert">
+                        <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+                        <span>@riskRuntime.StatusError</span>
+                    </div>
+                }
+
+                <ul class="ls-admin-status" role="list">
+                    <li class="ls-admin-status__item">
+                        <span class="ls-admin-status__marker ls-admin-status__marker--@riskRuntime.StateTone" aria-hidden="true"></span>
+                        <div>
+                            <span>Loaded model</span>
+                            <strong>@riskRuntime.ModelVersion</strong>
+                            <small>Feature schema: @riskRuntime.FeatureSchemaVersion</small>
+                        </div>
+                    </li>
+                    @if (latestRiskRun is null)
+                    {
+                        <li class="ls-admin-status__item">
+                            <span class="ls-admin-status__marker ls-admin-status__marker--neutral" aria-hidden="true"></span>
+                            <div>
+                                <span>Latest scoring run</span>
+                                <strong>No run recorded</strong>
+                                <small>Operational totals appear after the first eligible scoring batch.</small>
+                            </div>
+                        </li>
+                    }
+                    else
+                    {
+                        <li class="ls-admin-status__item">
+                            <span class="ls-admin-status__marker ls-admin-status__marker--@(latestRiskRun.FailedCount > 0 ? "warning" : "positive")" aria-hidden="true"></span>
+                            <div>
+                                <span>Latest scoring run</span>
+                                <strong>@latestRiskRun.Status &middot; @latestRiskRun.ScoredCount.ToString("N0") scored</strong>
+                                <small>
+                                    @latestRiskRun.SkippedCount.ToString("N0") skipped, @latestRiskRun.FailedCount.ToString("N0") failed,
+                                    @latestRiskRun.QueueCreatedCount.ToString("N0") cases opened
+                                    @if (latestRiskRun.CompletedAtUtc is { } completedAt)
+                                    {
+                                        <text> &middot; completed </text><time datetime="@completedAt.ToString("O")" data-local-datetime>@completedAt.ToString("dd MMM yyyy, HH:mm") UTC</time>
+                                    }
+                                </small>
+                            </div>
+                        </li>
+                    }
+                </ul>
+                <div class="ls-admin-panel__footer">
+                    <span>Open queue counts and full failure details are available in Risk operations.</span>
+                    <a class="ls-admin-btn ls-admin-btn--secondary ls-admin-btn--sm" asp-controller="Admin" asp-action="RiskMonitoring">Open risk operations</a>
+                </div>
+            </div>
+        </section>
+    }
 
     <div class="ls-admin-grid--main">
         <section class="ls-admin-panel ls-admin-panel--queue" aria-labelledby="support-queue-heading">

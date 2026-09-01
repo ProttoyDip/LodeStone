@@ -133,11 +133,25 @@ public static class GroupDataSplitter
         ForumInteractionCount = value.ForumInteractionCount,
         CourseInteractionCount = value.CourseInteractionCount,
         LateOrMissingAssignmentCount = value.LateOrMissingAssignmentCount,
+        RecentActiveDayRate = value.RecentActiveDayRate,
+        PriorActiveDayRate = value.PriorActiveDayRate,
+        ActiveDayRateTrend = value.ActiveDayRateTrend,
+        RecentCourseClickRate = value.RecentCourseClickRate,
+        PriorCourseClickRate = value.PriorCourseClickRate,
+        CourseClickRateTrend = value.CourseClickRateTrend,
+        InactivityStreakDays = value.InactivityStreakDays,
+        AssessmentDueRate = value.AssessmentDueRate,
+        AssessmentOnTimeRate = value.AssessmentOnTimeRate,
+        AssessmentLateOrMissingRate = value.AssessmentLateOrMissingRate,
+        CourseProgressRatio = value.CourseProgressRatio,
+        CohortActivityPercentile = value.CohortActivityPercentile,
         IsAtRisk = value.IsAtRisk,
         ExampleWeight = value.ExampleWeight,
         StudentGroupKey = value.StudentGroupKey,
         EnrollmentKey = value.EnrollmentKey,
-        ObservationDay = value.ObservationDay
+        ObservationDay = value.ObservationDay,
+        CoursePresentationKey = value.CoursePresentationKey,
+        WithdrawalDay = value.WithdrawalDay
     };
 
     private sealed record StudentClass(string Key, bool IsPositive);

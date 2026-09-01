@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
+using Lodestone.Application.DTOs.Risk;
 using Lodestone.Application.Interfaces;
 using Lodestone.ML;
 using Lodestone.ML.Models;
@@ -39,12 +40,19 @@ public sealed class RiskModelAvailabilityTests
     }
 
     [Fact]
-    public void Missing_artifact_registers_an_unhealthy_fail_closed_predictor()
+    public void Enabled_configuration_with_a_missing_artifact_is_unhealthy_and_fails_closed()
     {
         using var output = new TemporaryDirectory();
         var modelPath = Path.Combine(output.Path, "missing.zip");
+        var configuration = new StubConfiguration(new Dictionary<string, string?>
+        {
+            ["MachineLearning:Enabled"] = "true",
+            ["MachineLearning:ModelPath"] = Path.GetFileName(modelPath)
+        });
 
-        using var provider = new ServiceCollection().AddMachineLearning(modelPath).BuildServiceProvider();
+        using var provider = new ServiceCollection()
+            .AddMachineLearning(configuration, output.Path)
+            .BuildServiceProvider();
 
         var status = provider.GetRequiredService<IRiskModelStatusProvider>().Status;
         status.IsEnabled.Should().BeTrue();
@@ -58,25 +66,29 @@ public sealed class RiskModelAvailabilityTests
     }
 
     [Fact]
+    public void Missing_publication_manifest_registers_an_unhealthy_fail_closed_predictor()
+    {
+        using var output = new TemporaryDirectory();
+        var modelPath = Path.Combine(output.Path, "model.zip");
+        File.WriteAllBytes(modelPath, "model"u8.ToArray());
+        var metadata = ValidMetadata(ComputeSha256(modelPath));
+        File.WriteAllText(Path.ChangeExtension(modelPath, ".metadata.json"), JsonSerializer.Serialize(metadata));
+
+        using var provider = new ServiceCollection().AddMachineLearning(modelPath).BuildServiceProvider();
+
+        provider.GetRequiredService<IRiskModelStatusProvider>().Status.UnavailableReason
+            .Should().Be("The configured risk model publication manifest is missing.");
+    }
+
+    [Fact]
     public void Corrupt_artifact_with_valid_hash_registers_unavailable_without_leaking_paths()
     {
         using var output = new TemporaryDirectory();
         var modelPath = Path.Combine(output.Path, "corrupt.zip");
         File.WriteAllBytes(modelPath, "not-an-mlnet-model"u8.ToArray());
-        var metadataPath = Path.ChangeExtension(modelPath, ".metadata.json");
-        using (var stream = File.OpenRead(modelPath))
-        {
-            var metadata = new RiskModelMetadata
-            {
-                ModelVersion = "corrupt-v1",
-                DecisionThreshold = .5f,
-                ObservationWindowDays = 28,
-                PredictionWindowDays = 28,
-                ObservationStrideDays = 7,
-                ModelSha256 = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant()
-            };
-            File.WriteAllText(metadataPath, JsonSerializer.Serialize(metadata));
-        }
+        var metadata = ValidMetadata(ComputeSha256(modelPath));
+        metadata.ModelVersion = "corrupt-v1";
+        WriteSidecars(modelPath, metadata);
 
         using var provider = new ServiceCollection().AddMachineLearning(modelPath).BuildServiceProvider();
 
@@ -118,8 +130,12 @@ public sealed class RiskModelAvailabilityTests
         using var provider = new ServiceCollection().AddMachineLearning(modelPath).BuildServiceProvider();
 
         var status = provider.GetRequiredService<IRiskModelStatusProvider>().Status;
+        status.IsEnabled.Should().BeTrue();
+        status.IsHealthy.Should().BeFalse();
         status.UnavailableReason.Should().Be("The configured risk model metadata is not valid JSON.");
         status.UnavailableReason.Should().NotContain(output.Path);
+        var act = () => provider.GetRequiredService<IRiskModelPredictor>().Predict(new RiskModelInput(0, 0, 28, 0, 0, 1));
+        act.Should().Throw<RiskModelUnavailableException>().WithMessage("*metadata is not valid JSON*");
     }
 
     [Fact]
@@ -129,7 +145,7 @@ public sealed class RiskModelAvailabilityTests
         var modelPath = Path.Combine(output.Path, "tampered.zip");
         File.WriteAllBytes(modelPath, "tampered"u8.ToArray());
         var metadata = ValidMetadata(new string('0', 64));
-        File.WriteAllText(Path.ChangeExtension(modelPath, ".metadata.json"), JsonSerializer.Serialize(metadata));
+        WriteSidecars(modelPath, metadata);
 
         using var provider = new ServiceCollection().AddMachineLearning(modelPath).BuildServiceProvider();
 
@@ -172,15 +188,102 @@ public sealed class RiskModelAvailabilityTests
             .Should().Be("Risk model observation stride must be 7 days.");
     }
 
+    [Fact]
+    public void Runtime_rejects_an_unknown_feature_schema_before_loading_the_model()
+    {
+        using var output = new TemporaryDirectory();
+        var modelPath = Path.Combine(output.Path, "model.zip");
+        File.WriteAllBytes(modelPath, "model"u8.ToArray());
+        var metadata = ValidMetadata(ComputeSha256(modelPath));
+        metadata.SchemaVersion = "withdrawal-28d-v999";
+        WriteSidecars(modelPath, metadata);
+
+        using var provider = new ServiceCollection().AddMachineLearning(modelPath).BuildServiceProvider();
+
+        var status = provider.GetRequiredService<IRiskModelStatusProvider>().Status;
+        status.IsAvailable.Should().BeFalse();
+        status.UnavailableReason.Should().Be("Unsupported risk feature schema 'withdrawal-28d-v999'.");
+    }
+
+    [Fact]
+    public void Runtime_rejects_incompatible_feature_order_before_loading_the_model()
+    {
+        using var output = new TemporaryDirectory();
+        var modelPath = Path.Combine(output.Path, "model.zip");
+        File.WriteAllBytes(modelPath, "model"u8.ToArray());
+        var metadata = ValidMetadata(ComputeSha256(modelPath));
+        metadata.FeatureNames.Reverse();
+        WriteSidecars(modelPath, metadata);
+
+        using var provider = new ServiceCollection().AddMachineLearning(modelPath).BuildServiceProvider();
+
+        provider.GetRequiredService<IRiskModelStatusProvider>().Status.UnavailableReason
+            .Should().Be("Risk model feature names or order do not match the runtime contract.");
+    }
+
     private static RiskModelMetadata ValidMetadata(string modelHash) => new()
     {
+        MetadataSchemaVersion = RiskModelMetadata.CurrentMetadataSchemaVersion,
         ModelVersion = "fixture-v1",
+        SchemaVersion = RiskFeatureSchema.Withdrawal28DayV1,
+        FeatureNames = RiskFeatureSchemas.Withdrawal28DayV1.FeatureNames.ToList(),
         DecisionThreshold = .5f,
         ObservationWindowDays = 28,
         PredictionWindowDays = 28,
         ObservationStrideDays = 7,
-        ModelSha256 = modelHash
+        ModelSha256 = modelHash,
+        PublicationId = "fixture-publication",
+        EligibleForRuntimeIntegration = true,
+        ModelAlgorithm = "FastTree",
+        ValidationMetrics = PassingMetrics(),
+        TestMetrics = PassingMetrics()
     };
+
+    private static ModelMetrics PassingMetrics() => new()
+    {
+        AreaUnderRocCurve = .80,
+        Recall = .80,
+        Precision = .80
+    };
+
+    private static void WriteSidecars(string modelPath, RiskModelMetadata metadata)
+    {
+        var metadataPath = Path.ChangeExtension(modelPath, ".metadata.json");
+        File.WriteAllText(metadataPath, JsonSerializer.Serialize(metadata));
+        var manifest = new RiskModelPublicationManifest
+        {
+            PublicationId = metadata.PublicationId,
+            EligibleForRuntimeIntegration = true,
+            PublishedAtUtc = DateTime.UtcNow,
+            ModelVersion = metadata.ModelVersion,
+            FeatureSchemaVersion = metadata.SchemaVersion,
+            ObservationWindowDays = metadata.ObservationWindowDays,
+            PredictionWindowDays = metadata.PredictionWindowDays,
+            ObservationStrideDays = metadata.ObservationStrideDays,
+            FeatureNames = metadata.FeatureNames,
+            ModelSha256 = metadata.ModelSha256,
+            MetadataSha256 = ComputeSha256(metadataPath),
+            ModelAlgorithm = metadata.ModelAlgorithm,
+            QualityGate = new QualityGateResult
+            {
+                MinimumAreaUnderRocCurve = .70,
+                MinimumRecall = .70,
+                MinimumPrecision = .30,
+                ValidationPassed = true,
+                TestPassed = true,
+                Passed = true
+            }
+        };
+        File.WriteAllText(
+            RiskModelPublicationPaths.GetManifestPath(modelPath),
+            JsonSerializer.Serialize(manifest));
+    }
+
+    private static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
 
     private sealed class StubConfiguration : IConfigurationSection
     {

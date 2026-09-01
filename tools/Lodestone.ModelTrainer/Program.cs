@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Lodestone.Application.DTOs.Risk;
 using Lodestone.ML.Training;
 using Microsoft.ML;
 
@@ -31,7 +32,8 @@ internal static class Program
             return command switch
             {
                 "download" => await DownloadAsync(options),
-                "train" => Train(options),
+                "train" => Train(options, experimentV2: false),
+                "experiment-v2" => Train(options, experimentV2: true),
                 _ => throw new CliUsageException($"Unknown command '{args[0]}'.")
             };
         }
@@ -128,12 +130,12 @@ internal static class Program
         }
     }
 
-    private static int Train(IReadOnlyDictionary<string, string> options)
+    private static int Train(IReadOnlyDictionary<string, string> options, bool experimentV2)
     {
         EnsureOnly(
             options,
             "data", "model", "metadata", "report", "version", "source-url", "source-sha256",
-            "seed", "min-auc", "min-recall", "min-precision");
+            "seed");
         var dataPath = Path.GetFullPath(Get(options, "data", Path.Combine("src", "Lodestone.ML", "Data", "OULAD")));
         // The default publishes directly to the same content-root-relative location consumed by
         // src/Lodestone.Web/appsettings.json, so a successful train integrates on next restart.
@@ -148,13 +150,16 @@ internal static class Program
         var reportPath = Path.GetFullPath(Get(
             options,
             "report",
-            Path.Combine("src", "Lodestone.ML", "Reports", "risk-model.report.json")));
+            experimentV2
+                ? Path.Combine("src", "Lodestone.ML", "Reports", "experiments", "risk-model.v2.report.json")
+                : Path.Combine("src", "Lodestone.ML", "Reports", "risk-model.report.json")));
         var provenance = ReadProvenance(dataPath);
         var sourceUrl = options.GetValueOrDefault("source-url") ?? provenance?.SourceUrl;
         var sourceHash = options.GetValueOrDefault("source-sha256") ?? provenance?.Sha256;
         ValidateOptionalHash(sourceHash, "--source-sha256");
 
-        var mlContext = new MLContext(seed: ParseInt(options, "seed", 42));
+        var seed = ParseInt(options, "seed", experimentV2 ? 20260831 : 42);
+        var mlContext = new MLContext(seed: seed);
         var loader = new OuladDataLoader(mlContext);
         var features = new FeatureEngineering(mlContext);
         var trainer = new global::Lodestone.ML.Training.ModelTrainer(mlContext);
@@ -169,18 +174,21 @@ internal static class Program
             ModelVersion = options.GetValueOrDefault("version"),
             SourceUrl = sourceUrl,
             SourceSha256 = sourceHash,
-            Seed = ParseInt(options, "seed", 42),
-            MinimumTestAreaUnderRocCurve = ParseDouble(options, "min-auc", 0.70),
-            MinimumRecall = ParseDouble(options, "min-recall", 0.70),
-            MinimumPrecision = ParseDouble(options, "min-precision", 0.30)
+            Seed = seed,
+            FeatureSchemaVersion = experimentV2
+                ? RiskFeatureSchema.Withdrawal28DayV2
+                : RiskFeatureSchema.Withdrawal28DayV1,
+            UseV2Experiment = experimentV2,
+            ExperimentName = experimentV2 ? "experiment-v2" : "train-v1"
         });
 
         Console.WriteLine($"Model accepted: {result.Metadata.ModelVersion}");
         Console.WriteLine($"Model: {result.ModelPath}");
         Console.WriteLine($"Metadata: {result.MetadataPath}");
+        Console.WriteLine($"Publication manifest: {result.PublicationManifestPath}");
         Console.WriteLine($"Report: {result.ReportPath}");
         Console.WriteLine(
-            $"Test AUC={result.Report.TestMetrics.AreaUnderRocCurve:F3}, " +
+            $"Test AUC={result.Report.TestMetrics!.AreaUnderRocCurve:F3}, " +
             $"recall={result.Report.TestMetrics.Recall:F3}, " +
             $"precision={result.Report.TestMetrics.Precision:F3}, " +
             $"threshold={result.Metadata.DecisionThreshold:F4}");
@@ -222,15 +230,6 @@ internal static class Program
             return fallback;
         if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
             throw new CliUsageException($"--{key} must be a non-negative integer.");
-        return parsed;
-    }
-
-    private static double ParseDouble(IReadOnlyDictionary<string, string> options, string key, double fallback)
-    {
-        if (!options.TryGetValue(key, out var value))
-            return fallback;
-        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
-            throw new CliUsageException($"--{key} must be an invariant number.");
         return parsed;
     }
 
@@ -310,15 +309,24 @@ internal static class Program
             Download the official UCI dataset (dataset 349):
               dotnet run --project tools/Lodestone.ModelTrainer -- download [--output <directory>] [--url <https-url>] [--sha256 <expected-hash>]
 
-            Train, validate and atomically publish an artifact:
-              dotnet run --project tools/Lodestone.ModelTrainer -- train [--data <directory>] [--model <risk-model.zip>] [--metadata <json>] [--report <json>] [--version <id>] [--source-url <url>] [--source-sha256 <hash>] [--seed <number>] [--min-auc <0..1>] [--min-recall <0..1>] [--min-precision <0..1>]
+            Train the legacy six-feature contract, validate it, and atomically publish only if all
+            fixed acceptance gates pass:
+              dotnet run --project tools/Lodestone.ModelTrainer -- train [--data <directory>] [--model <risk-model.zip>] [--metadata <json>] [--report <json>] [--version <id>] [--source-url <url>] [--source-sha256 <hash>] [--seed <number>]
+
+            Run the next runtime-capable, twelve-feature v2 experiment. It uses a deterministic
+            grouped 70/15/15 split, grouped CV within training, FastTree + LightGBM candidates,
+            validation-only selection, then exactly one locked-test evaluation. A successful
+            candidate is atomically published to the same application artifact location:
+              dotnet run --project tools/Lodestone.ModelTrainer -- experiment-v2 [--data <directory>] [--model <risk-model.zip>] [--metadata <json>] [--report <json>] [--version <id>] [--source-url <url>] [--source-sha256 <hash>] [--seed <number>]
 
             By default train publishes model and metadata to src/Lodestone.Web/App_Data/ml, the
             location consumed by the Web app after MachineLearning:Enabled is set true, and writes
-            its evaluation report to src/Lodestone.ML/Reports.
+            its evaluation report to src/Lodestone.ML/Reports (v2 reports use Reports/experiments).
 
-            The train command exits with code 3 and leaves the prior artifact untouched when the
-            validation threshold or untouched test quality gate fails.
+            Every command uses the fixed AUC >= .70, recall >= .70, precision >= .30 gate. The
+            locked test partition is never evaluated if validation fails. Exit code 3 leaves any
+            previously published application artifact untouched; failure reports stay outside the
+            Web App_Data/ml directory.
             """);
     }
 

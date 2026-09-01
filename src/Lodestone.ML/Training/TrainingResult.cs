@@ -7,7 +7,8 @@ public sealed record TrainingResult(
     TrainingReport Report,
     string ModelPath,
     string MetadataPath,
-    string ReportPath);
+    string ReportPath,
+    string PublicationManifestPath);
 
 public sealed class ModelQualityGateException : InvalidOperationException
 {

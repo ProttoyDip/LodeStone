@@ -25,5 +25,20 @@ public class RiskFeatureSnapshot : AuditableEntity
     public float CourseInteractionCount { get; set; }
     public float LateOrMissingAssignmentCount { get; set; }
 
+    // withdrawal-28d-v2 is deliberately stored as separately named, nullable columns. This
+    // prevents a v2 import from silently reinterpreting the six-field v1 contract.
+    public float? RecentActiveDayRate { get; set; }
+    public float? PriorActiveDayRate { get; set; }
+    public float? ActiveDayRateTrend { get; set; }
+    public float? RecentCourseClickRate { get; set; }
+    public float? PriorCourseClickRate { get; set; }
+    public float? CourseClickRateTrend { get; set; }
+    public float? InactivityStreakDays { get; set; }
+    public float? AssessmentDueRate { get; set; }
+    public float? AssessmentOnTimeRate { get; set; }
+    public float? AssessmentLateOrMissingRate { get; set; }
+    public float? CourseProgressRatio { get; set; }
+    public float? CohortActivityPercentile { get; set; }
+
     public ICollection<RiskScore> RiskScores { get; set; } = new List<RiskScore>();
 }

@@ -21,6 +21,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<RiskMonitoringConsentHistory> RiskMonitoringConsentHistory => Set<RiskMonitoringConsentHistory>();
     public DbSet<RiskScoringRun> RiskScoringRuns => Set<RiskScoringRun>();
     public DbSet<Nudge> Nudges => Set<Nudge>();
+    public DbSet<StudentNudgePreference> StudentNudgePreferences => Set<StudentNudgePreference>();
     public DbSet<ForumCategory> ForumCategories => Set<ForumCategory>();
     public DbSet<ForumPost> ForumPosts => Set<ForumPost>();
     public DbSet<ForumComment> ForumComments => Set<ForumComment>();

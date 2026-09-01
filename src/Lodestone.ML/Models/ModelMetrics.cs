@@ -5,9 +5,13 @@ public class ModelMetrics
 {
     public double Accuracy { get; set; }
     public double AreaUnderRocCurve { get; set; }
+    public double AreaUnderPrecisionRecallCurve { get; set; }
     public double F1Score { get; set; }
     public double Precision { get; set; }
     public double Recall { get; set; }
+    public double BrierScore { get; set; }
+    public double FalseAlertsPer100StudentWeeks { get; set; }
+    public double? MeanLeadTimeDays { get; set; }
     public double DecisionThreshold { get; set; }
     public int RowCount { get; set; }
     public int PositiveCount { get; set; }

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Lodestone.Application.DTOs.Risk;
 using Lodestone.ML.Training;
 using Microsoft.ML;
 using Xunit;
@@ -34,6 +35,32 @@ public sealed class OuladDataLoaderTests
         inactive.ActiveDayRate.Should().Be(0);
         inactive.ActivitySpanDays.Should().Be(0);
         inactive.DaysSinceLastAccess.Should().Be(28);
+    }
+
+    [Fact]
+    public void LoadObservations_v2_builds_only_anchor_time_behavioral_features()
+    {
+        using var dataset = OuladTestDataset.CreateFeatureSemantics();
+        var loader = new OuladDataLoader(new MLContext(seed: 42));
+
+        var observations = loader.LoadObservations(
+            dataset.DirectoryPath,
+            RiskFeatureSchema.Withdrawal28DayV2);
+
+        var first = observations.Single(row => row.StudentGroupKey == "1" && row.ObservationDay == 27);
+        first.RecentActiveDayRate.Should().BeApproximately(1f / 14f, .00001f);
+        first.PriorActiveDayRate.Should().BeApproximately(1f / 14f, .00001f);
+        first.ActiveDayRateTrend.Should().BeApproximately(0, .00001f);
+        first.RecentCourseClickRate.Should().BeApproximately(5f / 14f, .00001f);
+        first.PriorCourseClickRate.Should().BeApproximately(3f / 14f, .00001f);
+        first.CourseClickRateTrend.Should().BeApproximately(2f / 14f, .00001f);
+        first.InactivityStreakDays.Should().Be(26, "only days 0 and 27 are active in the anchor window");
+        first.AssessmentDueRate.Should().BeApproximately(1f / 28f, .00001f);
+        first.AssessmentOnTimeRate.Should().Be(0);
+        first.AssessmentLateOrMissingRate.Should().Be(1);
+        first.CourseProgressRatio.Should().BeApproximately(28f / 70f, .00001f);
+        first.CohortActivityPercentile.Should().Be(0, "the training-only cohort calibration is applied after splitting");
+        first.IsAtRisk.Should().BeTrue("the label looks ahead only to the defined 28-day target window");
     }
 
     [Fact]
@@ -80,6 +107,23 @@ public sealed class OuladDataLoaderTests
 
         act.Should().Throw<IOException>()
             .WithMessage("*characters after a closing quote*");
+    }
+
+    [Fact]
+    public void LoadObservations_rejects_case_insensitive_duplicate_headers_before_any_rows_are_processed()
+    {
+        using var dataset = OuladTestDataset.CreateFeatureSemantics();
+        File.WriteAllText(
+            Path.Combine(dataset.DirectoryPath, "studentInfo.csv"),
+            "code_module,code_presentation,id_student,ID_STUDENT,final_result\n" +
+            "AAA,2014J,1,1,Withdrawn\n" +
+            "AAA,2014J,2,2,Pass\n");
+        var loader = new OuladDataLoader(new MLContext(seed: 42));
+
+        var act = () => loader.LoadObservations(dataset.DirectoryPath);
+
+        act.Should().Throw<IOException>()
+            .WithMessage("*studentInfo.csv*duplicate header 'ID_STUDENT'*");
     }
 
     [Fact]

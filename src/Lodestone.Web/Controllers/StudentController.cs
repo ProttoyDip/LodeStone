@@ -1,4 +1,5 @@
 using Lodestone.Application.DTOs.Student;
+using Lodestone.Application.DTOs.Nudges;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
 using Lodestone.Web.ViewModels.Student;
@@ -14,6 +15,7 @@ public class StudentController : Controller
     private readonly IRiskMonitoringConsentService _consentService;
     private readonly IStudentNumberVerificationService _studentNumberVerificationService;
     private readonly ICurrentUserService _currentUserService;
+    private readonly INudgeService _nudgeService;
     private readonly ILogger<StudentController> _logger;
 
     public StudentController(
@@ -21,9 +23,10 @@ public class StudentController : Controller
         IRiskMonitoringConsentService consentService,
         IStudentNumberVerificationService studentNumberVerificationService,
         ICurrentUserService currentUserService,
+        INudgeService nudgeService,
         ILogger<StudentController> logger)
-        => (_dashboardService, _consentService, _studentNumberVerificationService, _currentUserService, _logger)
-            = (dashboardService, consentService, studentNumberVerificationService, currentUserService, logger);
+        => (_dashboardService, _consentService, _studentNumberVerificationService, _currentUserService, _nudgeService, _logger)
+            = (dashboardService, consentService, studentNumberVerificationService, currentUserService, nudgeService, logger);
 
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
@@ -35,7 +38,24 @@ public class StudentController : Controller
         var verification = await _studentNumberVerificationService.GetCurrentAsync(
             _currentUserService.UserId,
             cancellationToken);
-        return View(new StudentHomeViewModel(dashboard, consent, verification));
+
+        StudentNudgeStateDto? nudges = null;
+        string? nudgeLoadError = null;
+        try
+        {
+            nudges = await _nudgeService.GetForStudentAsync(_currentUserService.UserId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not load optional in-app support prompts.");
+            nudgeLoadError = "Optional support prompts could not be loaded. Your prompt preference was not changed.";
+        }
+
+        return View(new StudentHomeViewModel(dashboard, consent, verification)
+        {
+            NudgeState = nudges,
+            NudgeLoadError = nudgeLoadError
+        });
     }
 
     [HttpPost]
@@ -130,6 +150,105 @@ public class StudentController : Controller
         return RedirectToPrivacy();
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateInAppNudgePreference(bool enabled, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId)) return Challenge();
+        if (!ModelState.IsValid)
+        {
+            TempData["StudentNudgeError"] =
+                "Your optional support-prompt choice could not be saved. Nothing changed; please try again.";
+            return RedirectToNudgePreferences();
+        }
+
+        try
+        {
+            var result = await _nudgeService.SetInAppPreferenceAsync(
+                _currentUserService.UserId,
+                enabled,
+                cancellationToken);
+
+            if (result == NudgeMutationResult.Updated)
+            {
+                TempData["StudentNudgeSuccess"] = enabled
+                    ? "Optional in-app support prompts are on. You can change this choice at any time."
+                    : "Optional in-app support prompts are off. Existing prompts are hidden and no new prompt will be delivered.";
+            }
+            else
+            {
+                TempData["StudentNudgeError"] =
+                    "Your optional support-prompt choice could not be saved. Nothing changed; please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not update the optional in-app support-prompt preference.");
+            TempData["StudentNudgeError"] =
+                "Your optional support-prompt choice could not be saved. Nothing changed; please try again.";
+        }
+
+        return RedirectToNudgePreferences();
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RespondToNudge(
+        int nudgeId,
+        NudgeResponseAction action,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId)) return Challenge();
+        if (!ModelState.IsValid)
+        {
+            TempData["StudentNudgeError"] =
+                "That support-prompt action was not recognised. Nothing changed; please try again.";
+            return RedirectToNudgePreferences();
+        }
+
+        try
+        {
+            var result = await _nudgeService.RespondAsync(
+                _currentUserService.UserId,
+                nudgeId,
+                action,
+                cancellationToken);
+
+            switch (result)
+            {
+                case NudgeMutationResult.Updated:
+                    TempData["StudentNudgeSuccess"] = action switch
+                    {
+                        NudgeResponseAction.Acknowledge => "The support prompt was acknowledged.",
+                        NudgeResponseAction.Snooze => "The support prompt was snoozed for seven days.",
+                        NudgeResponseAction.Dismiss => "The support prompt was dismissed.",
+                        _ => "The support prompt was updated."
+                    };
+                    break;
+                case NudgeMutationResult.NotActionable:
+                case NudgeMutationResult.NotFound:
+                    TempData["StudentNudgeError"] =
+                        "That support prompt is no longer available. Your list has been refreshed.";
+                    break;
+                default:
+                    TempData["StudentNudgeError"] =
+                        "The support prompt could not be updated. Nothing changed; please try again.";
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not update an optional in-app support prompt.");
+            TempData["StudentNudgeError"] =
+                "The support prompt could not be updated. Nothing changed; please try again.";
+        }
+
+        return RedirectToNudgePreferences();
+    }
+
     private RedirectResult RedirectToPrivacy()
         => Redirect($"{Url.Action(nameof(Index))}#privacy");
+
+    private RedirectToActionResult RedirectToNudgePreferences()
+        => RedirectToAction(nameof(Index), null, null, "support-prompts");
 }

@@ -7,12 +7,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Lodestone.Application;
 
-/// <summary>Registers Application-layer services, validators and AutoMapper profiles.</summary>
+/// <summary>Registers Application-layer services and validators.</summary>
 public static class DependencyInjection
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
-        services.AddAutoMapper(Assembly.GetExecutingAssembly());
         services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
 
         services.AddScoped<IActivityLogService, ActivityLogService>();

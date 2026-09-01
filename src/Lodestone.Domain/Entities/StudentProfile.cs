@@ -22,4 +22,6 @@ public class StudentProfile : AuditableEntity
     public RiskMonitoringConsent? RiskMonitoringConsent { get; set; }
     public ICollection<RiskMonitoringConsentHistory> RiskMonitoringConsentHistory { get; set; } = new List<RiskMonitoringConsentHistory>();
     public ICollection<StudentNumberClaim> StudentNumberClaims { get; set; } = new List<StudentNumberClaim>();
+    public StudentNudgePreference? NudgePreference { get; set; }
+    public ICollection<Nudge> Nudges { get; set; } = new List<Nudge>();
 }

@@ -1,0 +1,5 @@
+.env
+certs/
+*.crt
+*.key
+*.pfx

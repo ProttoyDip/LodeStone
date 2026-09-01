@@ -1,0 +1,26 @@
+# Keep the root build context small, reproducible, and free of local data/secrets.
+.git
+.github
+.agents
+.zed
+.vs
+.vscode
+**/bin
+**/obj
+**/.DS_Store
+brain.local.md
+*.user
+*.suo
+*.log
+*.pfx
+*.key
+*.crt
+keys
+deployment/docker/.env
+**/.env
+src/Lodestone.ML/Data/**
+src/Lodestone.ML/Reports/**
+src/Lodestone.ML/SavedModels/**
+src/Lodestone.Web/App_Data/ml/*
+!src/Lodestone.Web/App_Data/ml/.gitkeep
+database/backup/**

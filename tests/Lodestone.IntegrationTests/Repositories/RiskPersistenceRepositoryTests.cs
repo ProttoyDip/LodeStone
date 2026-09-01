@@ -71,6 +71,76 @@ public sealed class RiskPersistenceRepositoryTests
     }
 
     [Fact]
+    public async Task PersistAsync_ConvergesToAlreadyExistsAfterAConcurrentUniqueKeyCollision()
+    {
+        var root = new InMemoryDatabaseRoot();
+        var databaseName = $"risk-concurrency-{Guid.NewGuid()}";
+        var options = CreateOptions(databaseName, root);
+        int snapshotId;
+        int profileId;
+        await using (var seed = new ApplicationDbContext(options))
+        {
+            var profile = await SeedConsentedStudentAsync(seed);
+            var snapshot = Snapshot(profile.Id, "COURSE-CONCURRENT", Now.UtcDateTime);
+            seed.RiskFeatureSnapshots.Add(snapshot);
+            await seed.SaveChangesAsync();
+            snapshotId = snapshot.Id;
+            profileId = profile.Id;
+        }
+
+        await using var racingContext = new RaceApplicationDbContext(options, async cancellationToken =>
+        {
+            await using var winningContext = new ApplicationDbContext(options);
+            var winningSnapshot = await winningContext.RiskFeatureSnapshots.SingleAsync(
+                snapshot => snapshot.Id == snapshotId,
+                cancellationToken);
+            var winningScore = new RiskScore
+            {
+                StudentProfileId = profileId,
+                RiskFeatureSnapshotId = snapshotId,
+                CourseKey = winningSnapshot.CourseKey,
+                WindowEndUtc = winningSnapshot.WindowEndUtc,
+                FeatureSchemaVersion = Descriptor.FeatureSchemaVersion,
+                Probability = .80,
+                Level = RiskLevel.Critical,
+                ScoredAtUtc = Now.UtcDateTime,
+                ModelVersion = Descriptor.ModelVersion,
+                CreatedAtUtc = Now.UtcDateTime
+            };
+            winningContext.RiskScores.Add(winningScore);
+            winningContext.RiskQueueEntries.Add(new RiskQueueEntry
+            {
+                StudentProfileId = profileId,
+                RiskScore = winningScore,
+                TriggerRiskScore = winningScore,
+                Level = RiskLevel.Critical,
+                LastSignaledAtUtc = Now.UtcDateTime,
+                IsResolved = false,
+                CreatedAtUtc = Now.UtcDateTime
+            });
+            await winningContext.SaveChangesAsync(cancellationToken);
+            throw new DbUpdateException("A concurrent score won the unique-key race.");
+        });
+
+        var repository = new RiskScoreRepository(racingContext, new FixedTimeProvider(Now));
+        var result = await repository.PersistAsync(
+            new RiskFeatureSnapshot { Id = snapshotId },
+            Descriptor,
+            .80,
+            RiskLevel.Critical,
+            Now.UtcDateTime,
+            null);
+
+        result.Outcome.Should().Be(RiskScorePersistenceOutcome.AlreadyExists);
+        result.QueueCreated.Should().BeFalse();
+        result.QueueEscalated.Should().BeFalse();
+        result.RiskScore.Should().NotBeNull();
+        await using var assertionContext = new ApplicationDbContext(options);
+        (await assertionContext.RiskScores.CountAsync()).Should().Be(1);
+        (await assertionContext.RiskQueueEntries.CountAsync(entry => !entry.IsResolved)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task WithdrawConsent_DeletesDerivedDataButPreservesConsentHistory()
     {
         await using var context = CreateContext();
@@ -123,6 +193,66 @@ public sealed class RiskPersistenceRepositoryTests
     }
 
     [Fact]
+    public async Task PendingSnapshots_require_an_active_consent_and_verified_student_number_at_scoring_time()
+    {
+        await using var context = CreateContext();
+        var unverified = await SeedConsentedStudentAsync(context, studentNumber: null);
+        var snapshot = Snapshot(unverified.Id, "COURSE-UNVERIFIED", Now.UtcDateTime);
+        context.RiskFeatureSnapshots.Add(snapshot);
+        await context.SaveChangesAsync();
+
+        var snapshots = new RiskFeatureSnapshotRepository(context, new FixedTimeProvider(Now));
+        var pending = await snapshots.GetPendingIdsAsync(
+            Descriptor,
+            Now.UtcDateTime,
+            RiskScoringPolicy.MaximumSnapshotAgeDays);
+        pending.Should().BeEmpty("an unverified identifier must block scoring even for a stale snapshot");
+
+        var scores = new RiskScoreRepository(context, new FixedTimeProvider(Now));
+        var persistence = await scores.PersistAsync(
+            snapshot,
+            Descriptor,
+            .8,
+            RiskLevel.Critical,
+            Now.UtcDateTime,
+            null);
+        persistence.Outcome.Should().Be(RiskScorePersistenceOutcome.NotEligible);
+        (await context.RiskScores.CountAsync()).Should().Be(0);
+        (await context.RiskQueueEntries.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Consent_withdrawal_prevents_later_scoring_of_an_already_imported_snapshot()
+    {
+        await using var context = CreateContext();
+        var profile = await SeedConsentedStudentAsync(context);
+        var snapshot = Snapshot(profile.Id, "COURSE-WITHDRAWN", Now.UtcDateTime);
+        context.RiskFeatureSnapshots.Add(snapshot);
+        await context.SaveChangesAsync();
+
+        var consent = new RiskMonitoringConsentRepository(context, new FixedTimeProvider(Now));
+        await consent.SetByUserIdAsync(profile.UserId, false, profile.UserId);
+
+        var snapshots = new RiskFeatureSnapshotRepository(context, new FixedTimeProvider(Now));
+        (await snapshots.GetPendingIdsAsync(
+            Descriptor,
+            Now.UtcDateTime,
+            RiskScoringPolicy.MaximumSnapshotAgeDays)).Should().BeEmpty();
+
+        var scores = new RiskScoreRepository(context, new FixedTimeProvider(Now));
+        var persistence = await scores.PersistAsync(
+            snapshot,
+            Descriptor,
+            .8,
+            RiskLevel.Critical,
+            Now.UtcDateTime,
+            null);
+        persistence.Outcome.Should().Be(RiskScorePersistenceOutcome.NotEligible);
+        (await context.RiskScores.CountAsync()).Should().Be(0);
+        (await context.RiskQueueEntries.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task ImportAsync_TreatsCourseKeysCaseInsensitivelyAndRejectsConflictingFileAtomically()
     {
         await using var context = CreateContext();
@@ -145,6 +275,47 @@ public sealed class RiskPersistenceRepositoryTests
         result.RejectedRows.Should().Be(2);
         result.Errors.Should().ContainSingle(error => error.Message.Contains("Conflicting"));
         (await context.RiskFeatureSnapshots.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ImportAsync_AcceptsTheSeparatelyVersionedV2FeatureSchemaAndExposesItForMatchingModel()
+    {
+        await using var context = CreateContext();
+        var profile = await SeedConsentedStudentAsync(context, "ST-002");
+        var repository = new RiskFeatureSnapshotRepository(context, new FixedTimeProvider(Now));
+        var row = new RiskFeatureSnapshotImportDto(
+            "ST-002", "COURSE-V2", Now.UtcDateTime.AddDays(-1), 28,
+            RiskFeatureSchema.Withdrawal28DayV2,
+            0, 0, 0, 0, 0, 0,
+            SourceRowNumber: 2,
+            RecentActiveDayRate: .10f,
+            PriorActiveDayRate: .20f,
+            ActiveDayRateTrend: -.10f,
+            RecentCourseClickRate: 1,
+            PriorCourseClickRate: 2,
+            CourseClickRateTrend: -1,
+            InactivityStreakDays: 10,
+            AssessmentDueRate: .05f,
+            AssessmentOnTimeRate: .5f,
+            AssessmentLateOrMissingRate: .5f,
+            CourseProgressRatio: .4f,
+            CohortActivityPercentile: .25f);
+
+        var imported = await repository.ImportAsync(
+            "v2-snapshots.csv", new string('b', 64), [row], [], "admin-user");
+
+        imported.ImportedRows.Should().Be(1);
+        var snapshot = await context.RiskFeatureSnapshots.SingleAsync();
+        snapshot.StudentProfileId.Should().Be(profile.Id);
+        snapshot.FeatureSchemaVersion.Should().Be(RiskFeatureSchema.Withdrawal28DayV2);
+        snapshot.RecentActiveDayRate.Should().Be(.10f);
+        snapshot.ActiveDayRate.Should().Be(0, "v1 values are never repurposed for v2");
+
+        var pending = await repository.GetPendingIdsAsync(
+            new RiskModelDescriptor("model-v2", RiskFeatureSchema.Withdrawal28DayV2, 28, .5),
+            Now.UtcDateTime,
+            RiskScoringPolicy.MaximumSnapshotAgeDays);
+        pending.Should().ContainSingle().Which.Should().Be(snapshot.Id);
     }
 
     [Fact]
@@ -220,17 +391,24 @@ public sealed class RiskPersistenceRepositoryTests
         string? databaseName = null,
         InMemoryDatabaseRoot? root = null)
     {
+        return new ApplicationDbContext(CreateOptions(databaseName, root));
+    }
+
+    private static DbContextOptions<ApplicationDbContext> CreateOptions(
+        string? databaseName = null,
+        InMemoryDatabaseRoot? root = null)
+    {
         var builder = new DbContextOptionsBuilder<ApplicationDbContext>();
         if (root is null)
             builder.UseInMemoryDatabase(databaseName ?? $"risk-tests-{Guid.NewGuid()}");
         else
             builder.UseInMemoryDatabase(databaseName!, root);
-        return new ApplicationDbContext(builder.Options);
+        return builder.Options;
     }
 
     private static async Task<StudentProfile> SeedConsentedStudentAsync(
         ApplicationDbContext context,
-        string studentNumber = "STUDENT-001")
+        string? studentNumber = "STUDENT-001")
     {
         var user = new ApplicationUser
         {
@@ -301,5 +479,28 @@ public sealed class RiskPersistenceRepositoryTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class RaceApplicationDbContext : ApplicationDbContext
+    {
+        private readonly Func<CancellationToken, Task> _beforeFirstSave;
+        private bool _hasInjectedCollision;
+
+        public RaceApplicationDbContext(
+            DbContextOptions<ApplicationDbContext> options,
+            Func<CancellationToken, Task> beforeFirstSave)
+            : base(options)
+            => _beforeFirstSave = beforeFirstSave;
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            if (!_hasInjectedCollision)
+            {
+                _hasInjectedCollision = true;
+                await _beforeFirstSave(cancellationToken);
+            }
+
+            return await base.SaveChangesAsync(cancellationToken);
+        }
     }
 }

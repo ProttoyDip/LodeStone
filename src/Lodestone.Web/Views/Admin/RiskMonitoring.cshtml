@@ -9,6 +9,12 @@
     var errorMessage = TempData["RiskOperationsError"] as string;
     var status = Model.SnapshotStatus;
     var latestRun = status?.LatestRun;
+    var loadedModelSchema = status?.Model?.FeatureSchemaVersion
+        ?? Model.ModelStatus.FeatureSchemaVersion
+        ?? "Not loaded";
+    var snapshotSchema = loadedModelSchema == "Not loaded"
+        ? "withdrawal-28d-v1"
+        : loadedModelSchema;
 
     static string RunTone(RiskScoringRunStatus runStatus) => runStatus switch
     {
@@ -225,7 +231,7 @@
             </div>
             <div>
                 <dt>Feature schema</dt>
-                <dd>@(status?.Model?.FeatureSchemaVersion ?? "Not loaded")</dd>
+                <dd>@loadedModelSchema</dd>
             </div>
             <div>
                 <dt>Activation</dt>
@@ -283,10 +289,11 @@
                 <div>
                     <p class="ls-admin-panel__eyebrow">Data intake</p>
                     <h2 id="snapshot-import-title">Import activity snapshots</h2>
-                    <p>Upload one RFC 4180 CSV using student numbers and the <code>withdrawal-28d-v1</code> feature schema.</p>
+                    <p>Upload one RFC 4180 CSV using verified student numbers and the exact loaded-model schema: <code>@snapshotSchema</code>.</p>
                 </div>
                 <a class="ls-admin-btn ls-admin-btn--secondary"
-                   asp-action="DownloadRiskSnapshotTemplate">
+                   asp-action="DownloadRiskSnapshotTemplate"
+                   asp-route-featureSchemaVersion="@snapshotSchema">
                     <i class="bi bi-download" aria-hidden="true"></i>
                     CSV template
                 </a>
@@ -309,7 +316,7 @@
                                data-risk-file />
                         <span id="risk-file-name" data-risk-file-name>No file selected</span>
                     </div>
-                    <p id="risk-file-help" class="risk-ops-help">Maximum 25 MB. Malformed rows and conflicting duplicates reject the file. Exact duplicates are skipped; unknown, inactive, or unconsented students are not imported and are reported by row.</p>
+                    <p id="risk-file-help" class="risk-ops-help">Maximum 25 MB. A file contains one registered feature schema only. Malformed rows and conflicting duplicates reject the file. Exact duplicates are skipped; unknown, unverified, inactive, or unconsented students are not imported and are reported by row.</p>
                     <button class="ls-admin-btn ls-admin-btn--primary" type="submit" data-risk-submit>
                         <i class="bi bi-upload" aria-hidden="true"></i>
                         Validate and import

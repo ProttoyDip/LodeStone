@@ -1,0 +1,58 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  build-test-and-static-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore pinned tools and packages
+        run: |
+          dotnet tool restore
+          dotnet restore Lodestone.sln
+
+      - name: Build release configuration
+        run: dotnet build Lodestone.sln --no-restore --configuration Release --verbosity minimal
+
+      - name: Run all tests
+        run: dotnet test Lodestone.sln --no-build --no-restore --configuration Release --verbosity minimal
+
+      - name: Check browser scripts
+        run: find src/Lodestone.Web/wwwroot/js -type f -name '*.js' -exec node --check {} \;
+
+      - name: Check EF model drift
+        run: >-
+          dotnet tool run dotnet-ef -- migrations has-pending-model-changes --no-build
+          --project src/Lodestone.Infrastructure/Lodestone.Infrastructure.csproj
+          --startup-project src/Lodestone.Web/Lodestone.Web.csproj
+
+      - name: Validate local-demo Compose configuration
+        run: >-
+          docker compose --env-file deployment/docker/.env.example
+          -f deployment/docker/docker-compose.yml config --quiet
+
+      - name: Build local-demo image
+        run: >-
+          docker compose --env-file deployment/docker/.env.example
+          -f deployment/docker/docker-compose.yml build web

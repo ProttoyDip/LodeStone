@@ -7,6 +7,7 @@ using Lodestone.Infrastructure.Services;
 using Lodestone.Infrastructure.Security;
 using Lodestone.Shared.Constants;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,7 +16,10 @@ namespace Lodestone.Infrastructure;
 /// <summary>Registers EF Core, Identity, repositories, email and security services.</summary>
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string? contentRootPath = null)
     {
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString(AppConstants.DefaultConnectionStringName)));
@@ -43,12 +47,29 @@ public static class DependencyInjection
         services.AddScoped<IStudentNumberVerificationRepository, StudentNumberVerificationRepository>();
         services.AddScoped<ICrisisResourceRepository, CrisisResourceRepository>();
         services.AddScoped<IJournalRepository, JournalRepository>();
+        services.AddScoped<INudgeRepository, NudgeRepository>();
         services.AddScoped<IStudentProfileRepository, StudentProfileRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
         services.AddScoped<IForumRepository, ForumRepository>();
 
-        services.AddDataProtection();
-        services.AddScoped<DataProtectionService>();
+        var encryptionSettings = configuration.GetSection(EncryptionSettings.SectionName)
+            .Get<EncryptionSettings>() ?? new EncryptionSettings();
+        var configuredKeyRingPath = string.IsNullOrWhiteSpace(encryptionSettings.KeyRingPath)
+            ? Path.Combine("App_Data", "keys")
+            : encryptionSettings.KeyRingPath;
+        var keyRingPath = Path.GetFullPath(
+            Path.IsPathRooted(configuredKeyRingPath)
+                ? configuredKeyRingPath
+                : Path.Combine(contentRootPath ?? AppContext.BaseDirectory, configuredKeyRingPath));
+        Directory.CreateDirectory(keyRingPath);
+
+        services.AddDataProtection()
+            .SetApplicationName(string.IsNullOrWhiteSpace(encryptionSettings.ApplicationName)
+                ? "Lodestone"
+                : encryptionSettings.ApplicationName)
+            .PersistKeysToFileSystem(new DirectoryInfo(keyRingPath));
+        services.AddScoped<ISensitiveDataProtector, DataProtectionService>();
+        services.AddScoped<JournalNoteProtectionMigrator>();
 
         return services;
     }

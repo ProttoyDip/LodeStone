@@ -1,5 +1,6 @@
 using Lodestone.Application.DTOs.Risk;
 using Lodestone.Application.DTOs.Student;
+using Lodestone.Application.DTOs.Nudges;
 using Lodestone.Domain.Enums;
 
 namespace Lodestone.Web.ViewModels.Student;
@@ -9,6 +10,14 @@ public sealed record StudentHomeViewModel(
     RiskMonitoringConsentDto? MonitoringConsent,
     StudentNumberVerificationStateDto? NumberVerification)
 {
+    /// <summary>
+    /// Separate from risk-monitoring consent. These are counselor-authored, neutral in-app prompts.
+    /// No ML state or score is included in this student-facing model.
+    /// </summary>
+    public StudentNudgeStateDto? NudgeState { get; init; }
+
+    public string? NudgeLoadError { get; init; }
+
     public bool IsRiskMonitoringEnabled => MonitoringConsent?.IsConsented == true;
 
     public DateTime? ConsentChangedAtUtc => IsRiskMonitoringEnabled

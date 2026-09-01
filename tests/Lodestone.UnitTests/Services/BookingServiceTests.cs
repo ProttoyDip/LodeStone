@@ -31,7 +31,7 @@ public class BookingServiceTests
         var unitOfWork = new Mock<IUnitOfWork>();
         unitOfWork.Setup(value => value.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        var result = await new BookingService(repository.Object, Mock.Of<IAuditLogService>(), unitOfWork.Object)
+        var result = await new BookingService(repository.Object, Mock.Of<IAuditLogService>(), unitOfWork.Object, TimeProvider.System)
             .CreateBookingAsync(9, new CreateBookingDto(14, "Please discuss workload"));
 
         result.Id.Should().Be(22);
@@ -46,7 +46,7 @@ public class BookingServiceTests
         var repository = new Mock<IBookingRepository>();
         repository.Setup(value => value.TryCreateConfirmedAsync(9, 14, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync((CounselorBooking?)null);
-        var service = new BookingService(repository.Object, Mock.Of<IAuditLogService>(), Mock.Of<IUnitOfWork>());
+        var service = new BookingService(repository.Object, Mock.Of<IAuditLogService>(), Mock.Of<IUnitOfWork>(), TimeProvider.System);
 
         var action = () => service.CreateBookingAsync(9, new CreateBookingDto(14, null));
 
@@ -62,7 +62,7 @@ public class BookingServiceTests
         var unitOfWork = new Mock<IUnitOfWork>();
         unitOfWork.Setup(value => value.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
 
-        var result = await new BookingService(repository.Object, Mock.Of<IAuditLogService>(), unitOfWork.Object).CancelAsync(9, 22);
+        var result = await new BookingService(repository.Object, Mock.Of<IAuditLogService>(), unitOfWork.Object, TimeProvider.System).CancelAsync(9, 22);
 
         result.Should().Be(BookingCancellationResult.Cancelled);
         repository.Verify(value => value.CancelOwnedAsync(9, 22, It.IsAny<CancellationToken>()), Times.Once);

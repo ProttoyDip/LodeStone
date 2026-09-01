@@ -1,5 +1,5 @@
 @{
-    ViewData["Title"] = "Lodestone — Student Wellbeing, Before Silence Becomes Crisis";
+    ViewData["Title"] = "Lodestone - Student Wellbeing, Before Silence Becomes Crisis";
     Layout = "_LandingLayout";
 }
 
@@ -52,8 +52,8 @@
                 </h1>
 
                 <p class="hero__sub reveal">
-                    Lodestone reads everyday learning signals — login rhythm, activity span, participation —
-                    to spot early disengagement, then opens a gentle path to check-ins, peers, and counselor care.
+                    Lodestone can route consented, verified learning signals to human support when a
+                    quality-gated model is available. A signal is never a diagnosis, grade decision, or automatic student contact.
                 </p>
 
                 <div class="hero__cta reveal">
@@ -64,8 +64,8 @@
                 </div>
 
                 <div class="hero__stats reveal">
-                    <div class="hero__stat"><strong>5+</strong><span>Behavioral signals</span></div>
-                    <div class="hero__stat"><strong>Weekly</strong><span>Risk engine cadence</span></div>
+                    <div class="hero__stat"><strong>Versioned</strong><span>Behavioral inputs</span></div>
+                    <div class="hero__stat"><strong>Gated</strong><span>Runtime model publication</span></div>
                     <div class="hero__stat"><strong>Opt-in</strong><span>Privacy by default</span></div>
                 </div>
             </div>
@@ -77,27 +77,27 @@
                     <div class="orbit-ring orbit-ring-two"></div>
 
                     <div class="signal-card signal-card-main">
-                        <span class="signal-label">Weekly rhythm</span>
+                        <span class="signal-label">Validation required</span>
                         <div class="mini-chart">
                             <span></span><span></span><span></span><span></span><span></span>
                         </div>
-                        <p>Engagement change detected</p>
+                        <p>Consented activity snapshot</p>
                     </div>
 
                     <div class="signal-card signal-card-checkin">
                         <span class="status-dot"></span>
-                        <strong>Check-in suggested</strong>
-                        <small>Low-pressure support nudge</small>
+                        <strong>Gates enforced</strong>
+                        <small>Schema, hash, and quality checks</small>
                     </div>
 
                     <div class="signal-card signal-card-queue">
                         <span class="signal-label">Counselor queue</span>
-                        <strong>Follow-up suggested</strong>
-                        <small>Privacy-respecting view</small>
+                        <strong>Human review</strong>
+                        <small>Staff-only, privacy-respecting view</small>
                     </div>
 
                     <div class="privacy-chip">Privacy-first</div>
-                    <div class="support-pathway">Support pathway opened</div>
+                    <div class="support-pathway">No automatic student outreach</div>
 
                     <span class="signal-node node-one"></span>
                     <span class="signal-node node-two"></span>
@@ -159,14 +159,14 @@
                 <article class="step reveal">
                     <span class="step__marker" aria-hidden="true"></span>
                     <span class="mono-label step__label">Step 02</span>
-                    <h3>Weekly risk engine</h3>
-                    <p>An ML.NET model reviews patterns each week to notice early, gentle changes in engagement.</p>
+                    <h3>Quality-gated risk review</h3>
+                    <p>Only when a validated model is loaded can imported, consented activity snapshots be reviewed for human follow-up.</p>
                 </article>
                 <article class="step reveal">
                     <span class="step__marker" aria-hidden="true"></span>
                     <span class="mono-label step__label">Step 03</span>
-                    <h3>Gentle check-in nudge</h3>
-                    <p>Students see &ldquo;Check-in suggested&rdquo; — a warm, optional prompt, never a clinical flag.</p>
+                    <h3>Human review first</h3>
+                    <p>A qualifying signal creates a staff-only review case. It never sends a risk-based student message or opens a crisis case.</p>
                 </article>
                 <article class="step reveal">
                     <span class="step__marker" aria-hidden="true"></span>
@@ -197,13 +197,13 @@
             <div class="tabpanel is-active" id="panel-student" role="tabpanel" aria-labelledby="tab-student">
                 <div class="dash">
                     <article class="dcard reveal">
-                        <div class="dcard__head"><h4>Check-in suggested</h4><span class="pill pill--clay">Optional</span></div>
-                        <p>&ldquo;How has this week felt for you?&rdquo; Answer whenever you&rsquo;re ready.</p>
+                        <div class="dcard__head"><h4>Privacy choices</h4><span class="pill pill--clay">Student-controlled</span></div>
+                        <p>Monitoring is off unless the student opts in and an administrator verifies their learning-system number.</p>
                         <div class="alert">
                             <span class="alert__ring" aria-hidden="true">
                                 <svg viewBox="0 0 24 24"><path d="M12 8v4l3 2" /><circle cx="12" cy="12" r="9" /></svg>
                             </span>
-                            <div><h5>A gentle nudge arrived</h5><p>Respond, snooze, or opt out anytime.</p></div>
+                            <div><h5>Support stays private</h5><p>Students can change consent without seeing a risk probability or queue status.</p></div>
                         </div>
                     </article>
 
@@ -229,28 +229,28 @@
             <div class="tabpanel" id="panel-counselor" role="tabpanel" aria-labelledby="tab-counselor" hidden>
                 <div class="dash">
                     <article class="dcard dash__wide reveal">
-                        <div class="dcard__head"><h4>Support queue</h4><span class="pill">Privacy-respecting</span></div>
+                        <div class="dcard__head"><h4>Support queue</h4><span class="pill">Human review</span></div>
                         <ul class="rows">
-                            <li><span class="k">A</span> Check-in suggested <span class="spacer pill">Follow-up</span></li>
-                            <li><span class="k">B</span> Booking request <span class="spacer pill pill--clay">New</span></li>
-                            <li><span class="k">C</span> Peer match made <span class="spacer pill pill--forest">Active</span></li>
+                            <li><span class="k">1</span> Model status and schema <span class="spacer pill">Visible</span></li>
+                            <li><span class="k">2</span> Qualifying support case <span class="spacer pill pill--clay">Review</span></li>
+                            <li><span class="k">3</span> Counselor follow-up <span class="spacer pill pill--forest">Human-led</span></li>
                         </ul>
                     </article>
 
                     <article class="dcard reveal">
-                        <div class="dcard__head"><h4>Live alert</h4><span class="dcard__fig">SignalR</span></div>
+                        <div class="dcard__head"><h4>Queue refresh</h4><span class="dcard__fig">SignalR</span></div>
                         <div class="alert">
                             <span class="alert__ring" aria-hidden="true">
                                 <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" /></svg>
                             </span>
-                            <div><h5>New booking request</h5><p>Routed to you for a follow-up.</p></div>
+                            <div><h5>Queue changed</h5><p>The browser reloads authorized case details rather than receiving confidential data in a broadcast.</p></div>
                         </div>
                     </article>
 
                     <article class="dcard reveal">
-                        <div class="dcard__head"><h4>Booking request</h4><span class="pill">Pending</span></div>
-                        <p>Thursday &middot; 2:00 PM &middot; 30 min &middot; Wellbeing check-in.</p>
-                        <a class="link-underline btn--sm" href="#contact" style="margin-top:1.1rem;">Accept &amp; schedule <span class="arrow" aria-hidden="true">&rarr;</span></a>
+                        <div class="dcard__head"><h4>Appointments</h4><span class="pill">Counselor-led</span></div>
+                        <p>Published availability, student bookings, and counselor outcome recording remain separate from risk scoring.</p>
+                        <a class="link-underline btn--sm" href="#contact" style="margin-top:1.1rem;">Explore support tools <span class="arrow" aria-hidden="true">&rarr;</span></a>
                     </article>
                 </div>
             </div>
@@ -259,36 +259,32 @@
             <div class="tabpanel" id="panel-admin" role="tabpanel" aria-labelledby="tab-admin" hidden>
                 <div class="dash">
                     <article class="dcard dash__wide reveal">
-                        <div class="dcard__head"><h4>Aggregate flagged trend</h4><span class="dcard__fig">Fig. 3b &middot; Anonymised</span></div>
-                        <svg class="dplot" viewBox="0 0 520 120" preserveAspectRatio="none" aria-hidden="true">
-                            <g class="dplot__grid">
-                                <line x1="0" y1="30" x2="520" y2="30" />
-                                <line x1="0" y1="60" x2="520" y2="60" />
-                                <line x1="0" y1="90" x2="520" y2="90" />
-                            </g>
-                            <path class="dplot__line" d="M8,90 C70,70 110,96 160,72 C210,48 250,84 300,60 C350,38 400,66 450,44 C480,32 500,40 512,36" />
-                        </svg>
-                    </article>
-
-                    <article class="dcard reveal">
-                        <div class="dcard__head"><h4>Forum moderation</h4><span class="pill pill--forest">Queue</span></div>
+                        <div class="dcard__head"><h4>Risk operations</h4><span class="dcard__fig">Live status</span></div>
                         <ul class="rows">
-                            <li><span class="k">OK</span> 3 posts approved</li>
-                            <li><span class="k">!</span> 1 flagged for review</li>
+                            <li><span class="k">ML</span> Model availability and schema <span class="spacer pill">Actual</span></li>
+                            <li><span class="k">CSV</span> Import and snapshot status <span class="spacer pill">Audited</span></li>
+                            <li><span class="k">RUN</span> Scoring totals and failures <span class="spacer pill pill--forest">Staff-only</span></li>
                         </ul>
                     </article>
 
                     <article class="dcard reveal">
-                        <div class="dcard__head"><h4>ML model performance</h4><span class="dcard__fig">Weekly run</span></div>
-                        <p>Precision holding steady across the last four training runs.</p>
-                        <div class="meter"><span style="width:86%"></span></div>
+                        <div class="dcard__head"><h4>Forum moderation</h4><span class="pill pill--forest">Review</span></div>
+                        <ul class="rows">
+                            <li><span class="k">OK</span> Moderator decisions are audited</li>
+                            <li><span class="k">!</span> Reports stay in the Admin workspace</li>
+                        </ul>
                     </article>
 
                     <article class="dcard reveal">
-                        <div class="dcard__head"><h4>Hangfire jobs</h4><span class="pill pill--forest">Healthy</span></div>
+                        <div class="dcard__head"><h4>Model publication</h4><span class="dcard__fig">Fail closed</span></div>
+                        <p>Artifacts are usable only after fixed validation and locked-test quality gates pass.</p>
+                    </article>
+
+                    <article class="dcard reveal">
+                        <div class="dcard__head"><h4>Weekly scoring</h4><span class="pill">Conditional</span></div>
                         <ul class="rows">
-                            <li><span class="k">RUN</span> Weekly risk engine <span class="spacer pill">Succeeded</span></li>
-                            <li><span class="k">SCH</span> Nudge dispatch <span class="spacer pill">Scheduled</span></li>
+                            <li><span class="k">ML</span> Registered only with a validated artifact</li>
+                            <li><span class="k">SAFE</span> Incomplete background workflows are disabled</li>
                         </ul>
                     </article>
                 </div>
@@ -302,25 +298,23 @@
             <div class="sec-head reveal">
                 <span class="sec-head__index">04 &middot; Capabilities</span>
                 <h2 id="features-title">A complete, privacy-conscious support toolkit.</h2>
-                <p>From the behavioral engine to background jobs and reporting — calm, human, dependable.</p>
+                <p>From student-owned support tools to consent-gated staff operations — calm, human, dependable.</p>
             </div>
 
             <div class="features">
                 @{
                     var features = new (string Icon, string No, string Title, string Desc)[]
                     {
-                        ("engine", "01", "Behavioral Risk Engine", "Weekly signals become a gentle, private support indicator."),
-                        ("nudge", "02", "Gentle Nudge Flow", "Warm, optional check-ins — never alarming, always human."),
-                        ("peers", "03", "Peer Support Forum", "Moderated spaces where students help students, safely."),
-                        ("queue", "04", "Counselor Queue", "A privacy-respecting queue that routes care to the right person."),
-                        ("journal", "05", "Mood Journal", "A private reflection space students fully control."),
+                        ("engine", "01", "Quality-gated ML", "A model can score only after fixed validation, test, hash, schema, and loadability checks."),
+                        ("lock", "02", "Privacy Controls", "Monitoring needs explicit opt-in and an Admin-verified student number."),
+                        ("peers", "03", "Peer Support Forum", "Moderated spaces where students help students safely."),
+                        ("queue", "04", "Counselor Queue", "Qualifying signals create a human-review case, never an automated intervention."),
+                        ("journal", "05", "Mood Journal", "A private reflection space with protected storage."),
                         ("crisis", "06", "Crisis Resources", "Immediate, human pathways when they matter most."),
-                        ("bell", "07", "SignalR Live Alerts", "Real-time notifications for counselors, delivered softly."),
-                        ("jobs", "08", "Hangfire Background Jobs", "Reliable scheduling for the weekly engine and nudges."),
-                        ("pdf", "09", "QuestPDF Reports", "Clean, shareable summaries for institutional review."),
-                        ("chart", "10", "Chart.js Analytics", "Readable trends that respect student anonymity."),
-                        ("ml", "11", "ML.NET Prediction", "On-platform models — no data leaves your institution."),
-                        ("lock", "12", "Privacy Controls", "Opt-out, consent and support-only visibility, by default."),
+                        ("bell", "07", "Queue Refresh", "Payload-free SignalR refreshes authorized counselor views."),
+                        ("jobs", "08", "Conditional Scheduling", "Weekly scoring is scheduled only while a validated model is available."),
+                        ("ml", "09", "ML.NET Runtime", "Models remain inside Lodestone and fail closed when an artifact is absent or invalid."),
+                        ("chart", "10", "Operations Views", "Admins and counselors see real model status, scoring totals, and queue information."),
                     };
                 }
                 @foreach (var f in features)
@@ -410,7 +404,7 @@
                 <h2 id="tech-title">Enterprise-grade .NET, quietly doing its job.</h2>
             </div>
             <div class="stack">
-                @foreach (var t in new[] { "ASP.NET Core MVC", "C#", "EF Core", "Identity", "ML.NET", "SignalR", "Hangfire", "Chart.js", "QuestPDF" })
+                @foreach (var t in new[] { "ASP.NET Core MVC", "C#", "EF Core", "Identity", "ML.NET", "SignalR", "Hangfire", "Razor", "Vanilla JS" })
                 {
                     <span class="chip reveal"><i aria-hidden="true"></i>@t</span>
                 }
@@ -424,10 +418,10 @@
             <div class="cta__inner">
                 <div class="cta__rule reveal" aria-hidden="true"></div>
                 <h2 id="cta-title" class="reveal">Build a support system that notices earlier.</h2>
-                <p class="reveal">Move from passive self-reporting to proactive, privacy-conscious student support.</p>
+                <p class="reveal">Move from passive self-reporting to consent-based, human-reviewed student support.</p>
                 <div class="cta__actions reveal">
                     <a class="btn btn--clay" href="/Account/Register">Get started</a>
-                    <a class="link-underline" href="#">View documentation <span class="arrow" aria-hidden="true">&rarr;</span></a>
+                    <a class="link-underline" href="#privacy">Review privacy <span class="arrow" aria-hidden="true">&rarr;</span></a>
                 </div>
             </div>
         </div>

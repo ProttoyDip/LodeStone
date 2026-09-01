@@ -9,11 +9,16 @@ public class JournalService : IJournalService
 {
     private readonly IJournalRepository _journalRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ISensitiveDataProtector _sensitiveDataProtector;
 
-    public JournalService(IJournalRepository journalRepository, IUnitOfWork unitOfWork)
+    public JournalService(
+        IJournalRepository journalRepository,
+        IUnitOfWork unitOfWork,
+        ISensitiveDataProtector sensitiveDataProtector)
     {
         _journalRepository = journalRepository;
         _unitOfWork = unitOfWork;
+        _sensitiveDataProtector = sensitiveDataProtector;
     }
 
     public async Task<IReadOnlyList<JournalEntryDto>> GetEntriesAsync(
@@ -21,7 +26,12 @@ public class JournalService : IJournalService
     {
         var entries = await _journalRepository.GetByStudentIdAsync(studentProfileId, cancellationToken);
         return entries
-            .Select(e => new JournalEntryDto(e.Id, e.StudentProfileId, e.MoodRating, e.Note, e.EntryDateUtc))
+            .Select(e => new JournalEntryDto(
+                e.Id,
+                e.StudentProfileId,
+                e.MoodRating,
+                e.Note is null ? null : _sensitiveDataProtector.Unprotect(e.Note),
+                e.EntryDateUtc))
             .ToList()
             .AsReadOnly();
     }
@@ -40,11 +50,13 @@ public class JournalService : IJournalService
         if (await _journalRepository.HasEntryForDayAsync(studentProfileId, dayStartUtc, cancellationToken))
             throw new DailyJournalEntryLimitException();
 
+        var plaintextNote = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim();
         var entry = new MoodJournalEntry
         {
             StudentProfileId = studentProfileId,
             MoodRating = dto.MoodRating,
-            Note = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim(),
+            Note = plaintextNote is null ? null : _sensitiveDataProtector.Protect(plaintextNote),
+            NoteProtectionVersion = 1,
             EntryDateUtc = now,
             CreatedAtUtc = now,
         };
@@ -52,6 +64,6 @@ public class JournalService : IJournalService
         await _journalRepository.AddAsync(entry, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new JournalEntryDto(entry.Id, entry.StudentProfileId, entry.MoodRating, entry.Note, entry.EntryDateUtc);
+        return new JournalEntryDto(entry.Id, entry.StudentProfileId, entry.MoodRating, plaintextNote, entry.EntryDateUtc);
     }
 }

@@ -73,9 +73,18 @@ public sealed class ModelEvaluator
         {
             Accuracy = thresholdMetrics.Accuracy,
             AreaUnderRocCurve = builtIn.AreaUnderRocCurve,
+            AreaUnderPrecisionRecallCurve = builtIn.AreaUnderPrecisionRecallCurve,
             F1Score = thresholdMetrics.F1,
             Precision = thresholdMetrics.Precision,
             Recall = thresholdMetrics.Recall,
+            BrierScore = rows.Average(row =>
+            {
+                var label = row.Label ? 1d : 0d;
+                return Math.Pow(row.Probability - label, 2);
+            }),
+            FalseAlertsPer100StudentWeeks = rows.Length == 0
+                ? 0d
+                : thresholdMetrics.FalsePositive * 100d / rows.Length,
             DecisionThreshold = threshold,
             RowCount = rows.Length,
             PositiveCount = rows.Count(row => row.Label),
@@ -93,6 +102,45 @@ public sealed class ModelEvaluator
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(data);
         return _mlContext.Data.CreateEnumerable<ScoredObservation>(model.Transform(data), reuseRowObject: false).ToArray();
+    }
+
+    public IReadOnlyList<ThresholdCurvePoint> BuildThresholdCurve(
+        ITransformer model,
+        IDataView data,
+        int maximumPoints = 101)
+    {
+        if (maximumPoints < 2) throw new ArgumentOutOfRangeException(nameof(maximumPoints));
+        var rows = Score(model, data);
+        ValidateBothClasses(rows, "threshold curve");
+        var thresholds = rows.Select(row => row.Probability)
+            .Append(0f)
+            .Append(1f)
+            .Distinct()
+            .OrderBy(value => value)
+            .ToArray();
+        if (thresholds.Length > maximumPoints)
+        {
+            thresholds = Enumerable.Range(0, maximumPoints)
+                .Select(index => thresholds[(int)Math.Round(index * (thresholds.Length - 1d) / (maximumPoints - 1d))])
+                .Distinct()
+                .ToArray();
+        }
+
+        return thresholds.Select(threshold =>
+        {
+            var values = Calculate(rows, threshold);
+            return new ThresholdCurvePoint
+            {
+                Threshold = threshold,
+                Precision = values.Precision,
+                Recall = values.Recall,
+                F1Score = values.F1,
+                TruePositive = values.TruePositive,
+                FalsePositive = values.FalsePositive,
+                TrueNegative = values.TrueNegative,
+                FalseNegative = values.FalseNegative
+            };
+        }).ToArray();
     }
 
     private static ThresholdMetrics Calculate(IReadOnlyList<ScoredObservation> rows, float threshold)

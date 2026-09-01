@@ -8,6 +8,7 @@ public class MoodJournalEntryConfiguration : IEntityTypeConfiguration<MoodJourna
 {
     public void Configure(EntityTypeBuilder<MoodJournalEntry> builder)
     {
+        builder.Property(entry => entry.NoteProtectionVersion).HasDefaultValue(0);
         builder.Property<DateTime>("EntryDayUtc")
             .HasColumnType("date")
             .HasComputedColumnSql("CONVERT(date, [EntryDateUtc])", stored: true);
@@ -18,5 +19,9 @@ public class MoodJournalEntryConfiguration : IEntityTypeConfiguration<MoodJourna
             .HasDatabaseName("UX_MoodJournalEntries_StudentProfileId_EntryDayUtc_Active")
             .HasFilter("[IsDeleted] = 0")
             .IsUnique();
+
+        builder.ToTable(table => table.HasCheckConstraint(
+            "CK_MoodJournalEntries_NoteProtectionVersion",
+            "[NoteProtectionVersion] IN (0, 1)"));
     }
 }

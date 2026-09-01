@@ -8,6 +8,11 @@ using Microsoft.ML;
 
 namespace Lodestone.ML.Prediction;
 
+/// <summary>
+/// Startup-loaded, immutable ML.NET predictor. Availability is granted only to a mutually bound
+/// model, metadata, and accepted-publication manifest; there is intentionally no reload or
+/// fallback artifact path.
+/// </summary>
 internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposable
 {
     private readonly PredictionEngine<StudentActivityFeatures, RiskPrediction> _engine;
@@ -26,19 +31,17 @@ internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposabl
     public RiskModelPrediction Predict(RiskModelInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        var features = new StudentActivityFeatures
+        if (!string.Equals(input.FeatureSchemaVersion, Descriptor.FeatureSchemaVersion, StringComparison.Ordinal))
         {
-            ActiveDayRate = input.ActiveDayRate,
-            ActivitySpanDays = input.ActivitySpanDays,
-            DaysSinceLastAccess = input.DaysSinceLastAccess,
-            ForumInteractionCount = input.ForumInteractionCount,
-            CourseInteractionCount = input.CourseInteractionCount,
-            LateOrMissingAssignmentCount = input.LateOrMissingAssignmentCount
-        };
+            throw new InvalidOperationException(
+                "The risk-model input schema does not match the loaded model.");
+        }
 
+        var features = MapFeatures(input, Descriptor.FeatureNames);
         RiskPrediction prediction;
-        // PredictionEngine is deliberately scoped behind a lock. The model is loaded once on
-        // startup, never hot-reloaded, so a batch cannot mix model versions.
+
+        // PredictionEngine is scoped behind a lock. The model is loaded once at startup and
+        // never hot-reloaded, so a scheduled batch cannot mix model versions.
         lock (_gate)
             prediction = _engine.Predict(features);
 
@@ -57,55 +60,65 @@ internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposabl
         try
         {
             if (!File.Exists(modelPath))
-            {
-                return new RiskModelLoadResult(
-                    new UnavailableRiskModelPredictor("The configured risk model artifact is missing."),
-                    RiskModelStatus.Unavailable("The configured risk model artifact is missing."));
-            }
+                return Unavailable("The configured risk model artifact is missing.");
             if (!File.Exists(metadataPath))
-            {
-                return new RiskModelLoadResult(
-                    new UnavailableRiskModelPredictor("The configured risk model metadata is missing."),
-                    RiskModelStatus.Unavailable("The configured risk model metadata is missing."));
-            }
+                return Unavailable("The configured risk model metadata is missing.");
 
             var metadata = LoadAndValidateMetadata(metadataPath);
+            var manifestPath = RiskModelPublicationPaths.GetManifestPath(modelPath);
+            if (!File.Exists(manifestPath))
+                return Unavailable("The configured risk model publication manifest is missing.");
+            var manifest = LoadAndValidateManifest(manifestPath, metadataPath, metadata);
             var actualHash = FileHash.ComputeSha256(modelPath);
-            if (!CryptographicOperations.FixedTimeEquals(
-                    Convert.FromHexString(metadata.ModelSha256),
-                    Convert.FromHexString(actualHash)))
-            {
-                throw new InvalidDataException("Risk model SHA-256 does not match its metadata.");
-            }
+            EnsureEqualHash(metadata.ModelSha256, actualHash, "Risk model SHA-256 does not match its metadata.");
+            EnsureEqualHash(manifest.ModelSha256, actualHash, "Risk model SHA-256 does not match its publication manifest.");
 
             var model = mlContext.Model.Load(modelPath, out _);
             var engine = mlContext.Model.CreatePredictionEngine<StudentActivityFeatures, RiskPrediction>(model);
-            // Exercise the complete scoring path before making the artifact available.
-            var probe = engine.Predict(new StudentActivityFeatures());
-            if (!float.IsFinite(probe.Probability) || probe.Probability is < 0 or > 1)
+            try
+            {
+                // Exercise the complete scoring path before making the artifact available. A
+                // zero vector is valid for both registered schemas and exposes incompatible
+                // feature mapping/ML.NET serialization before any student data is processed.
+                var probe = engine.Predict(new StudentActivityFeatures());
+                if (!float.IsFinite(probe.Probability) || probe.Probability is < 0 or > 1)
+                    throw new InvalidDataException("The risk model failed its startup prediction probe.");
+
+                var descriptor = new RiskModelDescriptor(
+                    metadata.ModelVersion,
+                    metadata.SchemaVersion,
+                    metadata.ObservationWindowDays,
+                    metadata.DecisionThreshold)
+                {
+                    FeatureNames = metadata.FeatureNames.AsReadOnly(),
+                    PublicationId = manifest.PublicationId
+                };
+                var predictor = new LoadedRiskModelPredictor(engine, descriptor);
+                return new RiskModelLoadResult(
+                    predictor,
+                    RiskModelStatus.Available(
+                        metadata.ModelVersion,
+                        metadata.SchemaVersion,
+                        manifest.PublicationId,
+                        manifest.PublishedAtUtc));
+            }
+            catch
             {
                 engine.Dispose();
-                throw new InvalidDataException("The risk model failed its startup prediction probe.");
+                throw;
             }
-
-            var descriptor = new RiskModelDescriptor(
-                metadata.ModelVersion,
-                metadata.SchemaVersion,
-                metadata.ObservationWindowDays,
-                metadata.DecisionThreshold);
-            var predictor = new LoadedRiskModelPredictor(engine, descriptor);
-            return new RiskModelLoadResult(
-                predictor,
-                RiskModelStatus.Available(metadata.ModelVersion));
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             var reason = SanitizeLoadFailure(exception);
-            return new RiskModelLoadResult(
-                new UnavailableRiskModelPredictor(reason),
-                RiskModelStatus.Unavailable(reason));
+            return Unavailable(reason);
         }
     }
+
+    private static RiskModelLoadResult Unavailable(string reason)
+        => new(
+            new UnavailableRiskModelPredictor(reason),
+            RiskModelStatus.Unavailable(reason));
 
     private static RiskModelMetadata LoadAndValidateMetadata(string path)
     {
@@ -113,30 +126,184 @@ internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposabl
         var metadata = JsonSerializer.Deserialize<RiskModelMetadata>(stream, ArtifactJson.Options)
             ?? throw new InvalidDataException("Risk model metadata is empty.");
 
-        if (string.IsNullOrWhiteSpace(metadata.ModelVersion))
-            throw new InvalidDataException("Risk model metadata has no model version.");
-        if (metadata.ModelVersion.Trim().Length > 128)
-            throw new InvalidDataException("Risk model metadata model version exceeds 128 characters.");
-        if (!string.Equals(metadata.SchemaVersion, StudentActivityFeatures.SchemaVersion, StringComparison.Ordinal))
-            throw new InvalidDataException($"Unsupported risk feature schema '{metadata.SchemaVersion}'.");
-        if (metadata.FeatureNames is null
-            || !metadata.FeatureNames.SequenceEqual(StudentActivityFeatures.FeatureNames, StringComparer.Ordinal))
-            throw new InvalidDataException("Risk model feature names or order do not match the runtime contract.");
-        if (metadata.ObservationWindowDays != RiskFeatureSchema.Withdrawal28DayObservedDays)
-            throw new InvalidDataException("Risk model observation window must be 28 days.");
-        if (metadata.PredictionWindowDays != OuladDataLoader.PredictionWindowDays)
-            throw new InvalidDataException("Risk model prediction window must be 28 days.");
-        if (metadata.ObservationStrideDays != OuladDataLoader.ObservationStrideDays)
-            throw new InvalidDataException("Risk model observation stride must be 7 days.");
-        if (!float.IsFinite(metadata.DecisionThreshold) || metadata.DecisionThreshold is < 0 or > 1)
-            throw new InvalidDataException("Risk model decision threshold must be between zero and one.");
-        if (string.IsNullOrWhiteSpace(metadata.ModelSha256)
-            || metadata.ModelSha256.Length != 64
-            || !metadata.ModelSha256.All(Uri.IsHexDigit))
-            throw new InvalidDataException("Risk model metadata contains an invalid SHA-256 value.");
+        if (!string.Equals(
+                metadata.MetadataSchemaVersion,
+                RiskModelMetadata.CurrentMetadataSchemaVersion,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Risk model metadata uses an unsupported metadata schema.");
+        }
+        ValidateCommonContract(
+            metadata.ModelVersion,
+            metadata.SchemaVersion,
+            metadata.FeatureNames,
+            metadata.ObservationWindowDays,
+            metadata.PredictionWindowDays,
+            metadata.ObservationStrideDays,
+            metadata.DecisionThreshold,
+            metadata.ModelSha256);
+        if (string.IsNullOrWhiteSpace(metadata.PublicationId) || metadata.PublicationId.Trim().Length > 80)
+            throw new InvalidDataException("Risk model metadata has an invalid publication identifier.");
+        if (!metadata.EligibleForRuntimeIntegration)
+            throw new InvalidDataException("Risk model metadata is not eligible for runtime integration.");
+        if (string.IsNullOrWhiteSpace(metadata.ModelAlgorithm) || metadata.ModelAlgorithm.Trim().Length > 80)
+            throw new InvalidDataException("Risk model metadata has an invalid training algorithm.");
+        if (!ModelQualityGates.Passes(metadata.ValidationMetrics)
+            || !ModelQualityGates.Passes(metadata.TestMetrics))
+        {
+            throw new InvalidDataException("Risk model metadata does not satisfy the fixed quality gates.");
+        }
 
         metadata.ModelVersion = metadata.ModelVersion.Trim();
+        metadata.PublicationId = metadata.PublicationId.Trim();
+        metadata.ModelAlgorithm = metadata.ModelAlgorithm.Trim();
         return metadata;
+    }
+
+    private static RiskModelPublicationManifest LoadAndValidateManifest(
+        string path,
+        string metadataPath,
+        RiskModelMetadata metadata)
+    {
+        using var stream = File.OpenRead(path);
+        var manifest = JsonSerializer.Deserialize<RiskModelPublicationManifest>(stream, ArtifactJson.Options)
+            ?? throw new InvalidDataException("Risk model publication manifest is empty.");
+
+        if (!string.Equals(
+                manifest.ManifestSchemaVersion,
+                RiskModelPublicationManifest.CurrentManifestSchemaVersion,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Risk model publication manifest uses an unsupported schema.");
+        }
+        ValidateCommonContract(
+            manifest.ModelVersion,
+            manifest.FeatureSchemaVersion,
+            manifest.FeatureNames,
+            manifest.ObservationWindowDays,
+            manifest.PredictionWindowDays,
+            manifest.ObservationStrideDays,
+            metadata.DecisionThreshold,
+            manifest.ModelSha256);
+        if (string.IsNullOrWhiteSpace(manifest.PublicationId) || manifest.PublicationId.Trim().Length > 80)
+            throw new InvalidDataException("Risk model publication manifest has an invalid publication identifier.");
+        if (!manifest.EligibleForRuntimeIntegration)
+            throw new InvalidDataException("Risk model publication manifest is not eligible for runtime integration.");
+        if (!manifest.QualityGate.Passed
+            || !manifest.QualityGate.ValidationPassed
+            || !manifest.QualityGate.TestPassed
+            || manifest.QualityGate.MinimumAreaUnderRocCurve + 1e-12 < ModelQualityGates.MinimumAreaUnderRocCurve
+            || manifest.QualityGate.MinimumRecall + 1e-12 < ModelQualityGates.MinimumRecall
+            || manifest.QualityGate.MinimumPrecision + 1e-12 < ModelQualityGates.MinimumPrecision)
+        {
+            throw new InvalidDataException("Risk model publication manifest does not satisfy the fixed quality gates.");
+        }
+        if (manifest.PublishedAtUtc == default)
+            throw new InvalidDataException("Risk model publication manifest has no publication time.");
+        if (string.IsNullOrWhiteSpace(manifest.ModelAlgorithm) || manifest.ModelAlgorithm.Trim().Length > 80)
+            throw new InvalidDataException("Risk model publication manifest has an invalid training algorithm.");
+        if (!string.Equals(manifest.PublicationId, metadata.PublicationId, StringComparison.Ordinal)
+            || !string.Equals(manifest.ModelVersion, metadata.ModelVersion, StringComparison.Ordinal)
+            || !string.Equals(manifest.FeatureSchemaVersion, metadata.SchemaVersion, StringComparison.Ordinal)
+            || !manifest.FeatureNames.SequenceEqual(metadata.FeatureNames, StringComparer.Ordinal)
+            || !string.Equals(manifest.ModelSha256, metadata.ModelSha256, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(manifest.ModelAlgorithm, metadata.ModelAlgorithm, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Risk model publication manifest does not match its metadata.");
+        }
+
+        var metadataHash = FileHash.ComputeSha256(metadataPath);
+        EnsureEqualHash(
+            manifest.MetadataSha256,
+            metadataHash,
+            "Risk model metadata SHA-256 does not match its publication manifest.");
+        return manifest;
+    }
+
+    private static void ValidateCommonContract(
+        string? modelVersion,
+        string? featureSchemaVersion,
+        IReadOnlyList<string>? featureNames,
+        int observationWindowDays,
+        int predictionWindowDays,
+        int observationStrideDays,
+        float decisionThreshold,
+        string? modelSha256)
+    {
+        if (string.IsNullOrWhiteSpace(modelVersion))
+            throw new InvalidDataException("Risk model metadata has no model version.");
+        if (modelVersion.Trim().Length > 128)
+            throw new InvalidDataException("Risk model metadata model version exceeds 128 characters.");
+        if (!RiskFeatureSchemas.TryGet(featureSchemaVersion, out var schema))
+            throw new InvalidDataException($"Unsupported risk feature schema '{featureSchemaVersion}'.");
+        if (featureNames is null || !featureNames.SequenceEqual(schema.FeatureNames, StringComparer.Ordinal))
+            throw new InvalidDataException("Risk model feature names or order do not match the runtime contract.");
+        if (observationWindowDays != schema.ObservedDays)
+            throw new InvalidDataException("Risk model observation window must match its feature schema.");
+        if (predictionWindowDays != OuladDataLoader.PredictionWindowDays)
+            throw new InvalidDataException("Risk model prediction window must be 28 days.");
+        if (observationStrideDays != OuladDataLoader.ObservationStrideDays)
+            throw new InvalidDataException("Risk model observation stride must be 7 days.");
+        if (!float.IsFinite(decisionThreshold) || decisionThreshold is < 0 or > 1)
+            throw new InvalidDataException("Risk model decision threshold must be between zero and one.");
+        ValidateHash(modelSha256, "Risk model metadata contains an invalid SHA-256 value.");
+    }
+
+    private static void EnsureEqualHash(string expected, string actual, string failureMessage)
+    {
+        ValidateHash(expected, failureMessage);
+        if (!CryptographicOperations.FixedTimeEquals(
+                Convert.FromHexString(expected),
+                Convert.FromHexString(actual)))
+        {
+            throw new InvalidDataException(failureMessage);
+        }
+    }
+
+    private static void ValidateHash(string? value, string failureMessage)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length != 64
+            || !value.All(Uri.IsHexDigit))
+        {
+            throw new InvalidDataException(failureMessage);
+        }
+    }
+
+    private static StudentActivityFeatures MapFeatures(
+        RiskModelInput input,
+        IReadOnlyList<string> featureNames)
+    {
+        var features = new StudentActivityFeatures();
+        foreach (var featureName in featureNames)
+        {
+            var value = input.GetFeature(featureName);
+            switch (featureName)
+            {
+                case nameof(StudentActivityFeatures.ActiveDayRate): features.ActiveDayRate = value; break;
+                case nameof(StudentActivityFeatures.ActivitySpanDays): features.ActivitySpanDays = value; break;
+                case nameof(StudentActivityFeatures.DaysSinceLastAccess): features.DaysSinceLastAccess = value; break;
+                case nameof(StudentActivityFeatures.ForumInteractionCount): features.ForumInteractionCount = value; break;
+                case nameof(StudentActivityFeatures.CourseInteractionCount): features.CourseInteractionCount = value; break;
+                case nameof(StudentActivityFeatures.LateOrMissingAssignmentCount): features.LateOrMissingAssignmentCount = value; break;
+                case nameof(StudentActivityFeatures.RecentActiveDayRate): features.RecentActiveDayRate = value; break;
+                case nameof(StudentActivityFeatures.PriorActiveDayRate): features.PriorActiveDayRate = value; break;
+                case nameof(StudentActivityFeatures.ActiveDayRateTrend): features.ActiveDayRateTrend = value; break;
+                case nameof(StudentActivityFeatures.RecentCourseClickRate): features.RecentCourseClickRate = value; break;
+                case nameof(StudentActivityFeatures.PriorCourseClickRate): features.PriorCourseClickRate = value; break;
+                case nameof(StudentActivityFeatures.CourseClickRateTrend): features.CourseClickRateTrend = value; break;
+                case nameof(StudentActivityFeatures.InactivityStreakDays): features.InactivityStreakDays = value; break;
+                case nameof(StudentActivityFeatures.AssessmentDueRate): features.AssessmentDueRate = value; break;
+                case nameof(StudentActivityFeatures.AssessmentOnTimeRate): features.AssessmentOnTimeRate = value; break;
+                case nameof(StudentActivityFeatures.AssessmentLateOrMissingRate): features.AssessmentLateOrMissingRate = value; break;
+                case nameof(StudentActivityFeatures.CourseProgressRatio): features.CourseProgressRatio = value; break;
+                case nameof(StudentActivityFeatures.CohortActivityPercentile): features.CohortActivityPercentile = value; break;
+                default:
+                    throw new InvalidOperationException("The loaded risk model contains an unsupported feature mapping.");
+            }
+        }
+
+        return features;
     }
 
     private static string SanitizeLoadFailure(Exception exception)
@@ -155,11 +322,10 @@ internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposabl
 
 internal sealed class UnavailableRiskModelPredictor(string reason) : IRiskModelPredictor
 {
-    public RiskModelDescriptor Descriptor
-        => throw new InvalidOperationException($"Risk scoring is unavailable. {reason}");
+    public RiskModelDescriptor Descriptor => throw new RiskModelUnavailableException(reason);
 
     public RiskModelPrediction Predict(RiskModelInput input)
-        => throw new InvalidOperationException($"Risk scoring is unavailable. {reason}");
+        => throw new RiskModelUnavailableException(reason);
 }
 
 internal sealed record RiskModelLoadResult(IRiskModelPredictor Predictor, RiskModelStatus Status);

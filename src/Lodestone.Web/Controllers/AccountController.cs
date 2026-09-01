@@ -6,9 +6,11 @@ using Lodestone.Infrastructure.Email;
 using Lodestone.Domain.Constants;
 using Lodestone.Domain.Entities;
 using Lodestone.Web.ViewModels.Auth;
+using Lodestone.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.WebUtilities;
 
 namespace Lodestone.Web.Controllers;
@@ -24,6 +26,7 @@ public class AccountController : Controller
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IEmailService _emailService;
+    private readonly IPublicAccountLinkBuilder _publicAccountLinkBuilder;
     private readonly IActivityLogService _activityLogService;
     private readonly IRiskMonitoringConsentService _riskMonitoringConsentService;
     private readonly IStudentNumberVerificationService _studentNumberVerificationService;
@@ -33,6 +36,7 @@ public class AccountController : Controller
         SignInManager<ApplicationUser> signInManager,
         UserManager<ApplicationUser> userManager,
         IEmailService emailService,
+        IPublicAccountLinkBuilder publicAccountLinkBuilder,
         IActivityLogService activityLogService,
         IRiskMonitoringConsentService riskMonitoringConsentService,
         IStudentNumberVerificationService studentNumberVerificationService,
@@ -41,6 +45,7 @@ public class AccountController : Controller
         _signInManager = signInManager;
         _userManager = userManager;
         _emailService = emailService;
+        _publicAccountLinkBuilder = publicAccountLinkBuilder;
         _activityLogService = activityLogService;
         _riskMonitoringConsentService = riskMonitoringConsentService;
         _studentNumberVerificationService = studentNumberVerificationService;
@@ -60,7 +65,7 @@ public class AccountController : Controller
         return View(new LoginViewModel());
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, EnableRateLimiting("auth")]
     public async Task<IActionResult> Login(LoginViewModel model, string? returnUrl = null)
     {
         ViewData["ReturnUrl"] = returnUrl;
@@ -84,7 +89,7 @@ public class AccountController : Controller
                 user.LastLoginUtc = DateTime.UtcNow;
                 await _userManager.UpdateAsync(user);
             }
-            _logger.LogInformation("User {Email} signed in.", model.Email);
+            _logger.LogInformation("A user signed in.");
             await RecordStudentLoginAsync(user);
             return await RedirectAfterSignInAsync(user, returnUrl);
         }
@@ -112,7 +117,7 @@ public class AccountController : Controller
         return View(new RegisterViewModel());
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, EnableRateLimiting("auth")]
     public async Task<IActionResult> Register(RegisterViewModel model, string? returnUrl = null)
     {
         ViewData["ReturnUrl"] = returnUrl;
@@ -140,7 +145,7 @@ public class AccountController : Controller
         }
 
         await _userManager.AddToRoleAsync(user, RoleConstants.Student);
-        _logger.LogInformation("New student account created for {Email}.", model.Email);
+        _logger.LogInformation("A new student account was created.");
 
         try
         {
@@ -159,9 +164,9 @@ public class AccountController : Controller
                 TempData["StudentIdentityError"] = RegistrationClaimFailureMessage(claim.Outcome);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Could not submit the initial student-number claim for user {UserId}.", user.Id);
+            _logger.LogWarning("Could not submit the initial student-number claim.");
             TempData["StudentIdentityError"] =
                 "Your account was created, but the student number could not be submitted. Submit it again from Privacy.";
         }
@@ -170,9 +175,9 @@ public class AccountController : Controller
         {
             await _riskMonitoringConsentService.SetAsync(user.Id, model.EnableRiskMonitoring);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Could not save the initial risk-monitoring choice for user {UserId}.", user.Id);
+            _logger.LogWarning("Could not save the initial risk-monitoring choice.");
             if (model.EnableRiskMonitoring)
             {
                 TempData["StudentPrivacyError"] =
@@ -198,11 +203,16 @@ public class AccountController : Controller
     // ---- Forgot password -------------------------------------------------
 
     [HttpGet]
-    public IActionResult ForgotPassword() => View(new ForgotPasswordViewModel());
+    public IActionResult ForgotPassword()
+    {
+        SetRecoveryResponseHeaders();
+        return View(new ForgotPasswordViewModel());
+    }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, EnableRateLimiting("auth")]
     public async Task<IActionResult> ForgotPassword(ForgotPasswordViewModel model)
     {
+        SetRecoveryResponseHeaders();
         if (!ModelState.IsValid)
             return View(model);
 
@@ -213,34 +223,39 @@ public class AccountController : Controller
         {
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
             var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-            var resetUrl = Url.Action(
-                nameof(ResetPassword), "Account",
-                new { email = model.Email, token = encodedToken },
-                protocol: Request.Scheme);
+            var resetUrl = _publicAccountLinkBuilder.BuildPasswordResetUrl(
+                user.Email ?? model.Email,
+                encodedToken);
 
-            await TrySendResetEmailAsync(model.Email, resetUrl!);
+            await TrySendResetEmailAsync(user.Email ?? model.Email, resetUrl);
         }
 
         return RedirectToAction(nameof(ForgotPasswordConfirmation));
     }
 
     [HttpGet]
-    public IActionResult ForgotPasswordConfirmation() => View();
+    public IActionResult ForgotPasswordConfirmation()
+    {
+        SetRecoveryResponseHeaders();
+        return View();
+    }
 
     // ---- Reset password --------------------------------------------------
 
     [HttpGet]
     public IActionResult ResetPassword(string? email = null, string? token = null)
     {
+        SetRecoveryResponseHeaders();
         if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(token))
             return BadRequest("A valid password reset link is required.");
 
         return View(new ResetPasswordViewModel { Email = email, Token = token });
     }
 
-    [HttpPost, ValidateAntiForgeryToken]
+    [HttpPost, ValidateAntiForgeryToken, EnableRateLimiting("auth")]
     public async Task<IActionResult> ResetPassword(ResetPasswordViewModel model)
     {
+        SetRecoveryResponseHeaders();
         if (!ModelState.IsValid)
             return View(model);
 
@@ -270,7 +285,11 @@ public class AccountController : Controller
     }
 
     [HttpGet]
-    public IActionResult ResetPasswordConfirmation() => View();
+    public IActionResult ResetPasswordConfirmation()
+    {
+        SetRecoveryResponseHeaders();
+        return View();
+    }
 
     // ---- Access denied ---------------------------------------------------
 
@@ -293,11 +312,11 @@ public class AccountController : Controller
         {
             await _emailService.SendAsync(email, "Reset your Lodestone password", body);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            // Don't surface delivery failures to the user (would leak account existence);
-            // log so the reset link is recoverable in development.
-            _logger.LogWarning(ex, "Failed to send password reset email to {Email}. Reset URL: {ResetUrl}", email, resetUrl);
+            // Do not pass the exception to logging: SMTP exceptions can include recipients,
+            // message bodies, or reset URLs from a downstream transport.
+            _logger.LogWarning("Failed to send a password reset email.");
         }
     }
 
@@ -329,9 +348,9 @@ public class AccountController : Controller
         {
             await _activityLogService.RecordLoginAsync(user.Id);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Could not record student sign-in activity for {UserId}.", user.Id);
+            _logger.LogWarning("Could not record student sign-in activity.");
         }
     }
 
@@ -346,4 +365,13 @@ public class AccountController : Controller
                 "Your account was created and its student number is already verified.",
             _ => "Your account was created, but the student number could not be submitted. Submit it again from Privacy."
         };
+
+    private void SetRecoveryResponseHeaders()
+    {
+        Response.Headers["Cache-Control"] = "no-store, no-cache, max-age=0, must-revalidate";
+        Response.Headers["Pragma"] = "no-cache";
+        Response.Headers["Expires"] = "0";
+        Response.Headers["Referrer-Policy"] = "no-referrer";
+        Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+    }
 }

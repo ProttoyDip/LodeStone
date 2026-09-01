@@ -65,12 +65,14 @@ public sealed class TrainingPipelineTests
 
         File.Exists(result.ModelPath).Should().BeTrue();
         File.Exists(result.MetadataPath).Should().BeTrue();
+        File.Exists(result.PublicationManifestPath).Should().BeTrue();
         File.Exists(result.ReportPath).Should().BeTrue();
         result.Metadata.ModelSha256.Should().Be(ComputeSha256(result.ModelPath));
         result.Metadata.FeatureNames.Should().Equal(StudentActivityFeatures.FeatureNames);
         result.Metadata.DecisionThreshold.Should().BeInRange(0, 1);
         result.Report.QualityGate.Passed.Should().BeTrue();
-        result.Report.TestMetrics.AreaUnderRocCurve.Should().BeGreaterThanOrEqualTo(.70);
+        result.Report.TestMetrics.Should().NotBeNull();
+        result.Report.TestMetrics!.AreaUnderRocCurve.Should().BeGreaterThanOrEqualTo(.70);
 
         using var provider = new ServiceCollection()
             .AddMachineLearning(result.ModelPath)
@@ -80,6 +82,40 @@ public sealed class TrainingPipelineTests
         status.ModelVersion.Should().Be("fixture-v1");
         var predictor = provider.GetRequiredService<IRiskModelPredictor>();
         var prediction = predictor.Predict(new RiskModelInput(0, 0, 28, 0, 0, 1));
+        prediction.Probability.Should().BeInRange(0, 1);
+    }
+
+    [Fact]
+    public void Experiment_v2_trains_a_versioned_runtime_capable_artifact_only_after_all_gates_pass()
+    {
+        using var dataset = OuladTestDataset.CreateTraining();
+        using var output = new TemporaryDirectory();
+        var modelPath = Path.Combine(output.Path, "risk-model.zip");
+
+        var result = CreatePipeline().Run(new TrainingOptions
+        {
+            DataDirectory = dataset.DirectoryPath,
+            ModelOutputPath = modelPath,
+            ModelVersion = "fixture-v2",
+            FeatureSchemaVersion = RiskFeatureSchema.Withdrawal28DayV2,
+            UseV2Experiment = true,
+            ExperimentName = "experiment-v2",
+            Seed = 20260831
+        });
+
+        result.Metadata.SchemaVersion.Should().Be(RiskFeatureSchema.Withdrawal28DayV2);
+        result.Metadata.EligibleForRuntimeIntegration.Should().BeTrue();
+        result.Report.CrossValidation.Should().HaveCount(ModelTrainingCandidate.V2Candidates.Count);
+        result.Report.QualityGate.Passed.Should().BeTrue();
+        File.Exists(result.PublicationManifestPath).Should().BeTrue();
+
+        using var provider = new ServiceCollection().AddMachineLearning(result.ModelPath).BuildServiceProvider();
+        var status = provider.GetRequiredService<IRiskModelStatusProvider>().Status;
+        status.IsAvailable.Should().BeTrue();
+        status.FeatureSchemaVersion.Should().Be(RiskFeatureSchema.Withdrawal28DayV2);
+        var prediction = provider.GetRequiredService<IRiskModelPredictor>().Predict(
+            RiskModelInput.CreateWithdrawal28DayV2(
+                .1f, .2f, -.1f, 1, 2, -1, 12, .05f, .4f, .6f, .4f, .2f));
         prediction.Probability.Should().BeInRange(0, 1);
     }
 
@@ -109,6 +145,46 @@ public sealed class TrainingPipelineTests
         exception.FailureReportPath.Should().NotBeNull();
         File.Exists(exception.FailureReportPath!).Should().BeTrue();
         exception.Report!.QualityGate.Passed.Should().BeFalse();
+        exception.Report.TestMetrics.Should().BeNull();
+        exception.Report.TestEvaluationStatus.Should().Be("NotEvaluatedValidationGateFailed");
+        exception.Report.FeatureDrift.Should().OnlyContain(
+            drift => drift.TestPopulationStabilityIndex == null,
+            "the locked test population is not examined when validation fails");
+    }
+
+    [Fact]
+    public void Run_rejects_a_validation_passing_candidate_when_the_locked_test_fails_and_preserves_prior_artifacts()
+    {
+        using var dataset = OuladTestDataset.CreateTrainingWithInvertedLockedTestSignals();
+        using var output = new TemporaryDirectory();
+        var modelPath = Path.Combine(output.Path, "risk-model.zip");
+        var metadataPath = Path.ChangeExtension(modelPath, ".metadata.json");
+        var manifestPath = RiskModelPublicationPaths.GetManifestPath(modelPath);
+        var reportPath = Path.ChangeExtension(modelPath, ".report.json");
+        File.WriteAllText(modelPath, "prior-model");
+        File.WriteAllText(metadataPath, "prior-metadata");
+        File.WriteAllText(manifestPath, "prior-manifest");
+        File.WriteAllText(reportPath, "prior-report");
+
+        var act = () => CreatePipeline().Run(new TrainingOptions
+        {
+            DataDirectory = dataset.DirectoryPath,
+            ModelOutputPath = modelPath,
+            ModelVersion = "locked-test-rejected-v1"
+        });
+
+        var exception = act.Should().Throw<ModelQualityGateException>().Which;
+        exception.Report!.QualityGate.ValidationPassed.Should().BeTrue();
+        exception.Report.QualityGate.TestPassed.Should().BeFalse();
+        exception.Report.QualityGate.Passed.Should().BeFalse();
+        exception.Report.TestMetrics.Should().NotBeNull();
+        exception.Report.TestEvaluationStatus.Should().Be("EvaluatedRejected");
+        File.ReadAllText(modelPath).Should().Be("prior-model");
+        File.ReadAllText(metadataPath).Should().Be("prior-metadata");
+        File.ReadAllText(manifestPath).Should().Be("prior-manifest");
+        File.ReadAllText(reportPath).Should().Be("prior-report");
+        exception.FailureReportPath.Should().NotBeNull();
+        File.Exists(exception.FailureReportPath!).Should().BeTrue();
     }
 
     [Fact]

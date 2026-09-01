@@ -108,6 +108,7 @@ public sealed class RiskScoreRepository : IRiskScoringRepository
                 .SingleOrDefaultAsync(item => item.Id == snapshot.Id, cancellationToken);
 
             if (currentSnapshot?.StudentProfile?.User?.IsActive != true ||
+                string.IsNullOrWhiteSpace(currentSnapshot.StudentProfile.StudentNumber) ||
                 currentSnapshot.StudentProfile.RiskMonitoringConsent?.IsConsented != true ||
                 currentSnapshot.FeatureSchemaVersion != descriptor.FeatureSchemaVersion ||
                 currentSnapshot.ObservedDays != descriptor.ObservedDays)
@@ -204,6 +205,32 @@ public sealed class RiskScoreRepository : IRiskScoringRepository
                 score,
                 queueCreated,
                 queueEscalated);
+        }
+        catch (DbUpdateException)
+        {
+            if (transaction is not null) await transaction.RollbackAsync(CancellationToken.None);
+            ResetFailedRiskMutations();
+
+            // SQL Server enforces both the snapshot/model idempotency key and the one-open-case
+            // key. A concurrent Hangfire retry can therefore lose the race after its initial
+            // read. Treat that exact, now-persisted score as an idempotent success rather than
+            // recording a failed scoring run or creating a second queue case.
+            var concurrentScore = await _context.RiskScores
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    score => score.RiskFeatureSnapshotId == snapshot.Id &&
+                             score.ModelVersion == descriptor.ModelVersion,
+                    cancellationToken);
+            if (concurrentScore is not null)
+            {
+                return new RiskScorePersistenceResult(
+                    RiskScorePersistenceOutcome.AlreadyExists,
+                    concurrentScore,
+                    false,
+                    false);
+            }
+
+            throw;
         }
         catch
         {

@@ -1,4 +1,5 @@
 using System.Globalization;
+using Lodestone.Application.DTOs.Risk;
 using Lodestone.ML.Models;
 using Microsoft.ML;
 
@@ -33,10 +34,20 @@ public sealed class OuladDataLoader
         => _mlContext.Data.LoadFromEnumerable(LoadObservations(dataDirectory));
 
     public IReadOnlyList<StudentActivityObservation> LoadObservations(string dataDirectory)
+        => LoadObservations(dataDirectory, RiskFeatureSchema.Withdrawal28DayV1);
+
+    /// <summary>
+    /// Loads one registered behavioral schema. The v2 cohort-relative value is calibrated only
+    /// after the grouped split; this loader never uses validation/test students to derive it.
+    /// </summary>
+    public IReadOnlyList<StudentActivityObservation> LoadObservations(
+        string dataDirectory,
+        string featureSchemaVersion)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
         if (!Directory.Exists(dataDirectory))
             throw new DirectoryNotFoundException($"OULAD data directory was not found: {dataDirectory}");
+        var schema = RiskFeatureSchemas.GetRequired(featureSchemaVersion);
 
         var tables = ResolveTables(dataDirectory);
         var courseLengths = LoadCourses(tables["courses.csv"]);
@@ -50,7 +61,7 @@ public sealed class OuladDataLoader
         LoadStudentAssessments(tables["studentAssessment.csv"], assessments.ById, enrollments);
         LoadStudentVle(tables["studentVle.csv"], siteTypes, enrollments);
 
-        var observations = BuildObservations(enrollments, assessments.ByCourse);
+        var observations = BuildObservations(enrollments, assessments.ByCourse, schema);
         if (observations.Count == 0)
         {
             throw new InvalidDataException(
@@ -228,7 +239,8 @@ public sealed class OuladDataLoader
 
     private static List<StudentActivityObservation> BuildObservations(
         IReadOnlyDictionary<EnrollmentKey, Enrollment> enrollments,
-        IReadOnlyDictionary<CourseKey, List<Assessment>> assessmentsByCourse)
+        IReadOnlyDictionary<CourseKey, List<Assessment>> assessmentsByCourse,
+        RiskFeatureSchemaDefinition schema)
     {
         var result = new List<StudentActivityObservation>();
         foreach (var enrollment in enrollments.Values
@@ -260,15 +272,22 @@ public sealed class OuladDataLoader
                 var courseClicks = active.Sum(pair => pair.Value.CourseClicks);
 
                 var lateOrMissing = 0;
+                var assessmentsDue = 0;
+                var assessmentsOnTime = 0;
                 foreach (var assessment in assessments.Where(item => item.DueDay >= windowStart && item.DueDay <= anchor))
                 {
                     if (enrollment.Submissions.TryGetValue(assessment.Id, out var submission) && submission.IsBanked)
                         continue;
+                    assessmentsDue++;
                     if (!enrollment.Submissions.TryGetValue(assessment.Id, out submission)
                         || submission.SubmittedDay > anchor
                         || submission.SubmittedDay > assessment.DueDay)
                     {
                         lateOrMissing++;
+                    }
+                    else
+                    {
+                        assessmentsOnTime++;
                     }
                 }
 
@@ -276,7 +295,7 @@ public sealed class OuladDataLoader
                                  && enrollment.UnregistrationDay.Value > anchor
                                  && enrollment.UnregistrationDay.Value <= anchor + PredictionWindowDays;
 
-                result.Add(new StudentActivityObservation
+                var observation = new StudentActivityObservation
                 {
                     ActiveDayRate = activeDays / (float)ObservationWindowDays,
                     ActivitySpanDays = activeDays == 0 ? 0 : lastActive - firstActive + 1,
@@ -287,12 +306,88 @@ public sealed class OuladDataLoader
                     IsAtRisk = withdrawal,
                     StudentGroupKey = enrollment.Key.StudentId.ToString(CultureInfo.InvariantCulture),
                     EnrollmentKey = enrollment.Key.ToString(),
-                    ObservationDay = anchor
-                });
+                    ObservationDay = anchor,
+                    CoursePresentationKey = enrollment.Key.Course.ToString(),
+                    WithdrawalDay = withdrawal ? enrollment.UnregistrationDay : null
+                };
+
+                if (string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal))
+                {
+                    PopulateV2Features(
+                        observation,
+                        active,
+                        windowStart,
+                        anchor,
+                        enrollment.CourseLength,
+                        assessmentsDue,
+                        assessmentsOnTime,
+                        lateOrMissing);
+                }
+
+                result.Add(observation);
             }
         }
 
         return result;
+    }
+
+    private static void PopulateV2Features(
+        StudentActivityObservation observation,
+        IReadOnlyList<KeyValuePair<int, DailyActivity>> active,
+        int windowStart,
+        int anchor,
+        int courseLength,
+        int assessmentsDue,
+        int assessmentsOnTime,
+        int assessmentsLateOrMissing)
+    {
+        const int halfWindowDays = ObservationWindowDays / 2;
+        var priorEnd = windowStart + halfWindowDays - 1;
+        var recentStart = priorEnd + 1;
+        var prior = active.Where(pair => pair.Key <= priorEnd).ToArray();
+        var recent = active.Where(pair => pair.Key >= recentStart).ToArray();
+        var priorActiveRate = prior.Length / (float)halfWindowDays;
+        var recentActiveRate = recent.Length / (float)halfWindowDays;
+        var priorClicks = prior.Sum(pair => pair.Value.ForumClicks + pair.Value.CourseClicks) / (float)halfWindowDays;
+        var recentClicks = recent.Sum(pair => pair.Value.ForumClicks + pair.Value.CourseClicks) / (float)halfWindowDays;
+        var dueRate = assessmentsDue / (float)ObservationWindowDays;
+
+        observation.RecentActiveDayRate = recentActiveRate;
+        observation.PriorActiveDayRate = priorActiveRate;
+        observation.ActiveDayRateTrend = recentActiveRate - priorActiveRate;
+        observation.RecentCourseClickRate = recentClicks;
+        observation.PriorCourseClickRate = priorClicks;
+        observation.CourseClickRateTrend = recentClicks - priorClicks;
+        observation.InactivityStreakDays = LongestInactivityStreak(active, windowStart, anchor);
+        observation.AssessmentDueRate = dueRate;
+        observation.AssessmentOnTimeRate = assessmentsDue == 0 ? 0 : assessmentsOnTime / (float)assessmentsDue;
+        observation.AssessmentLateOrMissingRate = assessmentsDue == 0 ? 0 : assessmentsLateOrMissing / (float)assessmentsDue;
+        observation.CourseProgressRatio = Math.Clamp((anchor + 1) / (float)courseLength, 0, 1);
+        // Fit/apply below after the grouped split. A default is not used for model training.
+        observation.CohortActivityPercentile = 0;
+    }
+
+    private static int LongestInactivityStreak(
+        IReadOnlyList<KeyValuePair<int, DailyActivity>> active,
+        int windowStart,
+        int anchor)
+    {
+        var activeDays = active.Select(pair => pair.Key).ToHashSet();
+        var current = 0;
+        var longest = 0;
+        for (var day = windowStart; day <= anchor; day++)
+        {
+            if (activeDays.Contains(day))
+            {
+                current = 0;
+                continue;
+            }
+
+            current++;
+            if (current > longest) longest = current;
+        }
+
+        return longest;
     }
 
     private static int RequiredInt(string value, string column, string path, long row)

@@ -29,17 +29,15 @@ public static class RecurringJobScheduler
             recurringJobs.RemoveIfExists("weekly-risk-scoring");
         }
 
-        recurringJobs.AddOrUpdate<NudgeNotificationJob>(
-            "nudge-dispatch", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily);
-
-        recurringJobs.AddOrUpdate<BookingReminderJob>(
-            "booking-reminders", job => job.ExecuteAsync(CancellationToken.None), Cron.Hourly);
-
-        recurringJobs.AddOrUpdate<ForumModerationJob>(
-            "forum-moderation", job => job.ExecuteAsync(CancellationToken.None), Cron.Daily);
-
-        recurringJobs.AddOrUpdate<CrisisResourceEscalationJob>(
-            "crisis-escalation", job => job.ExecuteAsync(CancellationToken.None), "*/15 * * * *");
+        // These workflows have no complete, safety-reviewed implementation.  Remove
+        // any jobs left by an older deployment regardless of configuration so a
+        // production setting cannot turn a placeholder into a permanent failure.
+        // Manual in-app nudges are visible immediately and deliberately have no
+        // background delivery side effect in this release.
+        recurringJobs.RemoveIfExists("nudge-dispatch");
+        recurringJobs.RemoveIfExists("booking-reminders");
+        recurringJobs.RemoveIfExists("forum-moderation");
+        recurringJobs.RemoveIfExists("crisis-escalation");
     }
 
     private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)

@@ -3,9 +3,10 @@ using Lodestone.Application.DTOs.Risk;
 namespace Lodestone.ML.Models;
 
 /// <summary>
-/// Version-one behavioral feature vector consumed by the risk model. Keep this type free of
-/// labels and identifiers so the saved model has the same input contract during training and
-/// inference.
+/// Versioned behavioral feature vector consumed by the risk model. Keep this type free of labels
+/// and identifiers so the saved model has the same input contract during training and inference.
+/// The active contract is selected only through <c>RiskFeatureSchemas</c>; v1 fields are retained
+/// unchanged for backward-compatible artifact loading.
 /// </summary>
 public class StudentActivityFeatures
 {
@@ -30,4 +31,18 @@ public class StudentActivityFeatures
     /// <summary>Clicks on all non-forum OULAD VLE sites; forum clicks are intentionally excluded.</summary>
     public float CourseInteractionCount { get; set; }
     public float LateOrMissingAssignmentCount { get; set; }
+
+    // withdrawal-28d-v2: all values use only the 28-day observation window ending at the anchor.
+    public float RecentActiveDayRate { get; set; }
+    public float PriorActiveDayRate { get; set; }
+    public float ActiveDayRateTrend { get; set; }
+    public float RecentCourseClickRate { get; set; }
+    public float PriorCourseClickRate { get; set; }
+    public float CourseClickRateTrend { get; set; }
+    public float InactivityStreakDays { get; set; }
+    public float AssessmentDueRate { get; set; }
+    public float AssessmentOnTimeRate { get; set; }
+    public float AssessmentLateOrMissingRate { get; set; }
+    public float CourseProgressRatio { get; set; }
+    public float CohortActivityPercentile { get; set; }
 }

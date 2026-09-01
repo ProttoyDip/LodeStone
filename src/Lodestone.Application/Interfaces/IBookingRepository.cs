@@ -1,6 +1,7 @@
 using Lodestone.Application.DTOs.Booking;
 using Lodestone.Application.DTOs.Counselor;
 using Lodestone.Domain.Entities;
+using Lodestone.Domain.Enums;
 
 namespace Lodestone.Application.Interfaces;
 
@@ -9,6 +10,7 @@ public interface IBookingRepository
 {
     Task<IReadOnlyList<CounselorBooking>> GetByStudentIdAsync(int studentProfileId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CounselorBooking>> GetByCounselorIdAsync(int counselorProfileId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<CounselorBooking>> GetCounselorWorkspaceAsync(int counselorProfileId, DateTime recentFromUtc, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CounselorAvailabilitySlot>> GetAvailableSlotsAsync(int? counselorProfileId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CounselorProfile>> GetAllCounselorsAsync(CancellationToken cancellationToken = default);
     Task<CounselorBooking?> TryCreateConfirmedAsync(int studentProfileId, int slotId, string? notes, CancellationToken cancellationToken = default);
@@ -18,4 +20,12 @@ public interface IBookingRepository
     Task<bool> HasOverlappingSlotAsync(int counselorProfileId, DateTime startUtc, DateTime endUtc, CancellationToken cancellationToken = default);
     Task AddSlotAsync(CounselorAvailabilitySlot slot, CancellationToken cancellationToken = default);
     Task<AvailabilityRemovalResult> RemoveOwnedSlotAsync(int counselorProfileId, int slotId, CancellationToken cancellationToken = default);
+    Task<CounselorBookingUpdateResult> RecordCounselorOutcomeAsync(
+        int counselorProfileId,
+        string counselorUserId,
+        int bookingId,
+        BookingStatus outcome,
+        string? sessionNotes,
+        DateTime nowUtc,
+        CancellationToken cancellationToken = default);
 }
