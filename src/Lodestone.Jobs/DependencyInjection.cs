@@ -13,6 +13,8 @@ public static class DependencyInjection
         services.AddHangfireJobs(configuration);
         services.Configure<RiskScoringJobOptions>(
             configuration.GetSection(RiskScoringJobOptions.SectionName));
+        services.Configure<MaintenanceJobOptions>(
+            configuration.GetSection(MaintenanceJobOptions.SectionName));
 
         services.AddScoped<WeeklyRiskScoringJob>();
         services.AddScoped<NudgeNotificationJob>();

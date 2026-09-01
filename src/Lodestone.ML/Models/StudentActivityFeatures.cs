@@ -57,4 +57,13 @@ public class StudentActivityFeatures
     public float InactiveWeekRate { get; set; }
     /// <summary>Count of the most recent consecutive due assessments that were late or missing.</summary>
     public float AssessmentMissStreak { get; set; }
+
+    // withdrawal-28d-v4-experiment: course-to-anchor assessment history. Scores are normalized
+    // to [0, 1] and only assessments due by the observation anchor are eligible.
+    public float PriorAssessmentsDueCount { get; set; }
+    public float PriorAssessmentCompletionRate { get; set; }
+    public float PriorAssessmentLateRate { get; set; }
+    public float PriorAssessmentMeanScore { get; set; }
+    public float PriorAssessmentFailRate { get; set; }
+    public float LastAssessmentScore { get; set; }
 }

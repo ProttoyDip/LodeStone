@@ -15,6 +15,24 @@ public interface IBookingRepository
     Task<IReadOnlyList<CounselorProfile>> GetAllCounselorsAsync(CancellationToken cancellationToken = default);
     Task<CounselorBooking?> TryCreateConfirmedAsync(int studentProfileId, int slotId, string? notes, CancellationToken cancellationToken = default);
     Task<BookingCancellationResult> CancelOwnedAsync(int studentProfileId, int bookingId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Confirmed bookings starting inside the window that have not had a reminder sent, with the
+    /// student and counselor loaded so a reminder can be addressed and described.
+    /// </summary>
+    Task<IReadOnlyList<CounselorBooking>> GetBookingsDueForReminderAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stamps the reminder as sent. Returns false when another worker stamped it first, so a
+    /// concurrent sweep cannot send a second email for the same session.
+    /// </summary>
+    Task<bool> TryMarkReminderSentAsync(
+        int bookingId,
+        DateTime sentAtUtc,
+        CancellationToken cancellationToken = default);
+
     Task<CounselorProfile?> GetCounselorByUserIdAsync(string userId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CounselorAvailabilitySlot>> GetCounselorSlotsAsync(int counselorProfileId, CancellationToken cancellationToken = default);
     Task<bool> HasOverlappingSlotAsync(int counselorProfileId, DateTime startUtc, DateTime endUtc, CancellationToken cancellationToken = default);

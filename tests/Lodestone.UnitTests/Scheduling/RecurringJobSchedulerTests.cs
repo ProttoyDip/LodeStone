@@ -21,11 +21,11 @@ public sealed class RecurringJobSchedulerTests
     public void Incomplete_jobs_are_removed()
     {
         var recurringJobs = new Mock<IRecurringJobManager>();
-        var configuration = new Mock<IConfiguration>();
+        var configuration = new ConfigurationBuilder().Build();
 
         RecurringJobScheduler.RegisterRecurringJobs(
             recurringJobs.Object,
-            configuration.Object,
+            configuration,
             riskScoringEnabled: false);
 
         InvokedIds(recurringJobs, "AddOrUpdate").Should().BeEmpty();
@@ -36,15 +36,22 @@ public sealed class RecurringJobSchedulerTests
     [Fact]
     public void Incomplete_jobs_are_removed_even_when_legacy_options_are_true()
     {
+        // Legacy deployments may have had flat boolean flags for these sweeps. The scheduler now
+        // uses structured options (MaintenanceJobs:*:Enabled + Cron), so flat keys must not
+        // accidentally enable anything.
         var recurringJobs = new Mock<IRecurringJobManager>();
-        var configuration = new Mock<IConfiguration>();
-        configuration
-            .Setup(value => value[It.IsAny<string>()])
-            .Returns("true");
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["EnableBookingReminders"] = "true",
+                ["EnableForumModeration"] = "true",
+                ["EnableCrisisEscalation"] = "true",
+            })
+            .Build();
 
         RecurringJobScheduler.RegisterRecurringJobs(
             recurringJobs.Object,
-            configuration.Object,
+            configuration,
             riskScoringEnabled: false);
 
         InvokedIds(recurringJobs, "AddOrUpdate").Should().BeEmpty();

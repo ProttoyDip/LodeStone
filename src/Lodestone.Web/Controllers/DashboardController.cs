@@ -20,7 +20,7 @@ public class DashboardController : Controller
             return RedirectToAction("Index", "Student");
 
         if (User.IsInRole(RoleConstants.Volunteer))
-            return RedirectToAction("Index", "Forum");
+            return RedirectToAction("Dashboard", "Volunteer");
 
         return Forbid();
     }

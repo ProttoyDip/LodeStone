@@ -1,0 +1,149 @@
+@model VolunteerDashboardViewModel
+@{
+    ViewData["Title"] = "Volunteer Dashboard";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="container my-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1>Volunteer Dashboard</h1>
+            <p class="text-muted">Manage peer support requests and help students in your community.</p>
+        </div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @TempData["Success"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            @TempData["Error"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Pending Requests</h5>
+                    <p class="card-text display-4">@Model.OpenRequestsCount</p>
+                    <p class="card-text text-muted">Requests awaiting your response</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Active Support</h5>
+                    <p class="card-text display-4">@Model.ActiveRequestsCount</p>
+                    <p class="card-text text-muted">Requests you're currently helping with</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            @if (Model.PendingRequests.Count > 0)
+            {
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Pending Requests</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="list-group">
+                            @foreach (var request in Model.PendingRequests)
+                            {
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <h6 class="mb-1">@request.Title</h6>
+                                            <p class="mb-1 text-muted">
+                                                <span class="badge bg-secondary">@request.Category</span>
+                                            </p>
+                                            <small class="text-muted">Posted @request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
+                                        </div>
+                                        <a href="@Url.Action("ViewRequest", new { requestId = request.Id })" class="btn btn-sm btn-primary">
+                                            View Request
+                                        </a>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (Model.OpenRequestsCount == 0)
+            {
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    No pending requests at this time. Check back soon!
+                </div>
+            }
+
+            @if (Model.ActiveRequests.Count > 0)
+            {
+                <div class="card">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Active Support</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="list-group">
+                            @foreach (var request in Model.ActiveRequests)
+                            {
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <h6 class="mb-1">@request.Title</h6>
+                                            <p class="mb-1 text-muted">
+                                                <span class="badge bg-success">Accepted</span>
+                                                <span class="badge bg-secondary">@request.Category</span>
+                                            </p>
+                                            <small class="text-muted">Started @request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
+                                        </div>
+                                        <a href="@Url.Action("ViewRequest", new { requestId = request.Id })" class="btn btn-sm btn-primary">
+                                            Continue
+                                        </a>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Quick Tips</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Before you accept:</strong></p>
+                    <ul class="small">
+                        <li>Make sure you have time to help</li>
+                        <li>Review the student's request carefully</li>
+                        <li>Respond within 24-48 hours</li>
+                    </ul>
+
+                    <p class="mt-3"><strong>During support:</strong></p>
+                    <ul class="small">
+                        <li>Keep conversations focused and respectful</li>
+                        <li>Listen without judgment</li>
+                        <li>If you feel concerns require professional help, escalate to a counselor</li>
+                    </ul>
+
+                    <p class="mt-3"><strong>Need to escalate?</strong></p>
+                    <p class="small">If a student mentions self-harm, crisis, or needs professional help, you can escalate the request to our counseling team through the "Escalate to Counselor" option in each request.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

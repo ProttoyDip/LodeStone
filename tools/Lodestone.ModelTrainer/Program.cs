@@ -209,17 +209,25 @@ internal static class Program
     /// </summary>
     private static int Analyze(IReadOnlyDictionary<string, string> options)
     {
-        EnsureOnly(options, "data", "schema", "report", "seed", "candidate");
+        EnsureOnly(options, "data", "schema", "report", "seed", "candidate", "weighting", "target");
         var dataPath = Path.GetFullPath(Get(options, "data", Path.Combine("src", "Lodestone.ML", "Data", "OULAD")));
         var schemaVersion = Get(options, "schema", RiskFeatureSchema.Withdrawal28DayV3);
         _ = RiskFeatureSchemas.GetRequired(schemaVersion);
         var seed = ParseInt(options, "seed", 20260831);
+        var weightStrategy = ParseWeightStrategy(options.GetValueOrDefault("weighting"));
+        var labelStrategy = ParseLabelStrategy(options.GetValueOrDefault("target"));
+        var requestedCandidate = options.GetValueOrDefault("candidate");
+        var reportIdentity = string.Join(
+            '.',
+            schemaVersion,
+            labelStrategy.ToString().ToLowerInvariant(),
+            weightStrategy.ToString().ToLowerInvariant(),
+            requestedCandidate ?? "default-candidates");
         var reportPath = Path.GetFullPath(Get(
             options,
             "report",
-            Path.Combine("src", "Lodestone.ML", "Reports", "experiments", $"threshold-analysis.{schemaVersion}.json")));
+            Path.Combine("src", "Lodestone.ML", "Reports", "experiments", $"threshold-analysis.{reportIdentity}.json")));
 
-        var requestedCandidate = options.GetValueOrDefault("candidate");
         var candidates = string.IsNullOrWhiteSpace(requestedCandidate)
             ? ModelTrainingCandidate.V2Candidates
                 .Where(item => item.Id is "fasttree-200-31-10-0.05" or "lightgbm-300-31-20-0.05")
@@ -237,18 +245,24 @@ internal static class Program
             new FeatureEngineering(mlContext),
             new global::Lodestone.ML.Training.ModelTrainer(mlContext),
             new ModelEvaluator(mlContext));
-        var report = analyzer.Analyze(dataPath, schemaVersion, candidates, seed);
+        var report = analyzer.Analyze(dataPath, schemaVersion, candidates, seed, weightStrategy, labelStrategy);
 
         Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
         File.WriteAllText(reportPath, JsonSerializer.Serialize(report, JsonOptions));
 
         Console.WriteLine($"Schema: {report.FeatureSchemaVersion}");
+        Console.WriteLine($"Training weighting: {report.TrainingWeightStrategy}");
+        Console.WriteLine($"Label strategy: {report.LabelStrategy}");
+        Console.WriteLine($"Split stratification label: {report.SplitLabelStrategy}");
         Console.WriteLine(
             $"Validation rows: {report.ValidationRows:N0}, positives: {report.ValidationPositives:N0} " +
             $"({report.ValidationPositiveRate:P2} base rate)");
         foreach (var candidate in report.Candidates)
         {
-            Console.WriteLine($"\n{candidate.CandidateId} ({candidate.Algorithm}) — best precision at each recall floor:");
+            Console.WriteLine(
+                $"\n{candidate.CandidateId} ({candidate.Algorithm}) — " +
+                $"ROC AUC {candidate.AreaUnderRocCurve:F4}, PR AUC {candidate.AreaUnderPrecisionRecallCurve:F4}; " +
+                "best precision at each recall floor:");
             foreach (var point in candidate.BestPrecisionAtOrAboveRecall)
             {
                 Console.WriteLine(point.IsAttainable
@@ -298,6 +312,26 @@ internal static class Program
             throw new CliUsageException($"--{key} must be a non-negative integer.");
         return parsed;
     }
+
+    private static TrainingWeightStrategy ParseWeightStrategy(string? value)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "balanced" => TrainingWeightStrategy.Balanced,
+            "sqrt" or "square-root-balanced" => TrainingWeightStrategy.SquareRootBalanced,
+            "none" or "unweighted" => TrainingWeightStrategy.Unweighted,
+            _ => throw new CliUsageException(
+                "--weighting must be balanced, square-root-balanced, or unweighted.")
+        };
+
+    private static WithdrawalLabelStrategy ParseLabelStrategy(string? value)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "28-day" or "within-28-days" => WithdrawalLabelStrategy.Within28Days,
+            "eventual" or "eventual-withdrawal" => WithdrawalLabelStrategy.EventualWithdrawal,
+            "non-completion" or "eventual-non-completion" => WithdrawalLabelStrategy.EventualNonCompletion,
+            _ => throw new CliUsageException(
+                "--target must be within-28-days, eventual-withdrawal, or eventual-non-completion.")
+        };
 
     private static DatasetProvenance? ReadProvenance(string dataPath)
     {
@@ -398,11 +432,9 @@ internal static class Program
             Report what precision is attainable at each recall floor, to choose gate values from
             measurement rather than assumption. Trains on the training split and scores validation
             only; it publishes nothing and never touches the locked test partition:
-              dotnet run --project tools/Lodestone.ModelTrainer -- analyze [--data <directory>] [--schema <feature-schema>] [--report <json>] [--seed <number>] [--candidate <id>]
+              dotnet run --project tools/Lodestone.ModelTrainer -- analyze [--data <directory>] [--schema <feature-schema>] [--report <json>] [--seed <number>] [--candidate <id>] [--weighting <balanced|square-root-balanced|unweighted>] [--target <within-28-days|eventual-withdrawal|eventual-non-completion>]
 
-            Every command uses the fixed AUC >= .70, recall >= .70, precision >= .05 gate. The
-            precision gate reflects the measured frontier for a ~2.6% base-rate event, not a target
-            classifier accuracy; published models are triage-ranking aids, not precise classifiers. The
+            Every training command uses the fixed AUC >= .70, recall >= .70, precision >= .30 gate. The
             locked test partition is never evaluated if validation fails. Exit code 3 leaves any
             previously published application artifact untouched; failure reports stay outside the
             Web App_Data/ml directory.

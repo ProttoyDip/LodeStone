@@ -100,6 +100,64 @@ public sealed class NotificationService : INotificationService
         return notifications.Length;
     }
 
+    public async Task<int> NotifyAdministratorsOnceAsync(
+        NotificationType type,
+        string title,
+        string message,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+
+        var administrators = await _userManager.GetUsersInRoleAsync(RoleConstants.Admin);
+        if (administrators.Count == 0) return 0;
+
+        var safeTitle = Truncate(title, MaximumTitleLength);
+        var recipientIds = administrators
+            .Select(administrator => administrator.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (recipientIds.Length == 0) return 0;
+
+        // An administrator who has not yet read the previous alert does not need another one.
+        var alreadyWaiting = await _context.Notifications
+            .AsNoTracking()
+            .Where(notification => !notification.IsRead &&
+                                   notification.Type == type &&
+                                   notification.Title == safeTitle &&
+                                   recipientIds.Contains(notification.RecipientUserId))
+            .Select(notification => notification.RecipientUserId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var pending = recipientIds
+            .Except(alreadyWaiting, StringComparer.Ordinal)
+            .ToArray();
+        if (pending.Length == 0) return 0;
+
+        var createdAtUtc = DateTime.UtcNow;
+        var safeMessage = Truncate(message ?? string.Empty, MaximumMessageLength);
+        var notifications = pending
+            .Select(recipientUserId => new Notification
+            {
+                RecipientUserId = recipientUserId,
+                Type = type,
+                Title = safeTitle,
+                Message = safeMessage,
+                IsRead = false,
+                CreatedAtUtc = createdAtUtc
+            })
+            .ToArray();
+
+        _context.Notifications.AddRange(notifications);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        foreach (var notification in notifications)
+            await SignalAsync(notification.RecipientUserId, cancellationToken);
+
+        return notifications.Length;
+    }
+
     public async Task<int> GetUnreadCountAsync(CancellationToken cancellationToken = default)
     {
         if (!_currentUserService.IsAuthenticated || string.IsNullOrWhiteSpace(_currentUserService.UserId))

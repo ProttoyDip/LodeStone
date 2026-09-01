@@ -360,10 +360,6 @@ public class AdminController : Controller
     }
 
     [HttpGet]
-    public Task<IActionResult> Volunteers(string? q, int page, CancellationToken cancellationToken)
-        => RenderSectionAsync(AdminSectionType.Volunteers, q, page, cancellationToken);
-
-    [HttpGet]
     public Task<IActionResult> Users(string? q, int page, CancellationToken cancellationToken)
         => RenderSectionAsync(AdminSectionType.Users, q, page, cancellationToken);
 

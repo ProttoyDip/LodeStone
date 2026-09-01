@@ -52,6 +52,34 @@ public sealed class ModelEvaluationTests
             .WithMessage("*No validation threshold*");
     }
 
+    [Fact]
+    public void Exact_recall_frontier_evaluates_every_distinct_score_and_keeps_ties_atomic()
+    {
+        var ml = new MLContext(seed: 42);
+        var rows = Enumerable.Range(0, 250)
+            .Select(index => new PrescoredRow(
+                Label: index is 123 or 124,
+                Probability: 1f - index / 300f,
+                Score: 1f - index / 300f,
+                PredictedLabel: false))
+            .Append(new PrescoredRow(true, .50f, .50f, false))
+            .Concat(Enumerable.Range(0, 200)
+                .Select(_ => new PrescoredRow(false, .50f, .50f, false)))
+            .ToArray();
+        var data = ml.Data.LoadFromEnumerable(rows);
+        var identity = ml.Transforms.CopyColumns("Probe", "Score").Fit(data);
+        var evaluator = new ModelEvaluator(ml);
+
+        var best = evaluator.FindBestPrecisionAtOrAboveRecall(identity, data, [.66]);
+
+        best.Should().ContainSingle();
+        best[0].Should().NotBeNull();
+        best[0]!.Recall.Should().BeApproximately(2d / 3d, .000001);
+        best[0]!.Threshold.Should().BeApproximately(1f - 124f / 300f, .000001f);
+        best[0]!.TruePositive.Should().Be(2);
+        best[0]!.FalsePositive.Should().Be(123);
+    }
+
     private sealed record PrescoredRow(
         [property: ColumnName("Label")] bool Label,
         float Probability,

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Lodestone.Application.DTOs.Nudges;
 using Lodestone.Application.Interfaces;
+using Lodestone.Infrastructure.Data;
 using Lodestone.ML.Models;
 using Lodestone.Web.Controllers;
 using Lodestone.Web.ViewModels.Risk;
@@ -131,12 +132,17 @@ public sealed class ManualNudgeWebTests
     {
         var current = new Mock<ICurrentUserService>();
         current.SetupGet(service => service.UserId).Returns(userId);
+        
+        // For tests of old methods (nudges), context is not used
+        // Using null is safe since these tests don't exercise the new volunteer support paths
         return WithTempData(new StudentController(
             Mock.Of<IStudentDashboardService>(),
             Mock.Of<IRiskMonitoringConsentService>(),
             Mock.Of<IStudentNumberVerificationService>(),
             current.Object,
             nudges,
+            Mock.Of<IVolunteerSupportService>(),
+            null!,  // ApplicationDbContext not used by nudge-related methods
             NullLogger<StudentController>.Instance));
     }
 

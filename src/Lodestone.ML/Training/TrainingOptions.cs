@@ -75,6 +75,15 @@ public sealed class TrainingOptions
                 $"recall {ModelQualityGates.MinimumRecall:F2}, and precision {ModelQualityGates.MinimumPrecision:F2}.");
         }
         _ = Lodestone.Application.DTOs.Risk.RiskFeatureSchemas.GetRequired(FeatureSchemaVersion);
+        if (string.Equals(
+                FeatureSchemaVersion,
+                Lodestone.Application.DTOs.Risk.RiskFeatureSchema.Withdrawal28DayV4Experiment,
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "withdrawal-28d-v4-experiment is validation-only and cannot publish a runtime artifact.",
+                nameof(FeatureSchemaVersion));
+        }
         if (UseV2Experiment
             && !string.Equals(FeatureSchemaVersion, Lodestone.Application.DTOs.Risk.RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
             && !string.Equals(FeatureSchemaVersion, Lodestone.Application.DTOs.Risk.RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal))

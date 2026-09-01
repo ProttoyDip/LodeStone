@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<ICounselorAvailabilityService, CounselorAvailabilityService>();
         services.AddScoped<ICounselorQueueService, CounselorQueueService>();
         services.AddScoped<ICrisisResourceService, CrisisResourceService>();
+        services.AddScoped<IVolunteerSupportService, VolunteerSupportService>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IRiskQueueNotifier, NullRiskQueueNotifier>();
         services.TryAddSingleton<IAdminNotificationNotifier, NullAdminNotificationNotifier>();

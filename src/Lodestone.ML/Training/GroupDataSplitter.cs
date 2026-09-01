@@ -14,6 +14,8 @@ public sealed record GroupedDatasetSplit(
 /// Deterministically splits global students, never enrollment rows, across datasets. Students
 /// are stratified by whether any of their rolling observations is positive so all three held-out
 /// partitions contain both classes and no student's observations can leak between partitions.
+/// A separate stratification reference can freeze membership to the production target while an
+/// analysis-only label is evaluated on exactly the same students.
 /// </summary>
 public static class GroupDataSplitter
 {
@@ -21,7 +23,8 @@ public static class GroupDataSplitter
         IReadOnlyList<StudentActivityObservation> observations,
         int seed = 42,
         double trainingFraction = 0.70,
-        double validationFraction = 0.15)
+        double validationFraction = 0.15,
+        IReadOnlyList<StudentActivityObservation>? stratificationReference = null)
     {
         ArgumentNullException.ThrowIfNull(observations);
         if (observations.Count == 0)
@@ -39,7 +42,25 @@ public static class GroupDataSplitter
         if (observations.Any(row => string.IsNullOrWhiteSpace(row.StudentGroupKey)))
             throw new InvalidDataException("Every observation must contain a non-empty global student group key.");
 
-        var studentsByClass = observations
+        var partitioningRows = stratificationReference ?? observations;
+        if (partitioningRows.Count == 0)
+            throw new InvalidDataException("The stratification reference contains no observations.");
+        if (partitioningRows.Any(row => string.IsNullOrWhiteSpace(row.StudentGroupKey)))
+            throw new InvalidDataException("Every stratification reference row must contain a non-empty global student group key.");
+
+        var observedStudents = observations
+            .Select(row => row.StudentGroupKey)
+            .ToHashSet(StringComparer.Ordinal);
+        var referenceStudents = partitioningRows
+            .Select(row => row.StudentGroupKey)
+            .ToHashSet(StringComparer.Ordinal);
+        if (!observedStudents.SetEquals(referenceStudents))
+        {
+            throw new InvalidDataException(
+                "The observations and stratification reference must contain exactly the same global students.");
+        }
+
+        var studentsByClass = partitioningRows
             .GroupBy(row => row.StudentGroupKey, StringComparer.Ordinal)
             .Select(group => new StudentClass(group.Key, group.Any(row => row.IsAtRisk)))
             .GroupBy(student => student.IsPositive)
@@ -150,6 +171,12 @@ public static class GroupDataSplitter
         ForumEngagementShare = value.ForumEngagementShare,
         InactiveWeekRate = value.InactiveWeekRate,
         AssessmentMissStreak = value.AssessmentMissStreak,
+        PriorAssessmentsDueCount = value.PriorAssessmentsDueCount,
+        PriorAssessmentCompletionRate = value.PriorAssessmentCompletionRate,
+        PriorAssessmentLateRate = value.PriorAssessmentLateRate,
+        PriorAssessmentMeanScore = value.PriorAssessmentMeanScore,
+        PriorAssessmentFailRate = value.PriorAssessmentFailRate,
+        LastAssessmentScore = value.LastAssessmentScore,
         IsAtRisk = value.IsAtRisk,
         ExampleWeight = value.ExampleWeight,
         StudentGroupKey = value.StudentGroupKey,

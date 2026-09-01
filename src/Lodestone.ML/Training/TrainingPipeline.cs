@@ -94,7 +94,7 @@ public sealed class TrainingPipeline
                 .Evaluate(split.Training, schema, candidates, options.Seed)
             : Array.Empty<CrossValidationCandidateResult>();
         var validationCandidates = options.UseV2Experiment
-            ? SelectCrossValidatedCandidate(candidates, crossValidation)
+            ? RankCrossValidatedCandidates(candidates, crossValidation)
             : candidates;
 
         var selected = SelectOnValidation(
@@ -309,22 +309,23 @@ public sealed class TrainingPipeline
         return selected;
     }
 
-    private static IReadOnlyList<ModelTrainingCandidate> SelectCrossValidatedCandidate(
+    internal static IReadOnlyList<ModelTrainingCandidate> RankCrossValidatedCandidates(
         IReadOnlyList<ModelTrainingCandidate> candidates,
         IReadOnlyList<CrossValidationCandidateResult> results)
     {
-        var selectedId = results
+        var rankedIds = results
             .Where(result => result.IsUsable)
             .OrderByDescending(result => result.MeanAreaUnderRocCurve)
             .ThenByDescending(result => result.MeanAreaUnderPrecisionRecallCurve)
             .ThenByDescending(result => result.MeanF1Score)
             .ThenBy(result => result.CandidateId, StringComparer.Ordinal)
             .Select(result => result.CandidateId)
-            .FirstOrDefault();
-        if (selectedId is null) return Array.Empty<ModelTrainingCandidate>();
-
-        var candidate = candidates.SingleOrDefault(item => string.Equals(item.Id, selectedId, StringComparison.Ordinal));
-        return candidate is null ? Array.Empty<ModelTrainingCandidate>() : [candidate];
+            .ToArray();
+        var byId = candidates.ToDictionary(candidate => candidate.Id, StringComparer.Ordinal);
+        return rankedIds
+            .Where(byId.ContainsKey)
+            .Select(id => byId[id])
+            .ToArray();
     }
 
     private static bool IsBetter(ValidationSelection candidate, ValidationSelection current)
@@ -472,6 +473,12 @@ public sealed class TrainingPipeline
             nameof(StudentActivityObservation.ForumEngagementShare) => row.ForumEngagementShare,
             nameof(StudentActivityObservation.InactiveWeekRate) => row.InactiveWeekRate,
             nameof(StudentActivityObservation.AssessmentMissStreak) => row.AssessmentMissStreak,
+            nameof(StudentActivityObservation.PriorAssessmentsDueCount) => row.PriorAssessmentsDueCount,
+            nameof(StudentActivityObservation.PriorAssessmentCompletionRate) => row.PriorAssessmentCompletionRate,
+            nameof(StudentActivityObservation.PriorAssessmentLateRate) => row.PriorAssessmentLateRate,
+            nameof(StudentActivityObservation.PriorAssessmentMeanScore) => row.PriorAssessmentMeanScore,
+            nameof(StudentActivityObservation.PriorAssessmentFailRate) => row.PriorAssessmentFailRate,
+            nameof(StudentActivityObservation.LastAssessmentScore) => row.LastAssessmentScore,
             _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Unsupported feature name.")
         };
 

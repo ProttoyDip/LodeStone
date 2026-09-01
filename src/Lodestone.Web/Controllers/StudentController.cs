@@ -2,6 +2,7 @@ using Lodestone.Application.DTOs.Student;
 using Lodestone.Application.DTOs.Nudges;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
+using Lodestone.Domain.Enums;
 using Lodestone.Web.ViewModels.Student;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

@@ -335,6 +335,8 @@ public class AccountController : Controller
             return RedirectToAction("Index", "Admin");
         if (roles.Contains(RoleConstants.Counselor))
             return RedirectToAction("Queue", "Counselor");
+        if (roles.Contains(RoleConstants.Volunteer))
+            return RedirectToAction("Dashboard", "Volunteer");
         if (roles.Contains(RoleConstants.Student))
             return RedirectToAction("Index", "Student");
 

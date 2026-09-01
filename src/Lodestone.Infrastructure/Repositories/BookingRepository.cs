@@ -34,6 +34,39 @@ public class BookingRepository : GenericRepository<CounselorBooking>, IBookingRe
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<CounselorBooking>> GetBookingsDueForReminderAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+        => await Set
+            .Include(booking => booking.StudentProfile)
+                .ThenInclude(profile => profile!.User)
+            .Include(booking => booking.CounselorProfile)
+                .ThenInclude(profile => profile!.User)
+            .Where(booking => booking.Status == BookingStatus.Confirmed
+                              && booking.ReminderSentAtUtc == null
+                              && booking.ScheduledForUtc >= fromUtc
+                              && booking.ScheduledForUtc < toUtc)
+            .OrderBy(booking => booking.ScheduledForUtc)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+    public async Task<bool> TryMarkReminderSentAsync(
+        int bookingId,
+        DateTime sentAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        // Conditional update: whoever stamps the null wins, so two workers racing the same
+        // booking cannot both proceed to send.
+        var updated = await Set
+            .Where(booking => booking.Id == bookingId && booking.ReminderSentAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(booking => booking.ReminderSentAtUtc, sentAtUtc),
+                cancellationToken);
+
+        return updated == 1;
+    }
+
     public async Task<IReadOnlyList<CounselorBooking>> GetCounselorWorkspaceAsync(
         int counselorProfileId,
         DateTime recentFromUtc,

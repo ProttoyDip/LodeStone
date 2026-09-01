@@ -222,6 +222,12 @@ public sealed class StudentNumberVerificationRepositoryTests
             string message,
             CancellationToken cancellationToken = default) => Task.FromResult(0);
 
+        public Task<int> NotifyAdministratorsOnceAsync(
+            NotificationType type,
+            string title,
+            string message,
+            CancellationToken cancellationToken = default) => Task.FromResult(0);
+
         public Task<int> GetUnreadCountAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(0);
     }

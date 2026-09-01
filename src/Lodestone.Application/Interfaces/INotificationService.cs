@@ -26,6 +26,17 @@ public interface INotificationService
         string message,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Notifies administrators only where an unread notification with the same type and title is
+    /// not already waiting for them. Recurring sweeps use this so a standing backlog raises one
+    /// notification rather than one per run.
+    /// </summary>
+    Task<int> NotifyAdministratorsOnceAsync(
+        NotificationType type,
+        string title,
+        string message,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Unread count for the signed-in user; zero when unauthenticated.</summary>
     Task<int> GetUnreadCountAsync(CancellationToken cancellationToken = default);
 }

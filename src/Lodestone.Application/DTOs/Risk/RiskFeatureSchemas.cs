@@ -105,8 +105,26 @@ public static class RiskFeatureSchemas
             "AssessmentMissStreak"
         ]);
 
+    /// <summary>
+    /// Offline-only v4 experiment. Adds course-to-anchor assessment history to v3. It is not a
+    /// runtime snapshot contract and must not be published until import, persistence and scoring
+    /// support are implemented for the same feature semantics.
+    /// </summary>
+    public static readonly RiskFeatureSchemaDefinition Withdrawal28DayV4Experiment = new(
+        RiskFeatureSchema.Withdrawal28DayV4Experiment,
+        RiskFeatureSchema.Withdrawal28DayObservedDays,
+        [
+            .. Withdrawal28DayV3.FeatureNames,
+            "PriorAssessmentsDueCount",
+            "PriorAssessmentCompletionRate",
+            "PriorAssessmentLateRate",
+            "PriorAssessmentMeanScore",
+            "PriorAssessmentFailRate",
+            "LastAssessmentScore"
+        ]);
+
     private static readonly IReadOnlyDictionary<string, RiskFeatureSchemaDefinition> ByVersion =
-        new[] { Withdrawal28DayV1, Withdrawal28DayV2, Withdrawal28DayV3 }
+        new[] { Withdrawal28DayV1, Withdrawal28DayV2, Withdrawal28DayV3, Withdrawal28DayV4Experiment }
             .ToDictionary(schema => schema.Version, StringComparer.Ordinal);
 
     public static bool TryGet(string? version, out RiskFeatureSchemaDefinition schema)

@@ -12,6 +12,9 @@ namespace Lodestone.ML.Training;
 /// </summary>
 public sealed class ThresholdAnalyzer
 {
+    private static readonly double[] RecallFloors =
+        [.02, .05, .10, .15, .20, .30, .40, .50, .65, .70, .80, .90];
+
     private readonly MLContext _mlContext;
     private readonly OuladDataLoader _loader;
     private readonly FeatureEngineering _features;
@@ -37,6 +40,8 @@ public sealed class ThresholdAnalyzer
         string featureSchemaVersion,
         IReadOnlyList<ModelTrainingCandidate> candidates,
         int seed,
+        TrainingWeightStrategy weightStrategy = TrainingWeightStrategy.Balanced,
+        WithdrawalLabelStrategy labelStrategy = WithdrawalLabelStrategy.Within28Days,
         double trainingFraction = 0.70,
         double validationFraction = 0.15)
     {
@@ -46,8 +51,19 @@ public sealed class ThresholdAnalyzer
             throw new ArgumentException("At least one candidate is required.", nameof(candidates));
 
         var schema = RiskFeatureSchemas.GetRequired(featureSchemaVersion);
-        var observations = _loader.LoadObservations(dataDirectory, schema.Version);
-        var split = GroupDataSplitter.Split(observations, seed, trainingFraction, validationFraction);
+        var observations = _loader.LoadObservations(dataDirectory, schema.Version, labelStrategy);
+        var stratificationReference = labelStrategy == WithdrawalLabelStrategy.Within28Days
+            ? null
+            : _loader.LoadObservations(
+                dataDirectory,
+                schema.Version,
+                WithdrawalLabelStrategy.Within28Days);
+        var split = GroupDataSplitter.Split(
+            observations,
+            seed,
+            trainingFraction,
+            validationFraction,
+            stratificationReference);
 
         if (GroupedCrossValidator.UsesCohortCalibration(schema))
         {
@@ -56,7 +72,7 @@ public sealed class ThresholdAnalyzer
             calibrator.Apply(split.Validation);
         }
 
-        GroupedCrossValidator.ApplyClassWeights(split.Training);
+        GroupedCrossValidator.ApplyClassWeights(split.Training, weightStrategy);
         var trainingData = _mlContext.Data.LoadFromEnumerable(split.Training);
         var validationData = _mlContext.Data.LoadFromEnumerable(split.Validation);
 
@@ -64,13 +80,20 @@ public sealed class ThresholdAnalyzer
         foreach (var candidate in candidates)
         {
             var model = _trainer.Train(trainingData, _features.BuildPipeline(schema.FeatureNames), candidate);
+            var rankingMetrics = _evaluator.Evaluate(model, validationData, threshold: .5f);
             var curve = _evaluator.BuildThresholdCurve(model, validationData, maximumPoints: 201);
+            var bestPoints = _evaluator.FindBestPrecisionAtOrAboveRecall(
+                model,
+                validationData,
+                RecallFloors);
             results.Add(new CandidateThresholdCurve
             {
                 CandidateId = candidate.Id,
                 Algorithm = candidate.Algorithm.ToString(),
+                AreaUnderRocCurve = rankingMetrics.AreaUnderRocCurve,
+                AreaUnderPrecisionRecallCurve = rankingMetrics.AreaUnderPrecisionRecallCurve,
                 Curve = curve,
-                BestPrecisionAtOrAboveRecall = BuildAttainability(curve)
+                BestPrecisionAtOrAboveRecall = BuildAttainability(bestPoints)
             });
         }
 
@@ -80,6 +103,9 @@ public sealed class ThresholdAnalyzer
             FeatureSchemaVersion = schema.Version,
             AnalyzedAtUtc = DateTime.UtcNow,
             Seed = seed,
+            TrainingWeightStrategy = weightStrategy.ToString(),
+            LabelStrategy = labelStrategy.ToString(),
+            SplitLabelStrategy = WithdrawalLabelStrategy.Within28Days.ToString(),
             ValidationRows = split.Validation.Count,
             ValidationPositives = positives,
             ValidationPositiveRate = split.Validation.Count == 0
@@ -94,17 +120,11 @@ public sealed class ThresholdAnalyzer
     /// This is exactly the question a recall/precision gate pair asks of a model.
     /// </summary>
     private static IReadOnlyList<RecallFloorAttainability> BuildAttainability(
-        IReadOnlyList<ThresholdCurvePoint> curve)
+        IReadOnlyList<ThresholdCurvePoint?> bestPoints)
     {
-        // The low floors matter most in practice: a capacity-bound counselor queue works the top of
-        // the ranking, not a recall target, and precision there is far better than at gate recall.
-        double[] floors = [.02, .05, .10, .15, .20, .30, .40, .50, .65, .70, .80, .90];
-        return floors.Select(floor =>
+        return RecallFloors.Select((floor, index) =>
         {
-            var feasible = curve.Where(point => point.Recall + 1e-12 >= floor).ToArray();
-            var best = feasible.Length == 0
-                ? null
-                : feasible.OrderByDescending(point => point.Precision).First();
+            var best = bestPoints[index];
             return new RecallFloorAttainability
             {
                 RecallFloor = floor,
@@ -122,6 +142,9 @@ public sealed class ThresholdAnalysisReport
     public required string FeatureSchemaVersion { get; init; }
     public required DateTime AnalyzedAtUtc { get; init; }
     public required int Seed { get; init; }
+    public string TrainingWeightStrategy { get; init; } = nameof(Training.TrainingWeightStrategy.Balanced);
+    public string LabelStrategy { get; init; } = nameof(WithdrawalLabelStrategy.Within28Days);
+    public string SplitLabelStrategy { get; init; } = nameof(WithdrawalLabelStrategy.Within28Days);
     public required int ValidationRows { get; init; }
     public required int ValidationPositives { get; init; }
     public required double ValidationPositiveRate { get; init; }
@@ -132,6 +155,8 @@ public sealed class CandidateThresholdCurve
 {
     public required string CandidateId { get; init; }
     public required string Algorithm { get; init; }
+    public double AreaUnderRocCurve { get; init; }
+    public double AreaUnderPrecisionRecallCurve { get; init; }
     public required IReadOnlyList<RecallFloorAttainability> BestPrecisionAtOrAboveRecall { get; init; }
     public required IReadOnlyList<ThresholdCurvePoint> Curve { get; init; }
 }

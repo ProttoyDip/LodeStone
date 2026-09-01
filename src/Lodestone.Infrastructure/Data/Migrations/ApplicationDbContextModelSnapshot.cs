@@ -55,7 +55,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("StudentProfileId", "OccurredAtUtc");
 
-                    b.ToTable("ActivityLogs", null, t =>
+                    b.ToTable("ActivityLogs", t =>
                         {
                             t.HasCheckConstraint("CK_ActivityLogs_NonNegativeCounts", "[LoginCount] >= 0 AND [ForumInteractions] >= 0 AND [CourseInteractions] >= 0 AND [DaysSinceLastAccess] >= 0 AND [AssignmentsLateCount] >= 0");
                         });
@@ -168,7 +168,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("AuditLogs", (string)null);
+                    b.ToTable("AuditLogs");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.CounselorAvailabilitySlot", b =>
@@ -213,7 +213,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("CounselorProfileId", "StartUtc");
 
-                    b.ToTable("CounselorAvailabilitySlots", (string)null);
+                    b.ToTable("CounselorAvailabilitySlots");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.CounselorBooking", b =>
@@ -245,6 +245,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTime?>("ReminderSentAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("ScheduledForUtc")
                         .HasColumnType("datetime2");
 
@@ -262,7 +265,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("StudentProfileId", "ScheduledForUtc");
 
-                    b.ToTable("CounselorBookings", (string)null);
+                    b.ToTable("CounselorBookings");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.CounselorProfile", b =>
@@ -300,7 +303,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("CounselorProfiles", (string)null);
+                    b.ToTable("CounselorProfiles");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.CounselorSessionReport", b =>
@@ -341,7 +344,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.HasIndex("CounselorBookingId")
                         .IsUnique();
 
-                    b.ToTable("CounselorSessionReports", (string)null);
+                    b.ToTable("CounselorSessionReports");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.CrisisResource", b =>
@@ -394,7 +397,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("CrisisResources", (string)null);
+                    b.ToTable("CrisisResources");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.ForumCategory", b =>
@@ -426,7 +429,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ForumCategories", (string)null);
+                    b.ToTable("ForumCategories");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.ForumComment", b =>
@@ -476,7 +479,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("ForumPostId");
 
-                    b.ToTable("ForumComments", (string)null);
+                    b.ToTable("ForumComments");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.ForumFlag", b =>
@@ -517,7 +520,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("ForumPostId");
 
-                    b.ToTable("ForumFlags", (string)null);
+                    b.ToTable("ForumFlags");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.ForumPost", b =>
@@ -571,7 +574,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("ForumCategoryId");
 
-                    b.ToTable("ForumPosts", (string)null);
+                    b.ToTable("ForumPosts");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.MoodJournalEntry", b =>
@@ -634,7 +637,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .HasDatabaseName("UX_MoodJournalEntries_StudentProfileId_EntryDayUtc_Active")
                         .HasFilter("[IsDeleted] = 0");
 
-                    b.ToTable("MoodJournalEntries", null, t =>
+                    b.ToTable("MoodJournalEntries", t =>
                         {
                             t.HasCheckConstraint("CK_MoodJournalEntries_NoteProtectionVersion", "[NoteProtectionVersion] IN (0, 1)");
                         });
@@ -671,7 +674,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Notifications", (string)null);
+                    b.ToTable("Notifications");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.Nudge", b =>
@@ -729,7 +732,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("StudentProfileId", "Status", "AvailableAtUtc");
 
-                    b.ToTable("Nudges", null, t =>
+                    b.ToTable("Nudges", t =>
                         {
                             t.HasCheckConstraint("CK_Nudges_VisibilityWindow", "[ExpiresAtUtc] > [AvailableAtUtc]");
                         });
@@ -847,7 +850,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_RiskFeatureSnapshots_Student_Course_Window_Schema");
 
-                    b.ToTable("RiskFeatureSnapshots", null, t =>
+                    b.ToTable("RiskFeatureSnapshots", t =>
                         {
                             t.HasCheckConstraint("CK_RiskFeatureSnapshots_Features", "([FeatureSchemaVersion] = 'withdrawal-28d-v1' AND [ActiveDayRate] >= 0 AND [ActiveDayRate] <= 1 AND [ActivitySpanDays] >= 0 AND [ActivitySpanDays] <= [ObservedDays] AND [DaysSinceLastAccess] >= 0 AND [DaysSinceLastAccess] <= [ObservedDays] AND [ForumInteractionCount] >= 0 AND [CourseInteractionCount] >= 0 AND [LateOrMissingAssignmentCount] >= 0) OR ([FeatureSchemaVersion] = 'withdrawal-28d-v2' AND [RecentActiveDayRate] IS NOT NULL AND [PriorActiveDayRate] IS NOT NULL AND [ActiveDayRateTrend] IS NOT NULL AND [RecentCourseClickRate] IS NOT NULL AND [PriorCourseClickRate] IS NOT NULL AND [CourseClickRateTrend] IS NOT NULL AND [InactivityStreakDays] IS NOT NULL AND [AssessmentDueRate] IS NOT NULL AND [AssessmentOnTimeRate] IS NOT NULL AND [AssessmentLateOrMissingRate] IS NOT NULL AND [CourseProgressRatio] IS NOT NULL AND [CohortActivityPercentile] IS NOT NULL AND [RecentActiveDayRate] BETWEEN 0 AND 1 AND [PriorActiveDayRate] BETWEEN 0 AND 1 AND [ActiveDayRateTrend] BETWEEN -1 AND 1 AND [RecentCourseClickRate] >= 0 AND [PriorCourseClickRate] >= 0 AND [InactivityStreakDays] BETWEEN 0 AND [ObservedDays] AND [AssessmentDueRate] >= 0 AND [AssessmentOnTimeRate] BETWEEN 0 AND 1 AND [AssessmentLateOrMissingRate] BETWEEN 0 AND 1 AND [CourseProgressRatio] BETWEEN 0 AND 1 AND [CohortActivityPercentile] BETWEEN 0 AND 1)");
 
@@ -897,7 +900,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.HasIndex("StudentProfileId")
                         .IsUnique();
 
-                    b.ToTable("RiskMonitoringConsents", null, t =>
+                    b.ToTable("RiskMonitoringConsents", t =>
                         {
                             t.HasCheckConstraint("CK_RiskMonitoringConsents_State", "[IsConsented] = 0 OR ([ConsentedAtUtc] IS NOT NULL AND [WithdrawnAtUtc] IS NULL)");
                         });
@@ -933,7 +936,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("StudentProfileId", "ChangedAtUtc");
 
-                    b.ToTable("RiskMonitoringConsentHistory", (string)null);
+                    b.ToTable("RiskMonitoringConsentHistory");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.RiskQueueEntry", b =>
@@ -1000,7 +1003,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("IsResolved", "Level", "LastSignaledAtUtc");
 
-                    b.ToTable("RiskQueueEntries", null, t =>
+                    b.ToTable("RiskQueueEntries", t =>
                         {
                             t.HasCheckConstraint("CK_RiskQueueEntries_Level", "[Level] >= 0 AND [Level] <= 3");
 
@@ -1074,7 +1077,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("StudentProfileId", "ScoredAtUtc");
 
-                    b.ToTable("RiskScores", null, t =>
+                    b.ToTable("RiskScores", t =>
                         {
                             t.HasCheckConstraint("CK_RiskScores_Level", "[Level] >= 0 AND [Level] <= 3");
 
@@ -1153,7 +1156,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("StartedAtUtc");
 
-                    b.ToTable("RiskScoringRuns", null, t =>
+                    b.ToTable("RiskScoringRuns", t =>
                         {
                             t.HasCheckConstraint("CK_RiskScoringRuns_Counts", "[CandidateCount] >= 0 AND [ScoredCount] >= 0 AND [SkippedCount] >= 0 AND [FailedCount] >= 0 AND [QueueCreatedCount] >= 0 AND [QueueEscalatedCount] >= 0");
 
@@ -1194,7 +1197,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.HasIndex("StudentProfileId")
                         .IsUnique();
 
-                    b.ToTable("StudentNudgePreferences", (string)null);
+                    b.ToTable("StudentNudgePreferences");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.StudentNumberClaim", b =>
@@ -1255,7 +1258,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasIndex("Status", "SubmittedAtUtc");
 
-                    b.ToTable("StudentNumberClaims", null, t =>
+                    b.ToTable("StudentNumberClaims", t =>
                         {
                             t.HasCheckConstraint("CK_StudentNumberClaims_Review", "([Status] = 0 AND [ReviewedAtUtc] IS NULL AND [ReviewedByUserId] IS NULL) OR ([Status] IN (1, 2) AND [ReviewedAtUtc] IS NOT NULL AND [ReviewedByUserId] IS NOT NULL)");
 
@@ -1309,7 +1312,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("StudentProfiles", (string)null);
+                    b.ToTable("StudentProfiles");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.VolunteerProfile", b =>
@@ -1347,7 +1350,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("VolunteerProfiles", (string)null);
+                    b.ToTable("VolunteerProfiles");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>

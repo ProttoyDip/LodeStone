@@ -29,7 +29,7 @@ internal sealed class OuladTestDataset : IDisposable
         {
             "code_module,code_presentation,id_student,date_registration,date_unregistration"
         };
-        var submissions = new List<string> { "id_assessment,id_student,date_submitted,is_banked" };
+        var submissions = new List<string> { "id_assessment,id_student,date_submitted,is_banked,score" };
         var activity = new List<string>
         {
             "code_module,code_presentation,id_student,id_site,date,sum_click"
@@ -43,7 +43,7 @@ internal sealed class OuladTestDataset : IDisposable
 
             if (separable && !positive)
             {
-                submissions.Add($"1,{student},18,0");
+                submissions.Add($"1,{student},18,0,80");
                 foreach (var day in new[] { 0, 7, 14, 21, 27, 34, 41 })
                 {
                     activity.Add($"AAA,2014J,{student},1,{day},2");
@@ -77,7 +77,7 @@ internal sealed class OuladTestDataset : IDisposable
             .Select(student => int.Parse(student, CultureInfo.InvariantCulture))
             .ToHashSet();
 
-        var submissions = new List<string> { "id_assessment,id_student,date_submitted,is_banked" };
+        var submissions = new List<string> { "id_assessment,id_student,date_submitted,is_banked,score" };
         var activity = new List<string>
         {
             "code_module,code_presentation,id_student,id_site,date,sum_click"
@@ -90,7 +90,7 @@ internal sealed class OuladTestDataset : IDisposable
                 : normallyHasHighEngagement;
             if (!hasHighEngagement) continue;
 
-            submissions.Add($"1,{student},18,0");
+            submissions.Add($"1,{student},18,0,80");
             foreach (var day in new[] { 0, 7, 14, 21, 27, 34, 41 })
             {
                 activity.Add($"AAA,2014J,{student},1,{day},2");
@@ -121,9 +121,9 @@ internal sealed class OuladTestDataset : IDisposable
             "AAA,2014J,1,0,55\n" +
             "AAA,2014J,2,0,\n");
         Write(fixture, "studentAssessment.csv",
-            "id_assessment,id_student,date_submitted,is_banked\n" +
-            "1,1,25,0\n" +
-            "1,2,18,0\n");
+            "id_assessment,id_student,date_submitted,is_banked,score\n" +
+            "1,1,25,0,35\n" +
+            "1,2,18,0,80\n");
         Write(fixture, "studentVle.csv",
             "code_module,code_presentation,id_student,id_site,date,sum_click\n" +
             "AAA,2014J,1,1,0,3\n" +

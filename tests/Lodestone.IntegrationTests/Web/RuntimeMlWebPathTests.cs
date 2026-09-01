@@ -209,7 +209,7 @@ public sealed class RuntimeMlWebPathTests
 
             var students = new List<string> { "code_module,code_presentation,id_student,final_result" };
             var registrations = new List<string> { "code_module,code_presentation,id_student,date_registration,date_unregistration" };
-            var assessments = new List<string> { "id_assessment,id_student,date_submitted,is_banked" };
+            var assessments = new List<string> { "id_assessment,id_student,date_submitted,is_banked,score" };
             var activity = new List<string> { "code_module,code_presentation,id_student,id_site,date,sum_click" };
             for (var student = 1; student <= 30; student++)
             {
@@ -218,7 +218,7 @@ public sealed class RuntimeMlWebPathTests
                 registrations.Add($"AAA,2014J,{student},0,{(withdrawn ? "55" : string.Empty)}");
                 if (!withdrawn)
                 {
-                    assessments.Add($"1,{student},18,0");
+                    assessments.Add($"1,{student},18,0,80");
                     foreach (var day in new[] { 0, 7, 14, 21, 27, 34, 41 })
                     {
                         activity.Add($"AAA,2014J,{student},1,{day},2");

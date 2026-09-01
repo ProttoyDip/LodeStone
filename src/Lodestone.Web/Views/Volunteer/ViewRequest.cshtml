@@ -1,0 +1,211 @@
+@model VolunteerViewRequestViewModel
+@{
+    ViewData["Title"] = Model.Title;
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="container my-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <a href="@Url.Action("Index")" class="btn btn-outline-secondary btn-sm mb-3">← Back to Dashboard</a>
+            <h1>@Model.Title</h1>
+            <p class="text-muted">
+                <span class="badge bg-secondary">@Model.Category</span>
+                <span class="text-muted ms-2">Posted @Model.CreatedDate.ToString("MMM d, yyyy 'at' h:mm tt")</span>
+            </p>
+        </div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @TempData["Success"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            @TempData["Error"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Request Details</h5>
+                </div>
+                <div class="card-body">
+                    <p class="lead">@Model.Message</p>
+                </div>
+            </div>
+
+            @if (Model.Status == SupportRequestStatus.Open)
+            {
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <p class="text-muted mb-3">This request is open and needs your help. Do you want to accept it?</p>
+                        <form asp-action="AcceptRequest" method="post" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="requestId" value="@Model.RequestId" />
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-check-circle"></i>
+                                Accept Request
+                            </button>
+                        </form>
+                        <form asp-action="RejectRequest" method="post" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="requestId" value="@Model.RequestId" />
+                            <button type="submit" class="btn btn-outline-danger">
+                                <i class="bi bi-x-circle"></i>
+                                Decline Request
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Conversation</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (Model.Interactions.Count == 0)
+                        {
+                            <p class="text-muted">No interactions yet. Start helping!</p>
+                        }
+                        else
+                        {
+                            <div class="mb-4">
+                                @foreach (var interaction in Model.Interactions)
+                                {
+                                    <div class="mb-3 p-3 bg-light rounded">
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <strong>
+                                                @if (interaction.VolunteerUserId == @User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)
+                                                {
+                                                    <span>You</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>Student</span>
+                                                }
+                                            </strong>
+                                            <small class="text-muted">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</small>
+                                        </div>
+                                        <p class="mb-0">@interaction.Message</p>
+                                        @if (interaction.EscalatedToCounselor)
+                                        {
+                                            <p class="mb-0 mt-2">
+                                                <span class="badge bg-warning text-dark">Escalated to Counselor</span>
+                                            </p>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Add Your Response</h5>
+                    </div>
+                    <div class="card-body">
+                        <form asp-action="AddInteraction" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="requestId" value="@Model.RequestId" />
+
+                            <div class="mb-3">
+                                <label for="message" class="form-label">Your Message</label>
+                                <textarea class="form-control" id="message" name="message" rows="4" placeholder="Share your thoughts and guidance..." required></textarea>
+                                <small class="form-text text-muted">Keep your response supportive and respectful.</small>
+                            </div>
+
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="escalate" name="escalate" value="true">
+                                <label class="form-check-label" for="escalate">
+                                    Escalate to counselor
+                                </label>
+                                <small class="form-text text-muted d-block">
+                                    Use this if the student mentions self-harm, crisis, or needs professional help.
+                                </small>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-send"></i>
+                                Send Message
+                            </button>
+
+                            @if (Model.Status == SupportRequestStatus.Accepted)
+                            {
+                                <form asp-action="CompleteRequest" method="post" class="d-inline">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="requestId" value="@Model.RequestId" />
+                                    <button type="submit" class="btn btn-outline-success">
+                                        <i class="bi bi-check2-all"></i>
+                                        Mark Complete
+                                    </button>
+                                </form>
+                            }
+                        </form>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Request Status</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-2">
+                        <strong>Status:</strong>
+                        @{
+                            var statusBadgeClass = Model.Status switch
+                            {
+                                SupportRequestStatus.Open => "bg-secondary",
+                                SupportRequestStatus.Accepted => "bg-success",
+                                SupportRequestStatus.Declined => "bg-danger",
+                                SupportRequestStatus.Completed => "bg-info",
+                                SupportRequestStatus.Escalated => "bg-warning",
+                                _ => "bg-secondary"
+                            };
+                        }
+                        <span class="badge @statusBadgeClass">@Model.Status</span>
+                    </p>
+
+                    <p class="mb-2">
+                        <strong>Student:</strong><br />
+                        @Model.StudentName
+                    </p>
+
+                    <p class="mb-0">
+                        <strong>Posted:</strong><br />
+                        @Model.CreatedDate.ToString("MMM d, yyyy")
+                    </p>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Guidelines</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="small">
+                        <li><strong>Listen first</strong> - Understand the student's perspective</li>
+                        <li><strong>Stay supportive</strong> - Peer support is about care and understanding</li>
+                        <li><strong>Know your limits</strong> - Escalate if professional help is needed</li>
+                        <li><strong>Respect privacy</strong> - Keep conversations confidential</li>
+                        <li><strong>Follow up</strong> - Check in after you help</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

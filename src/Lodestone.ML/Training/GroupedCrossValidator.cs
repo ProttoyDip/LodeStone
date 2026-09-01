@@ -4,6 +4,13 @@ using Microsoft.ML;
 
 namespace Lodestone.ML.Training;
 
+public enum TrainingWeightStrategy
+{
+    Balanced,
+    SquareRootBalanced,
+    Unweighted
+}
+
 /// <summary>
 /// Deterministic, student-grouped cross-validation used only inside the training partition.
 /// It never receives validation or locked-test rows.
@@ -132,16 +139,30 @@ public sealed class GroupedCrossValidator
 
     internal static bool UsesCohortCalibration(RiskFeatureSchemaDefinition schema)
         => string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
-           || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal);
+           || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal)
+           || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV4Experiment, StringComparison.Ordinal);
 
-    internal static void ApplyClassWeights(IReadOnlyList<StudentActivityObservation> rows)
+    internal static void ApplyClassWeights(
+        IReadOnlyList<StudentActivityObservation> rows,
+        TrainingWeightStrategy strategy = TrainingWeightStrategy.Balanced)
     {
         var positives = rows.Count(row => row.IsAtRisk);
         var negatives = rows.Count - positives;
         if (positives == 0 || negatives == 0)
             throw new InvalidDataException("A cross-validation fitting fold must contain both classes.");
-        var positiveWeight = rows.Count / (2f * positives);
-        var negativeWeight = rows.Count / (2f * negatives);
+
+        var positiveWeight = 1f;
+        var negativeWeight = 1f;
+        if (strategy is not TrainingWeightStrategy.Unweighted)
+        {
+            var targetRatio = strategy == TrainingWeightStrategy.Balanced
+                ? negatives / (double)positives
+                : Math.Sqrt(negatives / (double)positives);
+            var scale = rows.Count / (positives * targetRatio + negatives);
+            positiveWeight = (float)(targetRatio * scale);
+            negativeWeight = (float)scale;
+        }
+
         foreach (var row in rows) row.ExampleWeight = row.IsAtRisk ? positiveWeight : negativeWeight;
     }
 
@@ -170,6 +191,12 @@ public sealed class GroupedCrossValidator
         ForumEngagementShare = source.ForumEngagementShare,
         InactiveWeekRate = source.InactiveWeekRate,
         AssessmentMissStreak = source.AssessmentMissStreak,
+        PriorAssessmentsDueCount = source.PriorAssessmentsDueCount,
+        PriorAssessmentCompletionRate = source.PriorAssessmentCompletionRate,
+        PriorAssessmentLateRate = source.PriorAssessmentLateRate,
+        PriorAssessmentMeanScore = source.PriorAssessmentMeanScore,
+        PriorAssessmentFailRate = source.PriorAssessmentFailRate,
+        LastAssessmentScore = source.LastAssessmentScore,
         IsAtRisk = source.IsAtRisk,
         StudentGroupKey = source.StudentGroupKey,
         EnrollmentKey = source.EnrollmentKey,

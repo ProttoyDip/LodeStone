@@ -15,6 +15,45 @@ namespace Lodestone.MLTests;
 public sealed class TrainingPipelineTests
 {
     [Fact]
+    public void V2_validation_ranking_keeps_every_usable_cross_validated_candidate()
+    {
+        var first = ModelTrainingCandidate.V2Candidates[0];
+        var second = ModelTrainingCandidate.V2Candidates[1];
+        var unusable = ModelTrainingCandidate.V2Candidates[2];
+        var results = new[]
+        {
+            new CrossValidationCandidateResult
+            {
+                CandidateId = second.Id,
+                MeanAreaUnderRocCurve = .75,
+                MeanAreaUnderPrecisionRecallCurve = .08,
+                MeanF1Score = .10,
+                IsUsable = true
+            },
+            new CrossValidationCandidateResult
+            {
+                CandidateId = first.Id,
+                MeanAreaUnderRocCurve = .76,
+                MeanAreaUnderPrecisionRecallCurve = .07,
+                MeanF1Score = .09,
+                IsUsable = true
+            },
+            new CrossValidationCandidateResult
+            {
+                CandidateId = unusable.Id,
+                MeanAreaUnderRocCurve = .99,
+                IsUsable = false
+            }
+        };
+
+        var ranked = TrainingPipeline.RankCrossValidatedCandidates(
+            ModelTrainingCandidate.V2Candidates,
+            results);
+
+        ranked.Select(candidate => candidate.Id).Should().Equal(first.Id, second.Id);
+    }
+
+    [Fact]
     public void Run_rejects_model_versions_that_cannot_round_trip_through_persistence()
     {
         var act = () => CreatePipeline().Run(new TrainingOptions
@@ -27,6 +66,22 @@ public sealed class TrainingPipelineTests
         act.Should().Throw<ArgumentException>()
             .WithParameterName("ModelVersion")
             .WithMessage("*128*");
+    }
+
+    [Fact]
+    public void Run_refuses_to_publish_the_offline_only_v4_experiment_schema()
+    {
+        var act = () => CreatePipeline().Run(new TrainingOptions
+        {
+            DataDirectory = "not-read-because-options-fail-first",
+            ModelOutputPath = "unused.zip",
+            FeatureSchemaVersion = RiskFeatureSchema.Withdrawal28DayV4Experiment,
+            UseV2Experiment = true
+        });
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("FeatureSchemaVersion")
+            .WithMessage("*validation-only*");
     }
 
     [Fact]

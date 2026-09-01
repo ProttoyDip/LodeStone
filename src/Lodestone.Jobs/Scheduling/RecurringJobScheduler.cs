@@ -29,15 +29,43 @@ public static class RecurringJobScheduler
             recurringJobs.RemoveIfExists("weekly-risk-scoring");
         }
 
-        // These workflows have no complete, safety-reviewed implementation.  Remove
-        // any jobs left by an older deployment regardless of configuration so a
-        // production setting cannot turn a placeholder into a permanent failure.
-        // Manual in-app nudges are visible immediately and deliberately have no
-        // background delivery side effect in this release.
+        // Manual in-app nudges are visible immediately and deliberately have no background
+        // delivery side effect in this release, so this schedule stays removed unconditionally.
         recurringJobs.RemoveIfExists("nudge-dispatch");
-        recurringJobs.RemoveIfExists("booking-reminders");
-        recurringJobs.RemoveIfExists("forum-moderation");
-        recurringJobs.RemoveIfExists("crisis-escalation");
+
+        // The supporting sweeps are implemented but stay off unless explicitly enabled: each one
+        // either emails students or raises staff alerts. A deployment must opt in.
+        var maintenance = configuration.GetSection(MaintenanceJobOptions.SectionName)
+            .Get<MaintenanceJobOptions>() ?? new MaintenanceJobOptions();
+        var maintenanceTimeZone = ResolveTimeZone(maintenance.TimeZoneId);
+
+        Apply<BookingReminderJob>(recurringJobs, "booking-reminders", maintenance.BookingReminders, maintenanceTimeZone);
+        Apply<ForumModerationJob>(recurringJobs, "forum-moderation", maintenance.ForumModeration, maintenanceTimeZone);
+        Apply<CrisisResourceEscalationJob>(recurringJobs, "crisis-escalation", maintenance.CrisisEscalation, maintenanceTimeZone);
+    }
+
+    /// <summary>
+    /// Registers a sweep when it is enabled with a usable cron, and otherwise removes any schedule
+    /// an earlier deployment left behind — so disabling a job in configuration actually stops it.
+    /// </summary>
+    private static void Apply<TJob>(
+        IRecurringJobManager recurringJobs,
+        string jobId,
+        MaintenanceJobOptions.JobSchedule schedule,
+        TimeZoneInfo timeZone)
+        where TJob : IMaintenanceJob
+    {
+        if (!schedule.Enabled || string.IsNullOrWhiteSpace(schedule.Cron))
+        {
+            recurringJobs.RemoveIfExists(jobId);
+            return;
+        }
+
+        recurringJobs.AddOrUpdate<TJob>(
+            jobId,
+            job => job.ExecuteAsync(CancellationToken.None),
+            schedule.Cron,
+            new RecurringJobOptions { TimeZone = timeZone });
     }
 
     private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)

@@ -53,6 +53,7 @@ public static class DependencyInjection
         services.AddScoped<IStudentProfileRepository, StudentProfileRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
         services.AddScoped<IForumRepository, ForumRepository>();
+        services.AddScoped<IVolunteerSupportRepository, VolunteerSupportRepository>();
 
         var encryptionSettings = configuration.GetSection(EncryptionSettings.SectionName)
             .Get<EncryptionSettings>() ?? new EncryptionSettings();

@@ -5,9 +5,17 @@ using Microsoft.ML;
 
 namespace Lodestone.ML.Training;
 
+public enum WithdrawalLabelStrategy
+{
+    Within28Days,
+    EventualWithdrawal,
+    EventualNonCompletion
+}
+
 /// <summary>
 /// Joins the seven canonical OULAD tables and produces leakage-safe, rolling behavioral
-/// observations. Raw demographics, scores and text are intentionally excluded.
+/// observations. Raw demographics and text are intentionally excluded. The offline-only v4
+/// experiment additionally uses prior assessment scores that are available by the anchor.
 /// </summary>
 public sealed class OuladDataLoader
 {
@@ -43,6 +51,12 @@ public sealed class OuladDataLoader
     public IReadOnlyList<StudentActivityObservation> LoadObservations(
         string dataDirectory,
         string featureSchemaVersion)
+        => LoadObservations(dataDirectory, featureSchemaVersion, WithdrawalLabelStrategy.Within28Days);
+
+    public IReadOnlyList<StudentActivityObservation> LoadObservations(
+        string dataDirectory,
+        string featureSchemaVersion,
+        WithdrawalLabelStrategy labelStrategy)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
         if (!Directory.Exists(dataDirectory))
@@ -61,7 +75,7 @@ public sealed class OuladDataLoader
         LoadStudentAssessments(tables["studentAssessment.csv"], assessments.ById, enrollments);
         LoadStudentVle(tables["studentVle.csv"], siteTypes, enrollments);
 
-        var observations = BuildObservations(enrollments, assessments.ByCourse, schema);
+        var observations = BuildObservations(enrollments, assessments.ByCourse, schema, labelStrategy);
         if (observations.Count == 0)
         {
             throw new InvalidDataException(
@@ -118,8 +132,28 @@ public sealed class OuladDataLoader
                 if (!courseLengths.TryGetValue(course, out var courseLength))
                     throw RowError(path, row.RowNumber, $"course presentation '{course}' is absent from courses.csv.");
                 var studentId = RequiredInt(row["id_student"], "id_student", path, row.RowNumber);
+                var finalResult = row["final_result"].Trim();
+                if (string.IsNullOrWhiteSpace(finalResult))
+                    throw RowError(path, row.RowNumber, "column 'final_result' is required.");
+                var isWithdrawn = string.Equals(finalResult, "Withdrawn", StringComparison.OrdinalIgnoreCase);
+                var isFailed = string.Equals(finalResult, "Fail", StringComparison.OrdinalIgnoreCase);
+                var isCompleted = string.Equals(finalResult, "Pass", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(finalResult, "Distinction", StringComparison.OrdinalIgnoreCase);
+                if (!isWithdrawn && !isFailed && !isCompleted)
+                {
+                    throw RowError(
+                        path,
+                        row.RowNumber,
+                        "column 'final_result' must be Distinction, Pass, Fail, or Withdrawn.");
+                }
                 var key = new EnrollmentKey(course, studentId);
-                if (!enrollments.TryAdd(key, new Enrollment(key, courseLength)))
+                if (!enrollments.TryAdd(
+                        key,
+                        new Enrollment(
+                            key,
+                            courseLength,
+                            isWithdrawn,
+                            isWithdrawn || isFailed)))
                     throw RowError(path, row.RowNumber, $"duplicate enrollment '{key}'.");
             });
         return enrollments;
@@ -185,7 +219,7 @@ public sealed class OuladDataLoader
         IDictionary<EnrollmentKey, Enrollment> enrollments)
     {
         Rfc4180CsvReader.Read(path,
-            ["id_assessment", "id_student", "date_submitted", "is_banked"], row =>
+            ["id_assessment", "id_student", "date_submitted", "is_banked", "score"], row =>
             {
                 var assessmentId = RequiredInt(row["id_assessment"], "id_assessment", path, row.RowNumber);
                 if (!assessments.TryGetValue(assessmentId, out var assessment))
@@ -196,7 +230,10 @@ public sealed class OuladDataLoader
                     throw RowError(path, row.RowNumber, $"student submission references unknown enrollment '{key}'.");
                 var submitted = RequiredInt(row["date_submitted"], "date_submitted", path, row.RowNumber);
                 var isBanked = RequiredInt(row["is_banked"], "is_banked", path, row.RowNumber) != 0;
-                if (!enrollment.Submissions.TryAdd(assessmentId, new Submission(submitted, isBanked)))
+                var score = OptionalInt(row["score"], "score", path, row.RowNumber);
+                if (score is < 0 or > 100)
+                    throw RowError(path, row.RowNumber, "column 'score' must be between 0 and 100 when present.");
+                if (!enrollment.Submissions.TryAdd(assessmentId, new Submission(submitted, isBanked, score)))
                 {
                     throw RowError(
                         path,
@@ -240,7 +277,8 @@ public sealed class OuladDataLoader
     private static List<StudentActivityObservation> BuildObservations(
         IReadOnlyDictionary<EnrollmentKey, Enrollment> enrollments,
         IReadOnlyDictionary<CourseKey, List<Assessment>> assessmentsByCourse,
-        RiskFeatureSchemaDefinition schema)
+        RiskFeatureSchemaDefinition schema,
+        WithdrawalLabelStrategy labelStrategy)
     {
         var result = new List<StudentActivityObservation>();
         foreach (var enrollment in enrollments.Values
@@ -248,6 +286,13 @@ public sealed class OuladDataLoader
                      .ThenBy(value => value.Key.Course.Presentation, StringComparer.Ordinal)
                      .ThenBy(value => value.Key.StudentId))
         {
+            // OULAD documents date_unregistration only for final_result=Withdrawn. A small number
+            // of source rows violate that contract in both directions. Their event time is either
+            // unknown or contradictory, so using them would silently create false-negative or
+            // false-positive temporal labels. Exclude only those inconsistent enrollments.
+            if (enrollment.IsWithdrawnResult != enrollment.UnregistrationDay.HasValue)
+                continue;
+
             var exposureStart = Math.Max(0, enrollment.RegistrationDay);
             var firstAnchor = exposureStart + ObservationWindowDays - 1;
             var lastAnchor = enrollment.CourseLength - PredictionWindowDays;
@@ -299,9 +344,19 @@ public sealed class OuladDataLoader
                     dueAssessmentsWindow.Add((assessment.DueDay!.Value, isLateOrMissing));
                 }
 
-                var withdrawal = enrollment.UnregistrationDay.HasValue
-                                 && enrollment.UnregistrationDay.Value > anchor
-                                 && enrollment.UnregistrationDay.Value <= anchor + PredictionWindowDays;
+                var futureWithdrawal = enrollment.UnregistrationDay.HasValue
+                                       && enrollment.UnregistrationDay.Value > anchor;
+                var withdrawal = labelStrategy switch
+                {
+                    WithdrawalLabelStrategy.Within28Days =>
+                        futureWithdrawal
+                        && enrollment.UnregistrationDay!.Value <= anchor + PredictionWindowDays,
+                    WithdrawalLabelStrategy.EventualWithdrawal => futureWithdrawal,
+                    WithdrawalLabelStrategy.EventualNonCompletion =>
+                        enrollment.IsUnsuccessfulResult
+                        && (!enrollment.IsWithdrawnResult || futureWithdrawal),
+                    _ => throw new ArgumentOutOfRangeException(nameof(labelStrategy), labelStrategy, null)
+                };
 
                 var observation = new StudentActivityObservation
                 {
@@ -319,9 +374,10 @@ public sealed class OuladDataLoader
                     WithdrawalDay = withdrawal ? enrollment.UnregistrationDay : null
                 };
 
-                var isV2OrV3 = string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
-                               || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal);
-                if (isV2OrV3)
+                var isV2Plus = string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
+                               || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal)
+                               || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV4Experiment, StringComparison.Ordinal);
+                if (isV2Plus)
                 {
                     PopulateV2Features(
                         observation,
@@ -334,9 +390,21 @@ public sealed class OuladDataLoader
                         lateOrMissing);
                 }
 
-                if (string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal))
+                var isV3Plus = string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal)
+                               || string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV4Experiment, StringComparison.Ordinal);
+                if (isV3Plus)
                 {
                     PopulateV3Features(observation, active, windowStart, anchor, dueAssessmentsWindow);
+                }
+
+                if (string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV4Experiment, StringComparison.Ordinal))
+                {
+                    PopulateV4AssessmentFeatures(
+                        observation,
+                        enrollment,
+                        assessments,
+                        exposureStart,
+                        anchor);
                 }
 
                 result.Add(observation);
@@ -446,6 +514,48 @@ public sealed class OuladDataLoader
         return streak;
     }
 
+    private static void PopulateV4AssessmentFeatures(
+        StudentActivityObservation observation,
+        Enrollment enrollment,
+        IReadOnlyList<Assessment> assessments,
+        int exposureStart,
+        int anchor)
+    {
+        var history = assessments
+            .Where(assessment => assessment.DueDay >= exposureStart && assessment.DueDay <= anchor)
+            .Select(assessment =>
+            {
+                enrollment.Submissions.TryGetValue(assessment.Id, out var submission);
+                return new { Assessment = assessment, Submission = submission };
+            })
+            .Where(item => item.Submission is null || !item.Submission.IsBanked)
+            .ToArray();
+
+        observation.PriorAssessmentsDueCount = history.Length;
+        if (history.Length == 0)
+            return;
+
+        var completed = history
+            .Where(item => item.Submission is not null && item.Submission.SubmittedDay <= anchor)
+            .ToArray();
+        var late = completed.Count(item => item.Submission!.SubmittedDay > item.Assessment.DueDay);
+        var scored = completed
+            .Where(item => item.Submission!.Score.HasValue)
+            .OrderBy(item => item.Assessment.DueDay)
+            .ThenBy(item => item.Submission!.SubmittedDay)
+            .ToArray();
+
+        observation.PriorAssessmentCompletionRate = completed.Length / (float)history.Length;
+        observation.PriorAssessmentLateRate = late / (float)history.Length;
+        if (scored.Length == 0)
+            return;
+
+        observation.PriorAssessmentMeanScore =
+            (float)(scored.Average(item => item.Submission!.Score!.Value) / 100d);
+        observation.PriorAssessmentFailRate = scored.Count(item => item.Submission!.Score < 40) / (float)scored.Length;
+        observation.LastAssessmentScore = scored[^1].Submission!.Score!.Value / 100f;
+    }
+
     private static int TrailingInactivityStreak(
         IReadOnlyList<KeyValuePair<int, DailyActivity>> active,
         int windowStart,
@@ -506,7 +616,7 @@ public sealed class OuladDataLoader
     private sealed record AssessmentIndex(
         Dictionary<int, Assessment> ById,
         Dictionary<CourseKey, List<Assessment>> ByCourse);
-    private sealed record Submission(int SubmittedDay, bool IsBanked);
+    private sealed record Submission(int SubmittedDay, bool IsBanked, int? Score);
 
     private sealed class DailyActivity
     {
@@ -516,14 +626,22 @@ public sealed class OuladDataLoader
 
     private sealed class Enrollment
     {
-        public Enrollment(EnrollmentKey key, int courseLength)
+        public Enrollment(
+            EnrollmentKey key,
+            int courseLength,
+            bool isWithdrawnResult,
+            bool isUnsuccessfulResult)
         {
             Key = key;
             CourseLength = courseLength;
+            IsWithdrawnResult = isWithdrawnResult;
+            IsUnsuccessfulResult = isUnsuccessfulResult;
         }
 
         public EnrollmentKey Key { get; }
         public int CourseLength { get; }
+        public bool IsWithdrawnResult { get; }
+        public bool IsUnsuccessfulResult { get; }
         public int RegistrationDay { get; set; }
         public int? UnregistrationDay { get; set; }
         public bool HasRegistration { get; set; }
