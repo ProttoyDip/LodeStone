@@ -96,7 +96,9 @@ public sealed class ThresholdAnalyzer
     private static IReadOnlyList<RecallFloorAttainability> BuildAttainability(
         IReadOnlyList<ThresholdCurvePoint> curve)
     {
-        double[] floors = [.50, .55, .60, .65, .70, .75, .80, .85, .90];
+        // The low floors matter most in practice: a capacity-bound counselor queue works the top of
+        // the ranking, not a recall target, and precision there is far better than at gate recall.
+        double[] floors = [.02, .05, .10, .15, .20, .30, .40, .50, .65, .70, .80, .90];
         return floors.Select(floor =>
         {
             var feasible = curve.Where(point => point.Recall + 1e-12 >= floor).ToArray();
