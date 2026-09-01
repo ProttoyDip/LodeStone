@@ -358,7 +358,11 @@ public sealed class OuladDataLoader
         observation.RecentCourseClickRate = recentClicks;
         observation.PriorCourseClickRate = priorClicks;
         observation.CourseClickRateTrend = recentClicks - priorClicks;
-        observation.InactivityStreakDays = LongestInactivityStreak(active, windowStart, anchor);
+        // "Inactivity streak" is the current consecutive run of inactive days ending at the
+        // observation anchor.  The previous implementation returned the longest historical gap
+        // anywhere in the window, which could report a large value even when the student was
+        // active on the anchor day and hid the near-term disengagement signal from the model.
+        observation.InactivityStreakDays = TrailingInactivityStreak(active, windowStart, anchor);
         observation.AssessmentDueRate = dueRate;
         observation.AssessmentOnTimeRate = assessmentsDue == 0 ? 0 : assessmentsOnTime / (float)assessmentsDue;
         observation.AssessmentLateOrMissingRate = assessmentsDue == 0 ? 0 : assessmentsLateOrMissing / (float)assessmentsDue;
@@ -367,27 +371,21 @@ public sealed class OuladDataLoader
         observation.CohortActivityPercentile = 0;
     }
 
-    private static int LongestInactivityStreak(
+    private static int TrailingInactivityStreak(
         IReadOnlyList<KeyValuePair<int, DailyActivity>> active,
         int windowStart,
         int anchor)
     {
         var activeDays = active.Select(pair => pair.Key).ToHashSet();
-        var current = 0;
-        var longest = 0;
-        for (var day = windowStart; day <= anchor; day++)
+        var trailing = 0;
+        for (var day = anchor; day >= windowStart; day--)
         {
             if (activeDays.Contains(day))
-            {
-                current = 0;
-                continue;
-            }
-
-            current++;
-            if (current > longest) longest = current;
+                break;
+            trailing++;
         }
 
-        return longest;
+        return trailing;
     }
 
     private static int RequiredInt(string value, string column, string path, long row)

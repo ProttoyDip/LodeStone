@@ -54,7 +54,7 @@ public sealed class OuladDataLoaderTests
         first.RecentCourseClickRate.Should().BeApproximately(5f / 14f, .00001f);
         first.PriorCourseClickRate.Should().BeApproximately(3f / 14f, .00001f);
         first.CourseClickRateTrend.Should().BeApproximately(2f / 14f, .00001f);
-        first.InactivityStreakDays.Should().Be(26, "only days 0 and 27 are active in the anchor window");
+        first.InactivityStreakDays.Should().Be(0, "activity on the anchor day ends the current inactivity streak");
         first.AssessmentDueRate.Should().BeApproximately(1f / 28f, .00001f);
         first.AssessmentOnTimeRate.Should().Be(0);
         first.AssessmentLateOrMissingRate.Should().Be(1);
