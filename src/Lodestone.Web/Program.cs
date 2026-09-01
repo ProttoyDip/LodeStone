@@ -10,6 +10,8 @@ using Lodestone.Jobs;
 using Lodestone.Jobs.Scheduling;
 using Lodestone.ML;
 using Lodestone.Reporting;
+using Lodestone.Reporting.Export;
+using Lodestone.Reporting.Reports;
 using Lodestone.Web;
 using Lodestone.Web.Configuration;
 using Lodestone.Web.Health;
@@ -70,6 +72,13 @@ builder.Services.AddAuthorization(IdentityPolicySeeder.AddPolicies);
 builder.Services.AddApplication();
 // Override Application's transport-neutral no-op with Web's authorized SignalR refresh signal.
 builder.Services.AddScoped<IRiskQueueNotifier, SignalRRiskQueueNotifier>();
+builder.Services.AddScoped<IAdminNotificationNotifier, SignalRAdminNotifier>();
+
+// PDF reporting: generators are stateless, the export service fronts them for the Web layer.
+builder.Services.AddScoped<CounselorSessionReportGenerator>();
+builder.Services.AddScoped<RiskSummaryReportGenerator>();
+builder.Services.AddScoped<StudentEngagementReportGenerator>();
+builder.Services.AddScoped<IReportService, PdfExportService>();
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
 builder.Services.AddMachineLearning(builder.Configuration, builder.Environment.ContentRootPath);
 if (useHangfire)

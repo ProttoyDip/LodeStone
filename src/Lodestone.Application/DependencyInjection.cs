@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ICrisisResourceService, CrisisResourceService>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IRiskQueueNotifier, NullRiskQueueNotifier>();
+        services.TryAddSingleton<IAdminNotificationNotifier, NullAdminNotificationNotifier>();
         return services;
     }
 }

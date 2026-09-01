@@ -419,6 +419,19 @@ public class AdminController : Controller
         return RedirectToAction(nameof(Notifications), new { q });
     }
 
+    /// <summary>
+    /// Unread count for the signed-in administrator. Polled by the top-nav badge after a SignalR
+    /// signal; the hub itself carries no notification content, so the count is read here under the
+    /// controller's existing admin authorization.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> NotificationCount(CancellationToken cancellationToken)
+    {
+        var shell = await _adminDashboardService.GetShellAsync(cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        return Json(new { unread = shell.UnreadNotifications });
+    }
+
     private async Task<IActionResult> RenderSectionAsync(
         AdminSectionType section,
         string? query,

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Lodestone.Application.DTOs.Risk;
 using Lodestone.Application.DTOs.Student;
+using Lodestone.Application.Interfaces;
 using Lodestone.Application.Services;
 using Lodestone.Domain.Entities;
 using Lodestone.Domain.Enums;
@@ -201,7 +202,29 @@ public sealed class StudentNumberVerificationRepositoryTests
     }
 
     private static StudentNumberVerificationService CreateService(ApplicationDbContext context)
-        => new(new StudentNumberVerificationRepository(context, new FixedTimeProvider(Now)));
+        => new(
+            new StudentNumberVerificationRepository(context, new FixedTimeProvider(Now)),
+            new NoOpNotificationService());
+
+    /// <summary>These tests exercise repository behaviour; admin fan-out is covered by unit tests.</summary>
+    private sealed class NoOpNotificationService : INotificationService
+    {
+        public Task<int> CreateAsync(
+            string recipientUserId,
+            NotificationType type,
+            string title,
+            string message,
+            CancellationToken cancellationToken = default) => Task.FromResult(0);
+
+        public Task<int> NotifyAdministratorsAsync(
+            NotificationType type,
+            string title,
+            string message,
+            CancellationToken cancellationToken = default) => Task.FromResult(0);
+
+        public Task<int> GetUnreadCountAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(0);
+    }
 
     private static async Task<StudentProfile> SeedStudentAsync(
         ApplicationDbContext context,

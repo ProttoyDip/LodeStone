@@ -46,7 +46,9 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/@@studio-freight/lenis@1.0.42/dist/lenis.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.0/dist/browser/signalr.min.js" crossorigin="anonymous" defer></script>
     @await RenderSectionAsync("Scripts", required: false)
     <script src="~/js/admin-dashboard.js" asp-append-version="true" defer></script>
+    <script src="~/js/admin-notifications.js" asp-append-version="true" defer></script>
 </body>
 </html>

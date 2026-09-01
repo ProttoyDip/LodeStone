@@ -1,4 +1,5 @@
 @model Lodestone.Web.ViewModels.Admin.RiskOperationsViewModel
+@using System.Globalization
 @using Lodestone.Domain.Enums
 @{
     Layout = "~/Views/Shared/_AdminLayout.cshtml";
@@ -396,6 +397,47 @@
                         <div><dt>Queue threshold</dt><dd>@descriptor.QueueThreshold.ToString("P1")</dd></div>
                     </dl>
                 }
+            </div>
+        </section>
+
+        <section class="ls-admin-panel" aria-labelledby="risk-reports-title">
+            <header class="ls-admin-panel__header">
+                <div>
+                    <p class="ls-admin-panel__eyebrow">Reporting</p>
+                    <h2 id="risk-reports-title">Risk summary report</h2>
+                    <p>Download a PDF covering scoring volume, risk level distribution and counselor case flow for a chosen period.</p>
+                </div>
+            </header>
+            <div class="ls-admin-panel__body">
+                <form asp-controller="Reports" asp-action="RiskSummary" method="get" class="risk-report-form">
+                    <div class="risk-report-form__range">
+                        <div>
+                            <label for="risk-report-from">From</label>
+                            <input id="risk-report-from"
+                                   name="from"
+                                   type="date"
+                                   value="@DateTime.UtcNow.AddDays(-27).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                                   max="@DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                                   required />
+                        </div>
+                        <div>
+                            <label for="risk-report-to">To</label>
+                            <input id="risk-report-to"
+                                   name="to"
+                                   type="date"
+                                   value="@DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                                   max="@DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                                   required />
+                        </div>
+                    </div>
+                    <button class="ls-admin-btn ls-admin-btn--secondary" type="submit">
+                        <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>
+                        Download PDF
+                    </button>
+                </form>
+                <p class="risk-report-note">
+                    Reports contain confidential student data. Ranges are limited to 366 days.
+                </p>
             </div>
         </section>
     </div>

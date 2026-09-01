@@ -36,6 +36,8 @@ public static class DependencyInjection
         services.AddScoped<IStudentDashboardService, StudentDashboardService>();
         services.AddScoped<ICounselorProvisioningService, CounselorProvisioningService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IReportDataProvider, ReportDataProvider>();
 
         // Repositories — interface-mapped so Application services can depend on abstractions.
         services.AddScoped(typeof(GenericRepository<>));
