@@ -153,6 +153,7 @@ public sealed class ManualNudgeWebTests
             current.Object,
             Mock.Of<IRiskSnapshotAdministrationService>(),
             Mock.Of<IRiskModelStatusProvider>(),
+            Mock.Of<IAdminDashboardService>(),
             NullLogger<CounselorController>.Instance));
     }
 

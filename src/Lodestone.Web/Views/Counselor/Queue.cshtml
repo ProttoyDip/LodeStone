@@ -2,6 +2,12 @@
 @using Lodestone.Domain.Enums
 @{
     ViewData["Title"] = "Support queue";
+
+    // Shared by counselors and administrators. The controller supplies the admin shell only for
+    // administrators, so its presence decides which chrome this page renders inside.
+    Layout = ViewData["AdminShell"] is not null
+        ? "~/Views/Shared/_AdminLayout.cshtml"
+        : "~/Views/Shared/_Layout.cshtml";
     var successMessage = TempData["QueueSuccess"] as string;
     var conflictMessage = TempData["QueueConflict"] as string;
     var errorMessage = TempData["QueueError"] as string;
