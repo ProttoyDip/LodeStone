@@ -4,6 +4,7 @@ using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
 using Lodestone.Infrastructure;
 using Lodestone.Infrastructure.Data;
+using Lodestone.Infrastructure.Email;
 using Lodestone.Infrastructure.Identity;
 using Lodestone.Infrastructure.Security;
 using Lodestone.Jobs;
@@ -16,6 +17,7 @@ using Lodestone.Web.Health;
 using Lodestone.Web.Hubs;
 using Lodestone.Web.Services;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -73,6 +75,16 @@ builder.Services.AddScoped<IRiskQueueNotifier, SignalRRiskQueueNotifier>();
 builder.Services.AddScoped<IAdminNotificationNotifier, SignalRAdminNotifier>();
 
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
+if (builder.Environment.IsDevelopment())
+{
+    // Development only. When SMTP is unconfigured this logs the message and its links instead of
+    // failing, so password reset and volunteer invitations can be exercised without a mail server.
+    // The log line contains a single-use token, which is why it is never registered elsewhere.
+    builder.Services.AddScoped<IEmailService>(provider => new DevelopmentEmailFallback(
+        provider.GetRequiredKeyedService<IEmailService>(Lodestone.Infrastructure.DependencyInjection.SmtpEmailServiceKey),
+        provider.GetRequiredService<IOptions<EmailSettings>>(),
+        provider.GetRequiredService<ILogger<DevelopmentEmailFallback>>()));
+}
 builder.Services.AddMachineLearning(builder.Configuration, builder.Environment.ContentRootPath);
 if (useHangfire)
 {
