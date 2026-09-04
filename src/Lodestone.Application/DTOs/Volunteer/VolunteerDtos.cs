@@ -16,7 +16,12 @@ public enum VolunteerAssignmentTarget
     Group
 }
 
+/// <summary>
+/// Details a volunteer supplies about themselves after accepting an invitation. The name is
+/// included because an invitation carries only an email address.
+/// </summary>
 public record CreateVolunteerProfileDto(
+    string FullName,
     string? Department,
     string? Skills,
     string? Availability,

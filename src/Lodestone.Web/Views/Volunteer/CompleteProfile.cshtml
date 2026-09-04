@@ -1,0 +1,62 @@
+@model Lodestone.Web.ViewModels.Volunteer.CompleteVolunteerProfileViewModel
+@{
+    ViewData["Title"] = "Complete your volunteer profile";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <h1>Complete your profile</h1>
+            <p class="text-muted">
+                Tell us a little about yourself. An administrator reviews your profile before you can
+                take peer-support requests, so the detail here helps them match you to students.
+            </p>
+
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+            <form asp-action="CompleteProfile" method="post" class="card p-4 shadow-sm">
+                <div class="mb-3">
+                    <label asp-for="FullName" class="form-label"></label>
+                    <input asp-for="FullName" class="form-control" autocomplete="name" autofocus />
+                    <span asp-validation-for="FullName" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Department" class="form-label"></label>
+                    <input asp-for="Department" class="form-control" placeholder="For example: Computer Science" />
+                    <span asp-validation-for="Department" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Skills" class="form-label"></label>
+                    <input asp-for="Skills" class="form-control" placeholder="For example: study planning, first-year transition" />
+                    <div class="form-text">What you feel confident helping another student with.</div>
+                    <span asp-validation-for="Skills" class="text-danger"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Availability" class="form-label"></label>
+                    <textarea asp-for="Availability" class="form-control" rows="2" placeholder="For example: weekday evenings"></textarea>
+                    <span asp-validation-for="Availability" class="text-danger"></span>
+                </div>
+
+                <div class="mb-4">
+                    <label asp-for="Bio" class="form-label"></label>
+                    <textarea asp-for="Bio" class="form-control" rows="4"></textarea>
+                    <div class="form-text">A short introduction students may see when you support them.</div>
+                    <span asp-validation-for="Bio" class="text-danger"></span>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Submit for approval</button>
+            </form>
+
+            <p class="text-muted small mt-3">
+                Only your name and the details you enter here are shared. You will not see any student
+                information until an administrator approves you and assigns you to students.
+            </p>
+        </div>
+    </div>
+</div>
+
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

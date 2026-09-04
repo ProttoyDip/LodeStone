@@ -52,48 +52,38 @@ public sealed class AdminVolunteerController : Controller
         });
     }
 
-    [HttpGet("create")]
-    public async Task<IActionResult> Create(CancellationToken cancellationToken)
+    [HttpGet("invite")]
+    public async Task<IActionResult> Invite(CancellationToken cancellationToken)
     {
-        await SetAdminShellAsync("Add volunteer", cancellationToken);
-        return View("~/Views/Admin/CreateVolunteer.cshtml", new CreateVolunteerViewModel());
+        await SetAdminShellAsync("Invite volunteer", cancellationToken);
+        return View("~/Views/Admin/InviteVolunteer.cshtml", new InviteVolunteerViewModel());
     }
 
-    [HttpPost("create")]
+    [HttpPost("invite")]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(CreateVolunteerViewModel model, CancellationToken cancellationToken)
+    public async Task<IActionResult> Invite(InviteVolunteerViewModel model, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
-            await SetAdminShellAsync("Add volunteer", cancellationToken);
-            return View("~/Views/Admin/CreateVolunteer.cshtml", model);
+            await SetAdminShellAsync("Invite volunteer", cancellationToken);
+            return View("~/Views/Admin/InviteVolunteer.cshtml", model);
         }
 
-        var result = await _volunteerProvisioningService.CreateAsync(
-            new CreateVolunteerDto(
-                model.FullName,
-                model.Email,
-                model.Department,
-                model.Skills,
-                model.Availability,
-                model.Bio,
-                model.ApproveImmediately),
+        var result = await _volunteerProvisioningService.InviteAsync(
+            new InviteVolunteerDto(model.Email),
             cancellationToken);
 
         if (!result.Succeeded)
         {
             foreach (var error in result.Errors) ModelState.AddModelError(string.Empty, error);
-            await SetAdminShellAsync("Add volunteer", cancellationToken);
-            return View("~/Views/Admin/CreateVolunteer.cshtml", model);
+            await SetAdminShellAsync("Invite volunteer", cancellationToken);
+            return View("~/Views/Admin/InviteVolunteer.cshtml", model);
         }
 
         var sent = await SendVolunteerSetupEmailAsync(result, cancellationToken);
-        var approvalNote = model.ApproveImmediately
-            ? string.Empty
-            : " It is waiting for approval before the volunteer can take requests.";
         TempData[sent ? "AdminSuccess" : "AdminError"] = sent
-            ? $"Volunteer account created and the setup link was sent.{approvalNote}"
-            : $"Volunteer account created, but the setup email could not be sent. Use Resend setup link.{approvalNote}";
+            ? "Invitation sent. The volunteer will appear here once they set a password and complete their profile."
+            : "The account was created, but the invitation email could not be sent. Use Resend invitation.";
 
         return RedirectToAction(nameof(Index));
     }
@@ -113,8 +103,8 @@ public sealed class AdminVolunteerController : Controller
 
         var sent = await SendVolunteerSetupEmailAsync(result, cancellationToken);
         TempData[sent ? "AdminSuccess" : "AdminError"] = sent
-            ? "A new volunteer setup link was sent."
-            : "The setup email could not be sent. Try again later.";
+            ? "A new invitation was sent."
+            : "The invitation email could not be sent. Try again later.";
         return RedirectToAction(nameof(Index));
     }
 
@@ -302,17 +292,17 @@ public sealed class AdminVolunteerController : Controller
         var resetUrl = _publicAccountLinkBuilder.BuildPasswordResetUrl(result.Email, token);
         var safeUrl = HtmlEncoder.Default.Encode(resetUrl);
         var body = EmailTemplate.Wrap(
-            EmailTemplate.Heading("Set up your volunteer account")
-            + EmailTemplate.Para("An administrator created a Lodestone peer-support volunteer account for you. Choose a password to finish setup.")
+            EmailTemplate.Heading("You have been invited to volunteer")
+            + EmailTemplate.Para("An administrator invited you to provide peer support on Lodestone. Choose a password, then tell us a little about yourself so your profile can be approved.")
             + EmailTemplate.Button(safeUrl, "Set password")
             + EmailTemplate.SmallMuted("If you were not expecting this invitation, contact your Lodestone administrator."),
-            "Set up your Lodestone volunteer account");
+            "You have been invited to volunteer on Lodestone");
 
         try
         {
             await _emailService.SendAsync(
                 result.Email,
-                "Set up your Lodestone volunteer account",
+                "You have been invited to volunteer on Lodestone",
                 body,
                 cancellationToken);
             return true;

@@ -47,9 +47,20 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         if (existing is not null)
             throw new InvalidOperationException("A volunteer profile already exists for this account.");
 
+        var fullName = (dto.FullName ?? string.Empty).Trim();
+        if (fullName.Length is < 2 or > 150)
+            throw new ArgumentException("Enter your full name.", nameof(dto.FullName));
+
+        // An invitation carries only an email address, so the volunteer supplies the display name
+        // the rest of the application shows for them.
+        var account = await _repository.GetTrackedUserAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("The signed-in account could not be found.");
+        account.FullName = fullName;
+
         var volunteer = new VolunteerProfile
         {
             UserId = userId,
+            User = account,
             Department = NormalizeOptional(dto.Department, 200, nameof(dto.Department)),
             Skills = NormalizeOptional(dto.Skills, 500, nameof(dto.Skills)),
             Availability = NormalizeOptional(dto.Availability, MaximumAvailabilityLength, nameof(dto.Availability)),
@@ -65,6 +76,14 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             nameof(VolunteerProfile),
             details: "Volunteer profile submitted for administrator approval.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // The profile is the thing an administrator reviews, so tell them it is waiting. The
+        // volunteer's own details stay out of the notification body.
+        await _notificationService.NotifyAdministratorsAsync(
+            NotificationType.System,
+            "Volunteer profile awaiting approval",
+            "An invited volunteer completed their profile and is waiting for approval.",
+            cancellationToken);
 
         return MapVolunteer(volunteer);
     }
@@ -384,7 +403,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         {
             return EmptyVolunteerDashboard(
                 null,
-                "Your volunteer profile has not been created. Contact an administrator before handling requests.");
+                "Complete your volunteer profile so an administrator can approve you for peer support.");
         }
 
         if (!profile.IsApproved)

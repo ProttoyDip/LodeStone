@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Lodestone.Application.DTOs.Admin;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
@@ -8,22 +9,21 @@ using Microsoft.AspNetCore.Identity;
 namespace Lodestone.Infrastructure.Services;
 
 /// <summary>
-/// Creates volunteer accounts with their profile and role in one operation.
+/// Invites volunteers by email and grants them the Volunteer role.
 /// </summary>
 /// <remarks>
 /// Registration always assigns the Student role, so without this service no account could ever
-/// hold the Volunteer role and no student request could reach a volunteer. The account and its
-/// profile are created together: a user holding the role without a profile would pass
-/// authorization and then be refused by every dashboard check, which reads as a broken account
-/// rather than a pending one.
+/// hold the Volunteer role and no student request could reach a volunteer.
+/// <para>
+/// The invitation deliberately creates the account without a volunteer profile. The administrator
+/// knows only an email address, so the profile is left for the volunteer to complete after they
+/// set a password; until they do, they hold the role but cannot take requests. This also gives the
+/// administrator a real profile to read before approving, rather than approving details they
+/// typed themselves.
+/// </para>
 /// </remarks>
 public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
 {
-    private const int MaximumNameLength = 150;
-    private const int MaximumDepartmentLength = 200;
-    private const int MaximumSkillsLength = 500;
-    private const int MaximumFreeTextLength = 2000;
-
     private readonly UserManager<ApplicationUser> _users;
     private readonly ApplicationDbContext _context;
     private readonly IAuditLogService _audit;
@@ -34,39 +34,26 @@ public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
         IAuditLogService audit)
         => (_users, _context, _audit) = (users, context, audit);
 
-    public async Task<VolunteerProvisioningResult> CreateAsync(
-        CreateVolunteerDto dto,
+    public async Task<VolunteerProvisioningResult> InviteAsync(
+        InviteVolunteerDto dto,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var fullName = (dto.FullName ?? string.Empty).Trim();
         var email = (dto.Email ?? string.Empty).Trim().ToLowerInvariant();
-        if (fullName.Length is < 2 or > MaximumNameLength || string.IsNullOrWhiteSpace(email))
-            return Failed("Enter a valid name and email address.");
+        if (email.Length == 0 || !new EmailAddressAttribute().IsValid(email))
+            return Failed("Enter a valid email address.");
         if (await _users.FindByEmailAsync(email) is not null)
             return Failed("An account with that email already exists.");
-
-        var nowUtc = DateTime.UtcNow;
-        var profile = new VolunteerProfile
-        {
-            Department = Normalize(dto.Department, MaximumDepartmentLength),
-            Skills = Normalize(dto.Skills, MaximumSkillsLength),
-            Availability = Normalize(dto.Availability, MaximumFreeTextLength),
-            Bio = Normalize(dto.Bio, MaximumFreeTextLength),
-            IsApproved = dto.ApproveImmediately,
-            IsActive = true,
-            CreatedAtUtc = nowUtc
-        };
 
         var user = new ApplicationUser
         {
             UserName = email,
             Email = email,
-            FullName = fullName,
-            CreatedAtUtc = nowUtc,
-            IsActive = true,
-            VolunteerProfile = profile
+            // The volunteer sets their own name when completing the profile.
+            FullName = string.Empty,
+            CreatedAtUtc = DateTime.UtcNow,
+            IsActive = true
         };
 
         var created = await _users.CreateAsync(user);
@@ -81,11 +68,7 @@ public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
             return Failed(roleResult.Errors.Select(error => error.Description).ToArray());
         }
 
-        _audit.Record(
-            "VolunteerCreated",
-            nameof(ApplicationUser),
-            user.Id,
-            $"Email={email}; Approved={profile.IsApproved}");
+        _audit.Record("VolunteerInvited", nameof(ApplicationUser), user.Id, $"Email={email}");
         await _context.SaveChangesAsync(cancellationToken);
 
         var token = await _users.GeneratePasswordResetTokenAsync(user);
@@ -93,7 +76,6 @@ public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
             Succeeded: true,
             UserId: user.Id,
             Email: email,
-            VolunteerProfileId: profile.Id,
             PasswordSetupToken: token,
             Errors: Array.Empty<string>());
     }
@@ -118,18 +100,10 @@ public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
             Succeeded: true,
             UserId: user.Id,
             Email: user.Email,
-            VolunteerProfileId: null,
             PasswordSetupToken: token,
             Errors: Array.Empty<string>());
     }
 
-    private static string? Normalize(string? value, int maximumLength)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        var trimmed = value.Trim();
-        return trimmed.Length <= maximumLength ? trimmed : trimmed[..maximumLength];
-    }
-
     private static VolunteerProvisioningResult Failed(params string[] errors)
-        => new(false, null, null, null, null, errors);
+        => new(false, null, null, null, errors);
 }

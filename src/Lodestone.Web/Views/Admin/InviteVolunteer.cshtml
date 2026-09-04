@@ -1,0 +1,67 @@
+@model InviteVolunteerViewModel
+@{
+    Layout = "~/Views/Shared/_AdminLayout.cshtml";
+    ViewData["Title"] = "Invite volunteer";
+}
+
+<div class="ls-admin-page">
+    <header class="ls-admin-page-header">
+        <div class="ls-admin-page-header__content">
+            <p class="ls-admin-page-header__eyebrow">People &amp; access</p>
+            <h1>Invite volunteer</h1>
+            <p>Send an invitation to a university email address. The volunteer chooses their own password and fills in their name, department, skills and availability, then their profile comes back here for approval.</p>
+        </div>
+        <a class="ls-admin-btn ls-admin-btn--secondary" asp-action="Index">Back to volunteers</a>
+    </header>
+
+    @if (TempData["AdminSuccess"] is string success)
+    {
+        <div class="ls-admin-alert ls-admin-alert--success" role="status">@success</div>
+    }
+    @if (TempData["AdminError"] is string error)
+    {
+        <div class="ls-admin-alert ls-admin-alert--error" role="alert">@error</div>
+    }
+
+    <section class="ls-admin-panel" aria-labelledby="invite-volunteer-heading">
+        <header class="ls-admin-panel__header">
+            <h2 id="invite-volunteer-heading">Send an invitation</h2>
+        </header>
+        <div class="ls-admin-panel__body">
+            <form asp-action="Invite" method="post" class="ls-admin-form">
+                <div asp-validation-summary="ModelOnly" class="ls-admin-alert ls-admin-alert--error" role="alert"></div>
+
+                <div class="ls-admin-field">
+                    <label asp-for="Email"></label>
+                    <input class="ls-admin-input" asp-for="Email" autocomplete="email" autofocus />
+                    <span asp-validation-for="Email"></span>
+                </div>
+
+                <button class="ls-admin-btn ls-admin-btn--primary" type="submit">Send invitation</button>
+            </form>
+
+            <p class="ls-admin-form-note">
+                No password is set or shared. The invitation contains a single-use link the volunteer
+                uses to choose their own.
+            </p>
+        </div>
+    </section>
+
+    <section class="ls-admin-panel" aria-labelledby="resend-volunteer-heading">
+        <header class="ls-admin-panel__header">
+            <h2 id="resend-volunteer-heading">Resend invitation</h2>
+        </header>
+        <div class="ls-admin-panel__body">
+            <p>Use this if the original link expired or never arrived. It replaces any previous link for that account.</p>
+            <form asp-action="ResendSetup" method="post" class="ls-admin-form">
+                <div class="ls-admin-field">
+                    <label for="resend-volunteer-email">Volunteer email</label>
+                    <input class="ls-admin-input" id="resend-volunteer-email" name="email" type="email" required />
+                </div>
+                <button class="ls-admin-btn ls-admin-btn--secondary" type="submit">Resend invitation</button>
+            </form>
+        </div>
+    </section>
+</div>
+
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

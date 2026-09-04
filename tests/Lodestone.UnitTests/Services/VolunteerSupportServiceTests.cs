@@ -133,7 +133,113 @@ public sealed class VolunteerSupportServiceTests
         dashboard.AccessMessage.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Fact]
+    public async Task CreateVolunteerProfileAsync_SetsTheNameTheInvitationCouldNotSupply()
+    {
+        var account = new ApplicationUser { Id = "vol-1", Email = "vol@university.test", FullName = string.Empty };
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetVolunteerProfileByUserIdAsync("vol-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((VolunteerProfile?)null);
+        repo.Setup(r => r.GetTrackedUserAsync("vol-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(account);
+
+        VolunteerProfile? captured = null;
+        repo.Setup(r => r.CreateVolunteerProfileAsync(It.IsAny<VolunteerProfile>(), It.IsAny<CancellationToken>()))
+            .Callback<VolunteerProfile, CancellationToken>((profile, _) => captured = profile)
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(repo, Volunteer("vol-1"));
+
+        await service.CreateVolunteerProfileAsync(
+            new CreateVolunteerProfileDto("  Volunteer A  ", "Computer Science", "Study planning", "Evenings", "Hello."),
+            CancellationToken.None);
+
+        account.FullName.Should().Be("Volunteer A");
+        captured.Should().NotBeNull();
+        captured!.Department.Should().Be("Computer Science");
+        captured.IsActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CreateVolunteerProfileAsync_LeavesTheProfileWaitingForApproval()
+    {
+        VolunteerProfile? captured = null;
+        var repo = ProfileCreationRepo(profile => captured = profile);
+        var service = CreateService(repo, Volunteer("vol-1"));
+
+        await service.CreateVolunteerProfileAsync(Profile(), CancellationToken.None);
+
+        // A volunteer describing themselves is not the same as an administrator vouching for them.
+        captured!.IsApproved.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CreateVolunteerProfileAsync_TellsAdministratorsAProfileIsWaiting()
+    {
+        var repo = ProfileCreationRepo();
+        var notifications = new Mock<INotificationService>();
+        var service = CreateService(repo, Volunteer("vol-1"), notifications: notifications);
+
+        await service.CreateVolunteerProfileAsync(Profile(), CancellationToken.None);
+
+        notifications.Verify(
+            n => n.NotifyAdministratorsAsync(
+                It.IsAny<NotificationType>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("A")]
+    public async Task CreateVolunteerProfileAsync_RequiresAUsableName(string fullName)
+    {
+        var repo = ProfileCreationRepo();
+        var service = CreateService(repo, Volunteer("vol-1"));
+
+        var act = async () => await service.CreateVolunteerProfileAsync(
+            Profile(fullName),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+        repo.Verify(
+            r => r.CreateVolunteerProfileAsync(It.IsAny<VolunteerProfile>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateVolunteerProfileAsync_RefusesASecondProfile()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetVolunteerProfileByUserIdAsync("vol-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new VolunteerProfile { Id = 4, UserId = "vol-1" });
+
+        var service = CreateService(repo, Volunteer("vol-1"));
+
+        var act = async () => await service.CreateVolunteerProfileAsync(Profile(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
     // ---------- helpers ----------
+
+    private static CreateVolunteerProfileDto Profile(string fullName = "Volunteer A")
+        => new(fullName, "Computer Science", "Study planning", "Evenings", "Hello.");
+
+    private static Mock<IVolunteerSupportRepository> ProfileCreationRepo(Action<VolunteerProfile>? onCreate = null)
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetVolunteerProfileByUserIdAsync("vol-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((VolunteerProfile?)null);
+        repo.Setup(r => r.GetTrackedUserAsync("vol-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ApplicationUser { Id = "vol-1", FullName = string.Empty });
+        repo.Setup(r => r.CreateVolunteerProfileAsync(It.IsAny<VolunteerProfile>(), It.IsAny<CancellationToken>()))
+            .Callback<VolunteerProfile, CancellationToken>((profile, _) => onCreate?.Invoke(profile))
+            .Returns(Task.CompletedTask);
+        return repo;
+    }
 
     private static Mock<ICurrentUserService> Student(string userId) => InRole(userId, RoleConstants.Student);
 

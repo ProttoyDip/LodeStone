@@ -10,6 +10,12 @@ public interface IVolunteerSupportRepository
     Task<VolunteerProfile?> GetVolunteerProfileByUserIdAsync(string userId, CancellationToken cancellationToken = default);
     Task<VolunteerProfile?> GetVolunteerProfileByIdAsync(int volunteerProfileId, CancellationToken cancellationToken = default);
     Task CreateVolunteerProfileAsync(VolunteerProfile volunteer, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The tracked account for a user, so a volunteer completing their profile can also set the
+    /// display name their invitation could not supply.
+    /// </summary>
+    Task<ApplicationUser?> GetTrackedUserAsync(string userId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<VolunteerProfile>> GetAvailableVolunteersAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<VolunteerProfile>> GetVolunteersForAdminAsync(string? query, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<VolunteerAssignment>> GetAssignmentsForVolunteerAsync(int volunteerProfileId, CancellationToken cancellationToken = default);

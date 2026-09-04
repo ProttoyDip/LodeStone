@@ -15,13 +15,13 @@ using Xunit;
 namespace Lodestone.IntegrationTests.Services;
 
 /// <summary>
-/// Volunteer provisioning is the only path that grants the Volunteer role, so these tests cover
-/// what happens to the account when each step of that path succeeds or fails.
+/// Inviting is the only path that grants the Volunteer role, so these tests cover what happens to
+/// the account when each step succeeds or fails.
 /// </summary>
 public sealed class VolunteerProvisioningServiceTests
 {
     [Fact]
-    public async Task CreateAsync_GrantsTheVolunteerRoleAndReturnsASetupToken()
+    public async Task InviteAsync_GrantsTheVolunteerRoleAndReturnsASetupToken()
     {
         var users = CreateUserManager();
         users.Setup(m => m.FindByEmailAsync(It.IsAny<string>())).ReturnsAsync((ApplicationUser?)null);
@@ -34,16 +34,16 @@ public sealed class VolunteerProvisioningServiceTests
         await using var context = CreateContext();
         var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
 
-        var result = await service.CreateAsync(Dto());
+        var result = await service.InviteAsync(new InviteVolunteerDto("  Vol@University.test  "));
 
         result.Succeeded.Should().BeTrue();
-        result.Email.Should().Be("vol@university.test");
+        result.Email.Should().Be("vol@university.test", "the address is normalised before use");
         result.PasswordSetupToken.Should().Be("setup-token");
         users.Verify(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), RoleConstants.Volunteer), Times.Once);
     }
 
     [Fact]
-    public async Task CreateAsync_AttachesAVolunteerProfileToTheNewAccount()
+    public async Task InviteAsync_DoesNotCreateAProfileForTheVolunteerToInherit()
     {
         ApplicationUser? created = null;
         var users = CreateUserManager();
@@ -58,41 +58,18 @@ public sealed class VolunteerProvisioningServiceTests
         await using var context = CreateContext();
         var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
 
-        await service.CreateAsync(Dto());
+        await service.InviteAsync(new InviteVolunteerDto("vol@university.test"));
 
-        // Role without profile would pass authorization and then be refused by every dashboard
-        // check, so the two must be created together.
+        // The administrator knows only an email address. Everything describing the volunteer is
+        // theirs to supply, and the empty name is what the completion form fills in.
         created.Should().NotBeNull();
-        created!.VolunteerProfile.Should().NotBeNull();
-        created.VolunteerProfile!.Department.Should().Be("Computer Science");
-        created.VolunteerProfile.IsActive.Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task CreateAsync_HonoursTheApprovalChoice(bool approveImmediately)
-    {
-        ApplicationUser? created = null;
-        var users = CreateUserManager();
-        users.Setup(m => m.FindByEmailAsync(It.IsAny<string>())).ReturnsAsync((ApplicationUser?)null);
-        users.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>()))
-            .Callback<ApplicationUser>(user => created = user)
-            .ReturnsAsync(IdentityResult.Success);
-        users.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()))
-            .ReturnsAsync(IdentityResult.Success);
-        users.Setup(m => m.GeneratePasswordResetTokenAsync(It.IsAny<ApplicationUser>())).ReturnsAsync("t");
-
-        await using var context = CreateContext();
-        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
-
-        await service.CreateAsync(Dto(approveImmediately: approveImmediately));
-
-        created!.VolunteerProfile!.IsApproved.Should().Be(approveImmediately);
+        created!.VolunteerProfile.Should().BeNull();
+        created.FullName.Should().BeEmpty();
+        created.IsActive.Should().BeTrue();
     }
 
     [Fact]
-    public async Task CreateAsync_DeletesTheAccountWhenTheRoleCannotBeGranted()
+    public async Task InviteAsync_DeletesTheAccountWhenTheRoleCannotBeGranted()
     {
         var users = CreateUserManager();
         users.Setup(m => m.FindByEmailAsync(It.IsAny<string>())).ReturnsAsync((ApplicationUser?)null);
@@ -104,7 +81,7 @@ public sealed class VolunteerProvisioningServiceTests
         await using var context = CreateContext();
         var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
 
-        var result = await service.CreateAsync(Dto());
+        var result = await service.InviteAsync(new InviteVolunteerDto("vol@university.test"));
 
         // An account without the role can never sign in as a volunteer, so it must not be left behind.
         result.Succeeded.Should().BeFalse();
@@ -113,7 +90,7 @@ public sealed class VolunteerProvisioningServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_RejectsAnEmailThatIsAlreadyRegistered()
+    public async Task InviteAsync_RejectsAnEmailThatIsAlreadyRegistered()
     {
         var users = CreateUserManager();
         users.Setup(m => m.FindByEmailAsync("vol@university.test"))
@@ -122,25 +99,27 @@ public sealed class VolunteerProvisioningServiceTests
         await using var context = CreateContext();
         var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
 
-        var result = await service.CreateAsync(Dto());
+        var result = await service.InviteAsync(new InviteVolunteerDto("vol@university.test"));
 
         result.Succeeded.Should().BeFalse();
         users.Verify(m => m.CreateAsync(It.IsAny<ApplicationUser>()), Times.Never);
     }
 
+    // Validation delegates to EmailAddressAttribute, which accepts domain-only hosts such as
+    // "user@localhost" by design. Tightening that with a pattern would reject valid institutional
+    // addresses, so only genuinely unusable input is asserted here.
     [Theory]
-    [InlineData("", "vol@university.test")]
-    [InlineData("A", "vol@university.test")]
-    [InlineData("Valid Name", "")]
-    [InlineData("Valid Name", "   ")]
-    public async Task CreateAsync_RejectsInvalidIdentityDetails(string fullName, string email)
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not-an-email")]
+    [InlineData("two@@at.test")]
+    public async Task InviteAsync_RejectsAnUnusableEmailAddress(string email)
     {
         var users = CreateUserManager();
         await using var context = CreateContext();
         var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
 
-        var result = await service.CreateAsync(
-            new CreateVolunteerDto(fullName, email, null, null, null, null, true));
+        var result = await service.InviteAsync(new InviteVolunteerDto(email));
 
         result.Succeeded.Should().BeFalse();
         users.Verify(m => m.CreateAsync(It.IsAny<ApplicationUser>()), Times.Never);
@@ -182,16 +161,6 @@ public sealed class VolunteerProvisioningServiceTests
     }
 
     // ---------- helpers ----------
-
-    private static CreateVolunteerDto Dto(bool approveImmediately = true)
-        => new(
-            "Volunteer A",
-            "  Vol@University.test  ",
-            "Computer Science",
-            "Study planning",
-            "Weekday evenings",
-            "Second-year student mentor.",
-            approveImmediately);
 
     private static ApplicationDbContext CreateContext()
         => new(new DbContextOptionsBuilder<ApplicationDbContext>()
