@@ -65,3 +65,39 @@ public sealed class VolunteerAssignmentInputModel : IValidatableObject
         }
     }
 }
+
+/// <summary>Form for creating a peer-support volunteer account.</summary>
+public sealed class CreateVolunteerViewModel
+{
+    [Required(ErrorMessage = "Enter the volunteer's full name.")]
+    [StringLength(150, MinimumLength = 2)]
+    [Display(Name = "Full name")]
+    public string FullName { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Enter the volunteer's email address.")]
+    [EmailAddress(ErrorMessage = "Enter a valid email address.")]
+    [StringLength(256)]
+    [Display(Name = "Email address")]
+    public string Email { get; set; } = string.Empty;
+
+    [StringLength(200)]
+    public string? Department { get; set; }
+
+    [StringLength(500)]
+    [Display(Name = "Skills and interests")]
+    public string? Skills { get; set; }
+
+    [StringLength(2000)]
+    public string? Availability { get; set; }
+
+    [StringLength(2000)]
+    [Display(Name = "Short bio")]
+    public string? Bio { get; set; }
+
+    /// <summary>
+    /// Defaults to true: an administrator creating the account is already vouching for the
+    /// volunteer. Clearing it routes the account through the normal approval queue instead.
+    /// </summary>
+    [Display(Name = "Approve immediately")]
+    public bool ApproveImmediately { get; set; } = true;
+}

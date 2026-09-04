@@ -1,10 +1,15 @@
+using System.Text;
+using System.Text.Encodings.Web;
 using Lodestone.Application.DTOs.Admin;
 using Lodestone.Application.DTOs.Volunteer;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
+using Lodestone.Infrastructure.Email;
+using Lodestone.Web.Services;
 using Lodestone.Web.ViewModels.Admin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace Lodestone.Web.Controllers;
 
@@ -13,16 +18,25 @@ namespace Lodestone.Web.Controllers;
 public sealed class AdminVolunteerController : Controller
 {
     private readonly IVolunteerSupportService _volunteerSupportService;
+    private readonly IVolunteerProvisioningService _volunteerProvisioningService;
     private readonly IAdminDashboardService _adminDashboardService;
+    private readonly IEmailService _emailService;
+    private readonly IPublicAccountLinkBuilder _publicAccountLinkBuilder;
     private readonly ILogger<AdminVolunteerController> _logger;
 
     public AdminVolunteerController(
         IVolunteerSupportService volunteerSupportService,
+        IVolunteerProvisioningService volunteerProvisioningService,
         IAdminDashboardService adminDashboardService,
+        IEmailService emailService,
+        IPublicAccountLinkBuilder publicAccountLinkBuilder,
         ILogger<AdminVolunteerController> logger)
     {
         _volunteerSupportService = volunteerSupportService;
+        _volunteerProvisioningService = volunteerProvisioningService;
         _adminDashboardService = adminDashboardService;
+        _emailService = emailService;
+        _publicAccountLinkBuilder = publicAccountLinkBuilder;
         _logger = logger;
     }
 
@@ -36,6 +50,72 @@ public sealed class AdminVolunteerController : Controller
             Overview = overview,
             Query = q?.Trim()
         });
+    }
+
+    [HttpGet("create")]
+    public async Task<IActionResult> Create(CancellationToken cancellationToken)
+    {
+        await SetAdminShellAsync("Add volunteer", cancellationToken);
+        return View("~/Views/Admin/CreateVolunteer.cshtml", new CreateVolunteerViewModel());
+    }
+
+    [HttpPost("create")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(CreateVolunteerViewModel model, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            await SetAdminShellAsync("Add volunteer", cancellationToken);
+            return View("~/Views/Admin/CreateVolunteer.cshtml", model);
+        }
+
+        var result = await _volunteerProvisioningService.CreateAsync(
+            new CreateVolunteerDto(
+                model.FullName,
+                model.Email,
+                model.Department,
+                model.Skills,
+                model.Availability,
+                model.Bio,
+                model.ApproveImmediately),
+            cancellationToken);
+
+        if (!result.Succeeded)
+        {
+            foreach (var error in result.Errors) ModelState.AddModelError(string.Empty, error);
+            await SetAdminShellAsync("Add volunteer", cancellationToken);
+            return View("~/Views/Admin/CreateVolunteer.cshtml", model);
+        }
+
+        var sent = await SendVolunteerSetupEmailAsync(result, cancellationToken);
+        var approvalNote = model.ApproveImmediately
+            ? string.Empty
+            : " It is waiting for approval before the volunteer can take requests.";
+        TempData[sent ? "AdminSuccess" : "AdminError"] = sent
+            ? $"Volunteer account created and the setup link was sent.{approvalNote}"
+            : $"Volunteer account created, but the setup email could not be sent. Use Resend setup link.{approvalNote}";
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("resend-setup")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ResendSetup(string email, CancellationToken cancellationToken)
+    {
+        var result = await _volunteerProvisioningService.CreateSetupTokenAsync(
+            email ?? string.Empty,
+            cancellationToken);
+        if (!result.Succeeded)
+        {
+            TempData["AdminError"] = result.Errors.FirstOrDefault() ?? "The setup link could not be generated.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var sent = await SendVolunteerSetupEmailAsync(result, cancellationToken);
+        TempData[sent ? "AdminSuccess" : "AdminError"] = sent
+            ? "A new volunteer setup link was sent."
+            : "The setup email could not be sent. Try again later.";
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpGet("{volunteerProfileId:int}/assign")]
@@ -209,6 +289,40 @@ public sealed class AdminVolunteerController : Controller
         }
 
         return RedirectToAction(nameof(Index), new { q = query });
+    }
+
+    private async Task<bool> SendVolunteerSetupEmailAsync(
+        VolunteerProvisioningResult result,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(result.Email) || string.IsNullOrWhiteSpace(result.PasswordSetupToken))
+            return false;
+
+        var token = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(result.PasswordSetupToken));
+        var resetUrl = _publicAccountLinkBuilder.BuildPasswordResetUrl(result.Email, token);
+        var safeUrl = HtmlEncoder.Default.Encode(resetUrl);
+        var body = EmailTemplate.Wrap(
+            EmailTemplate.Heading("Set up your volunteer account")
+            + EmailTemplate.Para("An administrator created a Lodestone peer-support volunteer account for you. Choose a password to finish setup.")
+            + EmailTemplate.Button(safeUrl, "Set password")
+            + EmailTemplate.SmallMuted("If you were not expecting this invitation, contact your Lodestone administrator."),
+            "Set up your Lodestone volunteer account");
+
+        try
+        {
+            await _emailService.SendAsync(
+                result.Email,
+                "Set up your Lodestone volunteer account",
+                body,
+                cancellationToken);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            // The account exists and is usable; only the invitation failed, and it can be resent.
+            _logger.LogWarning(exception, "Failed to send a volunteer account setup email.");
+            return false;
+        }
     }
 
     private async Task SetAdminShellAsync(string title, CancellationToken cancellationToken)
