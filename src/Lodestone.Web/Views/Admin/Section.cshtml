@@ -6,7 +6,16 @@
     var query = Context.Request.Query["q"].ToString();
     var successMessage = TempData["Success"] as string ?? TempData["AdminSuccess"] as string;
     var errorMessage = TempData["Error"] as string ?? TempData["AdminError"] as string;
-    var hasRowActions = Model.Page.Section is AdminSectionType.ForumModeration or AdminSectionType.Notifications;
+    var hasRowActions = Model.Page.Section
+        is AdminSectionType.ForumModeration
+        or AdminSectionType.Notifications
+        or AdminSectionType.Counselors;
+
+    // Counselors on this page who could take over another counselor's appointments. Drawn from the
+    // rendered rows, so the choice is limited to the current page of results.
+    bool IsActiveAccount(AdminSectionRowDto candidate)
+        => candidate.Cells.TryGetValue("account", out var account)
+           && string.Equals(account, "Active", StringComparison.OrdinalIgnoreCase);
 
     bool IsUnread(AdminSectionRowDto row)
     {
@@ -218,6 +227,38 @@
                                                     <input type="hidden" name="postId" value="@row.Id" />
                                                     <input type="hidden" name="publish" value="false" />
                                                     <input type="hidden" name="q" value="@query" />
+                                                    <button class="ls-admin-btn ls-admin-btn--small ls-admin-btn--danger" type="submit">Remove</button>
+                                                </form>
+                                            }
+                                            else if (Model.Page.Section == AdminSectionType.Counselors)
+                                            {
+                                                var successors = Model.Page.Rows
+                                                    .Where(candidate => candidate.Id != row.Id && IsActiveAccount(candidate))
+                                                    .ToList();
+
+                                                <form asp-controller="Admin"
+                                                      asp-action="RemoveCounselor"
+                                                      method="post"
+                                                      class="ls-admin-remove"
+                                                      data-admin-confirm="Remove @row.PrimaryLabel permanently? This deletes the account and cannot be undone.">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="counselorProfileId" value="@row.Id" />
+                                                    <input type="hidden" name="q" value="@query" />
+                                                    @if (successors.Count > 0)
+                                                    {
+                                                        <label class="ls-admin-visually-hidden" for="successor-@row.Id">
+                                                            Counselor to receive @row.PrimaryLabel's appointments
+                                                        </label>
+                                                        <select class="ls-admin-input ls-admin-remove__select"
+                                                                id="successor-@row.Id"
+                                                                name="replacementCounselorProfileId">
+                                                            <option value="">Move appointments to…</option>
+                                                            @foreach (var successor in successors)
+                                                            {
+                                                                <option value="@successor.Id">@successor.PrimaryLabel</option>
+                                                            }
+                                                        </select>
+                                                    }
                                                     <button class="ls-admin-btn ls-admin-btn--small ls-admin-btn--danger" type="submit">Remove</button>
                                                 </form>
                                             }

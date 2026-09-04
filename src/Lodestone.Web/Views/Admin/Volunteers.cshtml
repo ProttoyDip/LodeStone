@@ -6,6 +6,11 @@
 
     var successMessage = TempData["AdminSuccess"] as string;
     var errorMessage = TempData["AdminError"] as string;
+
+    // Only an approved, active volunteer can take over another volunteer's support requests.
+    var replacements = Model.Overview.Volunteers
+        .Where(candidate => candidate.Status == VolunteerApprovalState.Approved)
+        .ToList();
 }
 
 <div class="ls-admin-page">
@@ -182,10 +187,30 @@
                                                 <button class="ls-admin-btn ls-admin-btn--primary" type="submit">Activate</button>
                                             </form>
                                         }
-                                        else
-                                        {
-                                            <span class="ls-admin-table__no-action" aria-label="No action available">&mdash;</span>
-                                        }
+                                        <form method="post"
+                                              action="/Admin/Volunteers/@volunteer.Id/remove"
+                                              class="ls-admin-remove"
+                                              data-admin-confirm="Remove @volunteer.FullName permanently? This deletes the account and cannot be undone.">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="q" value="@Model.Query" />
+                                            @if (volunteer.PendingRequests > 0 && replacements.Count > 0)
+                                            {
+                                                <label class="ls-admin-visually-hidden" for="replacement-@volunteer.Id">
+                                                    Volunteer to receive @volunteer.FullName's support requests
+                                                </label>
+                                                <select class="ls-admin-input ls-admin-remove__select"
+                                                        id="replacement-@volunteer.Id"
+                                                        name="replacementVolunteerProfileId"
+                                                        required>
+                                                    <option value="">Move requests to…</option>
+                                                    @foreach (var candidate in replacements.Where(option => option.Id != volunteer.Id))
+                                                    {
+                                                        <option value="@candidate.Id">@candidate.FullName</option>
+                                                    }
+                                                </select>
+                                            }
+                                            <button class="ls-admin-btn ls-admin-btn--danger" type="submit">Remove</button>
+                                        </form>
                                     </td>
                                 </tr>
                             }

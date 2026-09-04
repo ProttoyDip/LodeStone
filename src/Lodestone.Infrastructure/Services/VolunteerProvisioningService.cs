@@ -5,6 +5,7 @@ using Lodestone.Domain.Constants;
 using Lodestone.Domain.Entities;
 using Lodestone.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 
 namespace Lodestone.Infrastructure.Services;
 
@@ -102,6 +103,117 @@ public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
             Email: user.Email,
             PasswordSetupToken: token,
             Errors: Array.Empty<string>());
+    }
+
+    public async Task<IReadOnlyList<StaffReplacementOptionDto>> GetReplacementsAsync(
+        int excludingVolunteerProfileId,
+        CancellationToken cancellationToken = default)
+        => await _context.VolunteerProfiles
+            .AsNoTracking()
+            .Where(profile => profile.Id != excludingVolunteerProfileId
+                              && profile.IsApproved
+                              && profile.IsActive
+                              && profile.User != null
+                              && profile.User.IsActive)
+            .OrderBy(profile => profile.User!.FullName)
+            .Select(profile => new StaffReplacementOptionDto(
+                profile.Id,
+                profile.User!.FullName ?? profile.User.Email ?? "Volunteer"))
+            .ToListAsync(cancellationToken);
+
+    public async Task<StaffRemovalResult> RemoveAsync(
+        int volunteerProfileId,
+        int? replacementVolunteerProfileId,
+        CancellationToken cancellationToken = default)
+    {
+        if (volunteerProfileId <= 0)
+            return StaffRemovalResult.Failed("Select a volunteer to remove.");
+
+        var volunteer = await _context.VolunteerProfiles
+            .Include(profile => profile.User)
+            .FirstOrDefaultAsync(profile => profile.Id == volunteerProfileId, cancellationToken);
+        if (volunteer?.User is null)
+            return StaffRemovalResult.Failed("That volunteer was not found.");
+
+        var requests = await _context.SupportRequests
+            .Where(request => request.VolunteerProfileId == volunteerProfileId)
+            .ToListAsync(cancellationToken);
+
+        // A support request and its messages belong to the student who raised it.
+        if (requests.Count > 0 && replacementVolunteerProfileId is null)
+            return StaffRemovalResult.NeedsReplacement(requests.Count);
+
+        if (requests.Count > 0)
+        {
+            if (replacementVolunteerProfileId == volunteerProfileId)
+                return StaffRemovalResult.Failed("Choose a different volunteer to receive the support requests.");
+
+            var replacementExists = await _context.VolunteerProfiles.AnyAsync(
+                profile => profile.Id == replacementVolunteerProfileId
+                           && profile.IsApproved
+                           && profile.IsActive
+                           && profile.User != null
+                           && profile.User.IsActive,
+                cancellationToken);
+            if (!replacementExists)
+                return StaffRemovalResult.Failed("The volunteer chosen to receive the support requests is not available.");
+        }
+
+        await using var transaction = _context.Database.IsRelational()
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        foreach (var request in requests)
+            request.VolunteerProfileId = replacementVolunteerProfileId;
+
+        var assignments = await _context.VolunteerAssignments
+            .Where(assignment => assignment.VolunteerProfileId == volunteerProfileId)
+            .ToListAsync(cancellationToken);
+
+        if (replacementVolunteerProfileId is { } replacementId)
+        {
+            // (VolunteerProfileId, StudentProfileId) is unique, so an assignment for a student the
+            // replacement already mentors cannot be moved across; drop it rather than duplicate it.
+            var alreadyMentored = await _context.VolunteerAssignments
+                .Where(assignment => assignment.VolunteerProfileId == replacementId)
+                .Select(assignment => assignment.StudentProfileId)
+                .ToListAsync(cancellationToken);
+
+            foreach (var assignment in assignments)
+            {
+                if (alreadyMentored.Contains(assignment.StudentProfileId))
+                    _context.VolunteerAssignments.Remove(assignment);
+                else
+                    assignment.VolunteerProfileId = replacementId;
+            }
+        }
+        else
+        {
+            // No student work to hand over, so the assignments are just admin plumbing.
+            _context.VolunteerAssignments.RemoveRange(assignments);
+        }
+
+        _context.VolunteerProfiles.Remove(volunteer);
+        // The account row is restricted by the profile's foreign key, so the profile must be gone
+        // before Identity is asked to delete the user.
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var deleted = await _users.DeleteAsync(volunteer.User);
+        if (!deleted.Succeeded)
+        {
+            if (transaction is not null) await transaction.RollbackAsync(cancellationToken);
+            return StaffRemovalResult.Failed(deleted.Errors.Select(error => error.Description).ToArray());
+        }
+
+        _audit.Record(
+            "VolunteerRemoved",
+            nameof(ApplicationUser),
+            volunteer.UserId,
+            $"TransferredRequests={requests.Count}; ReplacementProfileId={replacementVolunteerProfileId?.ToString() ?? "none"}");
+        await _context.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+
+        return StaffRemovalResult.Removed(requests.Count);
     }
 
     private static VolunteerProvisioningResult Failed(params string[] errors)

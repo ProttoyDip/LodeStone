@@ -108,6 +108,49 @@ public sealed class AdminVolunteerController : Controller
         return RedirectToAction(nameof(Index));
     }
 
+    [HttpPost("{volunteerProfileId:int}/remove")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Remove(
+        int volunteerProfileId,
+        int? replacementVolunteerProfileId,
+        string? q,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _volunteerProvisioningService.RemoveAsync(
+                volunteerProfileId,
+                replacementVolunteerProfileId,
+                cancellationToken);
+
+            if (result.RequiresReplacement)
+            {
+                TempData["AdminError"] =
+                    $"This volunteer is handling {result.TransferredItems} support " +
+                    $"{(result.TransferredItems == 1 ? "request" : "requests")}. " +
+                    "Choose another volunteer to take them over before removing the account.";
+            }
+            else if (!result.Succeeded)
+            {
+                TempData["AdminError"] = result.Errors.FirstOrDefault() ?? "The volunteer could not be removed.";
+            }
+            else
+            {
+                TempData["AdminSuccess"] = result.TransferredItems == 0
+                    ? "Volunteer removed."
+                    : $"Volunteer removed and {result.TransferredItems} support " +
+                      $"{(result.TransferredItems == 1 ? "request was" : "requests were")} moved to the chosen volunteer.";
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Could not remove volunteer {VolunteerProfileId}.", volunteerProfileId);
+            TempData["AdminError"] = "The volunteer could not be removed.";
+        }
+
+        return RedirectToAction(nameof(Index), new { q });
+    }
+
     [HttpGet("{volunteerProfileId:int}/assign")]
     public async Task<IActionResult> Assign(int volunteerProfileId, CancellationToken cancellationToken)
     {

@@ -20,4 +20,19 @@ public interface IVolunteerProvisioningService
     Task<VolunteerProvisioningResult> CreateSetupTokenAsync(
         string email,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Volunteers who can take over another volunteer's support work.</summary>
+    Task<IReadOnlyList<StaffReplacementOptionDto>> GetReplacementsAsync(
+        int excludingVolunteerProfileId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a volunteer account. Support requests and student assignments are moved to
+    /// <paramref name="replacementVolunteerProfileId"/>, which is required whenever the volunteer
+    /// still has support requests.
+    /// </summary>
+    Task<StaffRemovalResult> RemoveAsync(
+        int volunteerProfileId,
+        int? replacementVolunteerProfileId,
+        CancellationToken cancellationToken = default);
 }
