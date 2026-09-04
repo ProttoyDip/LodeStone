@@ -52,9 +52,7 @@ public sealed class AdminControllerSecurityTests
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Scheme = "http";
         httpContext.Request.Host = new HostString(attackerHost);
-        
-        // For security tests of existing code paths, context is not used
-        // Using null is safe since these tests don't exercise the new volunteer management paths
+
         var controller = new AdminController(
             Mock.Of<IAdminDashboardService>(),
             Mock.Of<IForumService>(),
@@ -65,7 +63,6 @@ public sealed class AdminControllerSecurityTests
             Mock.Of<IRiskModelStatusProvider>(),
             Mock.Of<IStudentNumberVerificationService>(),
             Mock.Of<ICurrentUserService>(),
-            null!,  // ApplicationDbContext not used by counselor setup paths
             logger)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext },
