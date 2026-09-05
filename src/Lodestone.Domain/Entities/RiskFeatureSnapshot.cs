@@ -40,5 +40,13 @@ public class RiskFeatureSnapshot : AuditableEntity
     public float? CourseProgressRatio { get; set; }
     public float? CohortActivityPercentile { get; set; }
 
+    // withdrawal-28d-v3 adds five further behavioral values on the same principle: separate
+    // nullable columns, so a v3 import cannot be mistaken for the v2 contract.
+    public float? ActivityTrendAcceleration { get; set; }
+    public float? ClickVolatility { get; set; }
+    public float? ForumEngagementShare { get; set; }
+    public float? InactiveWeekRate { get; set; }
+    public float? AssessmentMissStreak { get; set; }
+
     public ICollection<RiskScore> RiskScores { get; set; } = new List<RiskScore>();
 }
