@@ -1,4 +1,6 @@
 using System.Globalization;
+using Lodestone.ML.Training;
+using Microsoft.ML;
 
 namespace Lodestone.MLTests;
 
@@ -27,7 +29,7 @@ internal sealed class OuladTestDataset : IDisposable
         {
             "code_module,code_presentation,id_student,date_registration,date_unregistration"
         };
-        var submissions = new List<string> { "id_assessment,id_student,date_submitted,is_banked" };
+        var submissions = new List<string> { "id_assessment,id_student,date_submitted,is_banked,score" };
         var activity = new List<string>
         {
             "code_module,code_presentation,id_student,id_site,date,sum_click"
@@ -41,7 +43,7 @@ internal sealed class OuladTestDataset : IDisposable
 
             if (separable && !positive)
             {
-                submissions.Add($"1,{student},18,0");
+                submissions.Add($"1,{student},18,0,80");
                 foreach (var day in new[] { 0, 7, 14, 21, 27, 34, 41 })
                 {
                     activity.Add($"AAA,2014J,{student},1,{day},2");
@@ -52,6 +54,50 @@ internal sealed class OuladTestDataset : IDisposable
 
         Write(fixture, "studentInfo.csv", string.Join('\n', studentInfo) + "\n");
         Write(fixture, "studentRegistration.csv", string.Join('\n', registrations) + "\n");
+        Write(fixture, "studentAssessment.csv", string.Join('\n', submissions) + "\n");
+        Write(fixture, "studentVle.csv", string.Join('\n', activity) + "\n");
+        return fixture;
+    }
+
+    /// <summary>
+    /// Creates a data-set whose training and validation partitions retain the ordinary,
+    /// separable behavioral signal while the deterministic locked-test students have the
+    /// opposite signal. This exercises the post-validation publication gate without weakening
+    /// any fixed metric threshold.
+    /// </summary>
+    public static OuladTestDataset CreateTrainingWithInvertedLockedTestSignals(
+        int positiveStudents = 30,
+        int negativeStudents = 30,
+        int seed = 42)
+    {
+        var fixture = CreateTraining(positiveStudents, negativeStudents, separable: true);
+        var loader = new OuladDataLoader(new MLContext(seed: seed));
+        var split = GroupDataSplitter.Split(loader.LoadObservations(fixture.DirectoryPath), seed);
+        var lockedTestStudents = split.TestStudents
+            .Select(student => int.Parse(student, CultureInfo.InvariantCulture))
+            .ToHashSet();
+
+        var submissions = new List<string> { "id_assessment,id_student,date_submitted,is_banked,score" };
+        var activity = new List<string>
+        {
+            "code_module,code_presentation,id_student,id_site,date,sum_click"
+        };
+        foreach (var student in Enumerable.Range(1, positiveStudents + negativeStudents))
+        {
+            var normallyHasHighEngagement = student > positiveStudents;
+            var hasHighEngagement = lockedTestStudents.Contains(student)
+                ? !normallyHasHighEngagement
+                : normallyHasHighEngagement;
+            if (!hasHighEngagement) continue;
+
+            submissions.Add($"1,{student},18,0,80");
+            foreach (var day in new[] { 0, 7, 14, 21, 27, 34, 41 })
+            {
+                activity.Add($"AAA,2014J,{student},1,{day},2");
+                activity.Add($"AAA,2014J,{student},2,{day},8");
+            }
+        }
+
         Write(fixture, "studentAssessment.csv", string.Join('\n', submissions) + "\n");
         Write(fixture, "studentVle.csv", string.Join('\n', activity) + "\n");
         return fixture;
@@ -75,9 +121,9 @@ internal sealed class OuladTestDataset : IDisposable
             "AAA,2014J,1,0,55\n" +
             "AAA,2014J,2,0,\n");
         Write(fixture, "studentAssessment.csv",
-            "id_assessment,id_student,date_submitted,is_banked\n" +
-            "1,1,25,0\n" +
-            "1,2,18,0\n");
+            "id_assessment,id_student,date_submitted,is_banked,score\n" +
+            "1,1,25,0,35\n" +
+            "1,2,18,0,80\n");
         Write(fixture, "studentVle.csv",
             "code_module,code_presentation,id_student,id_site,date,sum_click\n" +
             "AAA,2014J,1,1,0,3\n" +

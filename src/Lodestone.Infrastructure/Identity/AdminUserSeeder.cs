@@ -4,14 +4,17 @@ using Microsoft.AspNetCore.Identity;
 
 namespace Lodestone.Infrastructure.Identity;
 
+/// <summary>
+/// Creates the first administrator only when a deployment explicitly supplies its identity.
+/// Existing administrator accounts are never modified unless development reset is explicitly enabled.
+/// </summary>
 public static class AdminUserSeeder
 {
-    private const string AdminEmail = "rashid.cse.20230104102@aust.edu";
-
     public static async Task SeedAsync(
         UserManager<ApplicationUser> userManager,
         RoleManager<IdentityRole> roleManager,
-        string adminPassword,
+        string? adminEmail,
+        string? adminPassword,
         bool resetExistingPassword = false,
         CancellationToken cancellationToken = default)
     {
@@ -20,65 +23,99 @@ public static class AdminUserSeeder
             await roleManager.CreateAsync(new IdentityRole(RoleConstants.Admin));
         }
 
-        var admin = await userManager.FindByEmailAsync(AdminEmail);
+        var existingAdmins = await userManager.GetUsersInRoleAsync(RoleConstants.Admin);
+        if (resetExistingPassword)
+        {
+            var normalizedEmail = RequireEmail(adminEmail, "reset the configured Admin account");
+            var adminToReset = await userManager.FindByEmailAsync(normalizedEmail);
+            if (adminToReset is null || !await userManager.IsInRoleAsync(adminToReset, RoleConstants.Admin))
+            {
+                throw new InvalidOperationException(
+                    "SeedData:AdminEmail must identify an existing Administrator before its password can be reset.");
+            }
+
+            RequirePassword(adminPassword, "reset the existing Admin account");
+            await ResetPasswordAsync(userManager, adminToReset, adminPassword!);
+            return;
+        }
+
+        // A deployed database may already contain an administrator from an earlier
+        // configuration. Do not require or infer a personal bootstrap address then.
+        if (existingAdmins.Count > 0)
+        {
+            return;
+        }
+
+        var email = RequireEmail(adminEmail, "create the initial Admin account");
+        var admin = await userManager.FindByEmailAsync(email);
         if (admin is null)
         {
             RequirePassword(adminPassword, "create the initial Admin account");
             admin = new ApplicationUser
             {
-                UserName = AdminEmail,
-                Email = AdminEmail,
-                FullName = "System Admin",
+                UserName = email,
+                Email = email,
+                FullName = "Lodestone Administrator",
                 EmailConfirmed = true,
                 IsActive = true,
                 CreatedAtUtc = DateTime.UtcNow,
             };
 
-            var createResult = await userManager.CreateAsync(admin, adminPassword);
-            if (!createResult.Succeeded)
-            {
-                var errors = string.Join("; ", createResult.Errors.Select(error => error.Description));
-                throw new InvalidOperationException($"Unable to seed admin user: {errors}");
-            }
-        }
-        else if (resetExistingPassword)
-        {
-            RequirePassword(adminPassword, "reset the existing Admin account");
-            var resetToken = await userManager.GeneratePasswordResetTokenAsync(admin);
-            var resetResult = await userManager.ResetPasswordAsync(admin, resetToken, adminPassword);
-            if (!resetResult.Succeeded)
-            {
-                var errors = string.Join("; ", resetResult.Errors.Select(error => error.Description));
-                throw new InvalidOperationException($"Unable to reset admin user password: {errors}");
-            }
-
-            var unlockResult = await userManager.SetLockoutEndDateAsync(admin, null);
-            if (!unlockResult.Succeeded)
-            {
-                var errors = string.Join("; ", unlockResult.Errors.Select(error => error.Description));
-                throw new InvalidOperationException($"Unable to unlock admin user: {errors}");
-            }
-
-            var failedCountResult = await userManager.ResetAccessFailedCountAsync(admin);
-            if (!failedCountResult.Succeeded)
-            {
-                var errors = string.Join("; ", failedCountResult.Errors.Select(error => error.Description));
-                throw new InvalidOperationException($"Unable to clear admin login failures: {errors}");
-            }
+            var createResult = await userManager.CreateAsync(admin, adminPassword!);
+            EnsureSucceeded(createResult, "create the initial Admin account");
         }
 
         if (!await userManager.IsInRoleAsync(admin, RoleConstants.Admin))
         {
-            await userManager.AddToRoleAsync(admin, RoleConstants.Admin);
+            var addToRoleResult = await userManager.AddToRoleAsync(admin, RoleConstants.Admin);
+            EnsureSucceeded(addToRoleResult, "assign the Admin role");
         }
     }
 
-    private static void RequirePassword(string adminPassword, string operation)
+    private static async Task ResetPasswordAsync(
+        UserManager<ApplicationUser> userManager,
+        ApplicationUser admin,
+        string adminPassword)
+    {
+        var resetToken = await userManager.GeneratePasswordResetTokenAsync(admin);
+        var resetResult = await userManager.ResetPasswordAsync(admin, resetToken, adminPassword);
+        EnsureSucceeded(resetResult, "reset the existing Admin account password");
+
+        var unlockResult = await userManager.SetLockoutEndDateAsync(admin, null);
+        EnsureSucceeded(unlockResult, "unlock the existing Admin account");
+
+        var failedCountResult = await userManager.ResetAccessFailedCountAsync(admin);
+        EnsureSucceeded(failedCountResult, "clear the existing Admin account login failures");
+    }
+
+    private static string RequireEmail(string? adminEmail, string operation)
+    {
+        if (string.IsNullOrWhiteSpace(adminEmail))
+        {
+            throw new InvalidOperationException(
+                $"Admin seed email is required to {operation}. Set SeedData:AdminEmail or LODESTONE_ADMIN_EMAIL.");
+        }
+
+        return adminEmail.Trim();
+    }
+
+    private static void RequirePassword(string? adminPassword, string operation)
     {
         if (string.IsNullOrWhiteSpace(adminPassword))
         {
             throw new InvalidOperationException(
                 $"Admin seed password is required to {operation}. Set SeedData:AdminPassword or LODESTONE_ADMIN_PASSWORD.");
         }
+    }
+
+    private static void EnsureSucceeded(IdentityResult result, string operation)
+    {
+        if (result.Succeeded)
+        {
+            return;
+        }
+
+        var errors = string.Join("; ", result.Errors.Select(error => error.Description));
+        throw new InvalidOperationException($"Unable to {operation}: {errors}");
     }
 }

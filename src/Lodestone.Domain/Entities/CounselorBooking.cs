@@ -18,5 +18,11 @@ public class CounselorBooking : AuditableEntity
     public BookingStatus Status { get; set; } = BookingStatus.Requested;
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// When the upcoming-session reminder was sent, or null if it has not been. Recorded so a
+    /// repeated sweep cannot email the same student about the same session twice.
+    /// </summary>
+    public DateTime? ReminderSentAtUtc { get; set; }
+
     public CounselorSessionReport? SessionReport { get; set; }
 }

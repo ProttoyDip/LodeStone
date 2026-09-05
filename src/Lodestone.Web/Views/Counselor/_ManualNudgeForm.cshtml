@@ -1,0 +1,27 @@
+@using Lodestone.Application.DTOs.Booking
+@using Lodestone.Application.DTOs.Nudges
+@model CounselorAppointmentDto
+
+<details class="manual-nudge">
+    <summary>Send optional prompt</summary>
+    <div class="manual-nudge__content">
+        <p>Choose a neutral template only. This is independent of risk monitoring and does not create a crisis case or outside contact.</p>
+        <form asp-action="CreateManualNudge" method="post" data-manual-nudge-form>
+            <input type="hidden" name="bookingId" value="@Model.BookingId" />
+            <div class="manual-nudge__actions" aria-label="Approved optional support prompt templates">
+                <button class="booking-btn booking-btn--secondary"
+                        type="submit"
+                        name="template"
+                        value="@ManualNudgeTemplate.CheckIn">Send check-in</button>
+                <button class="booking-btn booking-btn--secondary"
+                        type="submit"
+                        name="template"
+                        value="@ManualNudgeTemplate.BookingFollowUp">Send booking follow-up</button>
+                <button class="booking-btn booking-btn--secondary"
+                        type="submit"
+                        name="template"
+                        value="@ManualNudgeTemplate.SupportResources">Send support resources</button>
+            </div>
+        </form>
+    </div>
+</details>

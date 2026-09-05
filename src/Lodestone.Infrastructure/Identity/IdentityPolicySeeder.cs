@@ -16,5 +16,11 @@ public static class IdentityPolicySeeder
             p.RequireRole(RoleConstants.Volunteer, RoleConstants.Counselor, RoleConstants.Admin));
         options.AddPolicy(PolicyConstants.CanAccessAdmin, p =>
             p.RequireRole(RoleConstants.Admin));
+        options.AddPolicy(PolicyConstants.CanManageVolunteers, p =>
+            p.RequireRole(RoleConstants.Admin));
+        options.AddPolicy(PolicyConstants.CanRequestPeerSupport, p =>
+            p.RequireRole(RoleConstants.Student));
+        options.AddPolicy(PolicyConstants.CanProvidePeerSupport, p =>
+            p.RequireRole(RoleConstants.Volunteer));
     }
 }

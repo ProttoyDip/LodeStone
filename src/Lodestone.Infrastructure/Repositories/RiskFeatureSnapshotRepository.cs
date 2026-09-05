@@ -37,6 +37,8 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
                             snapshot.StudentProfile != null &&
                             snapshot.StudentProfile.User != null &&
                             snapshot.StudentProfile.User.IsActive &&
+                            snapshot.StudentProfile.StudentNumber != null &&
+                            snapshot.StudentProfile.StudentNumber != "" &&
                             snapshot.StudentProfile.RiskMonitoringConsent != null &&
                             snapshot.StudentProfile.RiskMonitoringConsent.IsConsented,
                 cancellationToken);
@@ -60,6 +62,8 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
                 snapshot.StudentProfile != null &&
                 snapshot.StudentProfile.User != null &&
                 snapshot.StudentProfile.User.IsActive &&
+                snapshot.StudentProfile.StudentNumber != null &&
+                snapshot.StudentProfile.StudentNumber != "" &&
                 snapshot.StudentProfile.RiskMonitoringConsent != null &&
                 snapshot.StudentProfile.RiskMonitoringConsent.IsConsented &&
                 !snapshot.RiskScores.Any(score => score.ModelVersion == descriptor.ModelVersion));
@@ -202,24 +206,13 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
                 continue;
             }
 
-            toInsert.Add(new RiskFeatureSnapshot
-            {
-                StudentProfileId = resolvedRow.StudentProfileId,
-                CourseKey = row.CourseKey,
-                WindowEndUtc = row.WindowEndUtc,
-                ObservedDays = row.ObservedDays,
-                FeatureSchemaVersion = row.FeatureSchemaVersion,
-                SourceFileName = fileName,
-                SourceFileSha256 = fileSha256,
-                ActiveDayRate = row.ActiveDayRate,
-                ActivitySpanDays = row.ActivitySpanDays,
-                DaysSinceLastAccess = row.DaysSinceLastAccess,
-                ForumInteractionCount = row.ForumInteractionCount,
-                CourseInteractionCount = row.CourseInteractionCount,
-                LateOrMissingAssignmentCount = row.LateOrMissingAssignmentCount,
-                CreatedAtUtc = _timeProvider.GetUtcNow().UtcDateTime,
-                CreatedBy = actorUserId.Trim()
-            });
+            toInsert.Add(CreateSnapshot(
+                resolvedRow.StudentProfileId,
+                row,
+                fileName,
+                fileSha256,
+                _timeProvider.GetUtcNow().UtcDateTime,
+                actorUserId.Trim()));
         }
 
         // A conflicting duplicate invalidates the whole file. Unknown/inactive/unconsented
@@ -333,26 +326,52 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
             AddError(errors, row.SourceRowNumber, "WindowEndUtc is required.");
         else if (ToUtc(row.WindowEndUtc) > asOfUtc)
             AddError(errors, row.SourceRowNumber, "WindowEndUtc cannot be in the future.");
-        if (row.ObservedDays != RiskFeatureSchema.Withdrawal28DayObservedDays)
-            AddError(errors, row.SourceRowNumber, "ObservedDays must be 28.");
-        if (!string.Equals(row.FeatureSchemaVersion?.Trim(), RiskFeatureSchema.Withdrawal28DayV1, StringComparison.Ordinal))
-            AddError(errors, row.SourceRowNumber, $"FeatureSchemaVersion must be '{RiskFeatureSchema.Withdrawal28DayV1}'.");
-
-        var values = new[]
+        if (!RiskFeatureSchemas.TryGet(row.FeatureSchemaVersion?.Trim(), out var schema))
         {
-            row.ActiveDayRate,
-            row.ActivitySpanDays,
-            row.DaysSinceLastAccess,
-            row.ForumInteractionCount,
-            row.CourseInteractionCount,
-            row.LateOrMissingAssignmentCount
-        };
-        if (values.Any(value => !float.IsFinite(value) || value < 0))
-            AddError(errors, row.SourceRowNumber, "Feature values must be finite and non-negative.");
-        if (row.ActiveDayRate > 1)
-            AddError(errors, row.SourceRowNumber, "ActiveDayRate must be between zero and one.");
-        if (row.ActivitySpanDays > row.ObservedDays || row.DaysSinceLastAccess > row.ObservedDays)
-            AddError(errors, row.SourceRowNumber, "Day-based features cannot exceed ObservedDays.");
+            AddError(errors, row.SourceRowNumber, "FeatureSchemaVersion is not supported by the running application.");
+            return;
+        }
+        if (row.ObservedDays != schema.ObservedDays)
+            AddError(errors, row.SourceRowNumber, $"ObservedDays must be {schema.ObservedDays} for '{schema.Version}'.");
+
+        IReadOnlyList<float> values;
+        try
+        {
+            values = row.GetFeatureValues();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            AddError(errors, row.SourceRowNumber, exception.Message);
+            return;
+        }
+
+        if (values.Any(value => !float.IsFinite(value)))
+        {
+            AddError(errors, row.SourceRowNumber, "Feature values must be finite.");
+            return;
+        }
+
+        if (string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV1, StringComparison.Ordinal))
+        {
+            if (values.Any(value => value < 0))
+                AddError(errors, row.SourceRowNumber, "Feature values must be non-negative.");
+            if (row.ActiveDayRate > 1)
+                AddError(errors, row.SourceRowNumber, "ActiveDayRate must be between zero and one.");
+            if (row.ActivitySpanDays > row.ObservedDays || row.DaysSinceLastAccess > row.ObservedDays)
+                AddError(errors, row.SourceRowNumber, "Day-based features cannot exceed ObservedDays.");
+            return;
+        }
+
+        // V2 explicitly permits signed trend features at indices 2 and 5 only.
+        if (values.Where((_, index) => index is not 2 and not 5).Any(value => value < 0) ||
+            values.Where((_, index) => index is 2 or 5).Any(value => value is < -1 or > 1) ||
+            row.RecentActiveDayRate > 1 || row.PriorActiveDayRate > 1 ||
+            row.InactivityStreakDays > row.ObservedDays ||
+            row.AssessmentOnTimeRate > 1 || row.AssessmentLateOrMissingRate > 1 ||
+            row.CourseProgressRatio > 1 || row.CohortActivityPercentile > 1)
+        {
+            AddError(errors, row.SourceRowNumber, "V2 feature values are outside their valid range.");
+        }
     }
 
     private static RiskFeatureSnapshotImportDto Normalize(RiskFeatureSnapshotImportDto row)
@@ -368,21 +387,93 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
         RiskFeatureSnapshotImportDto left,
         RiskFeatureSnapshotImportDto right)
         => left.ObservedDays == right.ObservedDays &&
-           left.ActiveDayRate.Equals(right.ActiveDayRate) &&
-           left.ActivitySpanDays.Equals(right.ActivitySpanDays) &&
-           left.DaysSinceLastAccess.Equals(right.DaysSinceLastAccess) &&
-           left.ForumInteractionCount.Equals(right.ForumInteractionCount) &&
-           left.CourseInteractionCount.Equals(right.CourseInteractionCount) &&
-           left.LateOrMissingAssignmentCount.Equals(right.LateOrMissingAssignmentCount);
+           left.FeatureSchemaVersion.Equals(right.FeatureSchemaVersion, StringComparison.Ordinal) &&
+           left.GetFeatureValues().SequenceEqual(right.GetFeatureValues());
 
     private static bool SameFeatures(RiskFeatureSnapshot left, RiskFeatureSnapshotImportDto right)
         => left.ObservedDays == right.ObservedDays &&
-           left.ActiveDayRate.Equals(right.ActiveDayRate) &&
-           left.ActivitySpanDays.Equals(right.ActivitySpanDays) &&
-           left.DaysSinceLastAccess.Equals(right.DaysSinceLastAccess) &&
-           left.ForumInteractionCount.Equals(right.ForumInteractionCount) &&
-           left.CourseInteractionCount.Equals(right.CourseInteractionCount) &&
-           left.LateOrMissingAssignmentCount.Equals(right.LateOrMissingAssignmentCount);
+           left.FeatureSchemaVersion.Equals(right.FeatureSchemaVersion, StringComparison.Ordinal) &&
+           SnapshotFeatureValues(left).SequenceEqual(right.GetFeatureValues());
+
+    private static RiskFeatureSnapshot CreateSnapshot(
+        int studentProfileId,
+        RiskFeatureSnapshotImportDto row,
+        string fileName,
+        string fileSha256,
+        DateTime createdAtUtc,
+        string createdBy)
+    {
+        var snapshot = new RiskFeatureSnapshot
+        {
+            StudentProfileId = studentProfileId,
+            CourseKey = row.CourseKey,
+            WindowEndUtc = row.WindowEndUtc,
+            ObservedDays = row.ObservedDays,
+            FeatureSchemaVersion = row.FeatureSchemaVersion,
+            SourceFileName = fileName,
+            SourceFileSha256 = fileSha256,
+            // These v1 columns deliberately remain zero for v2. The schema/version is what
+            // selects features, and nullable v2 columns ensure the two contracts cannot blend.
+            ActiveDayRate = row.ActiveDayRate,
+            ActivitySpanDays = row.ActivitySpanDays,
+            DaysSinceLastAccess = row.DaysSinceLastAccess,
+            ForumInteractionCount = row.ForumInteractionCount,
+            CourseInteractionCount = row.CourseInteractionCount,
+            LateOrMissingAssignmentCount = row.LateOrMissingAssignmentCount,
+            CreatedAtUtc = createdAtUtc,
+            CreatedBy = createdBy
+        };
+        if (string.Equals(row.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal))
+        {
+            snapshot.RecentActiveDayRate = row.RecentActiveDayRate;
+            snapshot.PriorActiveDayRate = row.PriorActiveDayRate;
+            snapshot.ActiveDayRateTrend = row.ActiveDayRateTrend;
+            snapshot.RecentCourseClickRate = row.RecentCourseClickRate;
+            snapshot.PriorCourseClickRate = row.PriorCourseClickRate;
+            snapshot.CourseClickRateTrend = row.CourseClickRateTrend;
+            snapshot.InactivityStreakDays = row.InactivityStreakDays;
+            snapshot.AssessmentDueRate = row.AssessmentDueRate;
+            snapshot.AssessmentOnTimeRate = row.AssessmentOnTimeRate;
+            snapshot.AssessmentLateOrMissingRate = row.AssessmentLateOrMissingRate;
+            snapshot.CourseProgressRatio = row.CourseProgressRatio;
+            snapshot.CohortActivityPercentile = row.CohortActivityPercentile;
+        }
+
+        return snapshot;
+    }
+
+    private static IReadOnlyList<float> SnapshotFeatureValues(RiskFeatureSnapshot snapshot)
+        => snapshot.FeatureSchemaVersion switch
+        {
+            RiskFeatureSchema.Withdrawal28DayV1 =>
+            [
+                snapshot.ActiveDayRate,
+                snapshot.ActivitySpanDays,
+                snapshot.DaysSinceLastAccess,
+                snapshot.ForumInteractionCount,
+                snapshot.CourseInteractionCount,
+                snapshot.LateOrMissingAssignmentCount
+            ],
+            RiskFeatureSchema.Withdrawal28DayV2 =>
+            [
+                Required(snapshot.RecentActiveDayRate, nameof(snapshot.RecentActiveDayRate)),
+                Required(snapshot.PriorActiveDayRate, nameof(snapshot.PriorActiveDayRate)),
+                Required(snapshot.ActiveDayRateTrend, nameof(snapshot.ActiveDayRateTrend)),
+                Required(snapshot.RecentCourseClickRate, nameof(snapshot.RecentCourseClickRate)),
+                Required(snapshot.PriorCourseClickRate, nameof(snapshot.PriorCourseClickRate)),
+                Required(snapshot.CourseClickRateTrend, nameof(snapshot.CourseClickRateTrend)),
+                Required(snapshot.InactivityStreakDays, nameof(snapshot.InactivityStreakDays)),
+                Required(snapshot.AssessmentDueRate, nameof(snapshot.AssessmentDueRate)),
+                Required(snapshot.AssessmentOnTimeRate, nameof(snapshot.AssessmentOnTimeRate)),
+                Required(snapshot.AssessmentLateOrMissingRate, nameof(snapshot.AssessmentLateOrMissingRate)),
+                Required(snapshot.CourseProgressRatio, nameof(snapshot.CourseProgressRatio)),
+                Required(snapshot.CohortActivityPercentile, nameof(snapshot.CohortActivityPercentile))
+            ],
+            _ => throw new InvalidOperationException("The stored snapshot has an unsupported feature schema.")
+        };
+
+    private static float Required(float? value, string name)
+        => value ?? throw new InvalidOperationException($"The stored snapshot is missing '{name}'.");
 
     private static RiskSnapshotImportResultDto Failure(
         string fileName,

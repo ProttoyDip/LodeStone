@@ -1,0 +1,112 @@
+@model RequestSupportViewModel
+@{
+    ViewData["Title"] = "Request Peer Support";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="container my-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <a href="@Url.Action("Index")" class="btn btn-outline-secondary btn-sm mb-3">← Back to Dashboard</a>
+            <h1>Request Peer Support</h1>
+            <p class="text-muted">Connect with a volunteer who can provide peer guidance and support.</p>
+        </div>
+    </div>
+
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <strong>Please fix the following errors:</strong>
+            <ul class="mb-0">
+                @foreach (var modelState in ViewData.ModelState.Values)
+                {
+                    @foreach (var error in modelState.Errors)
+                    {
+                        <li>@error.ErrorMessage</li>
+                    }
+                }
+            </ul>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="row">
+        <div class="col-lg-8">
+            <form asp-action="RequestSupport" method="post" class="card">
+                @Html.AntiForgeryToken()
+                <div class="card-body">
+                    <div class="mb-4">
+                        <label for="Category" class="form-label">What do you need help with?</label>
+                        <select class="form-select" id="Category" asp-for="Category" required>
+                            <option value="">-- Select a category --</option>
+                            <option value="@SupportRequestCategory.AcademicGuidance">Academic Guidance</option>
+                            <option value="@SupportRequestCategory.CampusAdjustment">Campus Adjustment</option>
+                            <option value="@SupportRequestCategory.GeneralPeerDiscussion">Peer Discussion</option>
+                            <option value="@SupportRequestCategory.TechnicalHelpGuidance">Technical Help</option>
+                        </select>
+                        <span asp-validation-for="Category" class="text-danger small d-block mt-1"></span>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="Title" class="form-label">Subject</label>
+                        <input type="text" class="form-control" id="Title" asp-for="Title" placeholder="Brief description of what you need help with" required maxlength="200">
+                        <small class="form-text text-muted">5-200 characters</small>
+                        <span asp-validation-for="Title" class="text-danger small d-block mt-1"></span>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="Message" class="form-label">Details (optional)</label>
+                        <textarea class="form-control" id="Message" asp-for="Message" rows="6" placeholder="Share more details about what you need help with..." maxlength="2000"></textarea>
+                        <small class="form-text text-muted">0-2000 characters. The more details you provide, the better we can match you with the right volunteer.</small>
+                        <span asp-validation-for="Message" class="text-danger small d-block mt-1"></span>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-hand-thumbs-up"></i>
+                            Post Support Request
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">About Peer Support</h5>
+                </div>
+                <div class="card-body">
+                    <p>Peer support connects you with trained volunteers who:</p>
+                    <ul>
+                        <li>Listen without judgment</li>
+                        <li>Share their own experiences</li>
+                        <li>Provide practical guidance</li>
+                        <li>Can refer you to professional help if needed</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">What to Share</h5>
+                </div>
+                <div class="card-body small">
+                    <p><strong>Good examples:</strong></p>
+                    <ul class="mb-3">
+                        <li>"Need help choosing between majors"</li>
+                        <li>"Struggling to make friends on campus"</li>
+                        <li>"Not sure how to use the library system"</li>
+                        <li>"Feeling overwhelmed with coursework"</li>
+                    </ul>
+
+                    <p><strong>Remember:</strong> Volunteers are peers, not professionals. If you're in crisis or have serious concerns, please contact:</p>
+                    <p>
+                        <strong>Crisis Support:</strong> Call 988<br />
+                        <strong>Counseling Services:</strong> Visit the student center
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

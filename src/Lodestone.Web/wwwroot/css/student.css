@@ -564,6 +564,153 @@
 }
 
 /* ==========================================================================
+   Optional counselor prompts (separate from ML monitoring)
+   ========================================================================== */
+.student-nudges__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(15rem, .42fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.student-nudge-preference,
+.student-nudges__empty,
+.student-nudge,
+.student-nudges__boundary {
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--card);
+    box-shadow: var(--shadow-print);
+}
+
+.student-nudge-preference {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem 1.1rem;
+}
+
+.student-nudge-preference strong,
+.student-nudges__boundary strong {
+    color: var(--ink);
+    font-size: .96rem;
+}
+
+.student-nudge-preference p,
+.student-nudges__empty p,
+.student-nudges__boundary span {
+    margin: .35rem 0 0;
+    color: var(--ink-soft);
+    font-size: .88rem;
+    line-height: 1.55;
+}
+
+.student-nudge-switch {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: .55rem;
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.student-nudge-switch input[type="checkbox"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+}
+
+.student-nudge-switch__track {
+    position: relative;
+    width: 2.5rem;
+    height: 1.42rem;
+    flex: 0 0 2.5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 99px;
+    background: var(--paper-2);
+}
+
+.student-nudge-switch__track > span {
+    position: absolute;
+    top: .17rem;
+    left: .18rem;
+    width: .95rem;
+    height: .95rem;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: transform .16s ease, background .16s ease;
+}
+
+.student-nudge-switch input[type="checkbox"]:checked ~ .student-nudge-switch__track {
+    border-color: var(--forest);
+    background: var(--forest-wash);
+}
+
+.student-nudge-switch input[type="checkbox"]:checked ~ .student-nudge-switch__track > span {
+    transform: translateX(1.04rem);
+    background: var(--forest);
+}
+
+.student-nudge-switch input[type="checkbox"]:focus-visible ~ .student-nudge-switch__track {
+    outline: 3px solid var(--clay);
+    outline-offset: 3px;
+}
+
+.student-nudge-save,
+.student-nudge__actions button {
+    min-height: 42px;
+    padding: .55rem .78rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    background: var(--paper);
+    color: var(--ink);
+    font: 600 .78rem var(--font-body);
+    cursor: pointer;
+}
+
+.student-nudge-save { background: var(--forest); border-color: var(--forest); color: var(--paper); }
+.student-nudge-save:hover { background: #314a3b; }
+.student-nudge-save:focus-visible,
+.student-nudge__actions button:focus-visible { outline: 3px solid var(--clay); outline-offset: 3px; }
+.student-nudge-save:disabled,
+.student-nudge__actions button:disabled { cursor: wait; opacity: .66; }
+
+.student-nudges__empty { margin-top: .9rem; padding: 1.1rem; }
+.student-nudges__empty h3 { margin: 0; font: 400 1.25rem var(--font-display); }
+
+.student-nudge-list { display: grid; gap: .75rem; margin-top: .9rem; }
+.student-nudge { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: end; padding: 1rem 1.1rem; }
+.student-nudge__copy > p { margin: .68rem 0 .45rem; color: var(--ink-soft); line-height: 1.6; }
+.student-nudge__copy small { color: var(--muted); font-size: .76rem; }
+.student-nudge__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
+.student-nudge__actions button:last-child { border-color: rgba(188,81,56,.44); color: var(--clay-deep); }
+
+.student-nudges__alert {
+    margin-bottom: .9rem;
+    padding: .78rem .9rem;
+    border: 1px solid;
+    border-radius: var(--r-sm);
+    font-size: .86rem;
+    line-height: 1.5;
+}
+.student-nudges__alert--success { border-color: rgba(60,86,71,.38); background: var(--forest-wash); color: #294332; }
+.student-nudges__alert--error { border-color: rgba(188,81,56,.45); background: var(--clay-wash); color: #7e321f; }
+
+.student-nudges__boundary {
+    display: grid;
+    gap: .38rem;
+    padding: 1rem 1.1rem;
+    background: var(--paper-2);
+}
+
+/* ==========================================================================
    Privacy section (espresso dark band)
    ========================================================================== */
 .student-privacy {
@@ -923,7 +1070,8 @@
    ========================================================================== */
 @media (max-width: 980px) {
     .student-hero__grid,
-    .student-privacy__grid { grid-template-columns: 1fr; }
+    .student-privacy__grid,
+    .student-nudges__layout { grid-template-columns: 1fr; }
     .student-visual { max-width: 44rem; }
     .student-quick-actions,
     .student-bento,
@@ -944,6 +1092,11 @@
     .planner-panel article + article { border-left: 0; border-top: 1px solid var(--line); }
     .student-card__top { display: grid; }
     .privacy-monitoring { grid-template-columns: minmax(0, 1fr); }
+    .student-nudge-preference,
+    .student-nudge { grid-template-columns: minmax(0, 1fr); }
+    .student-nudge-switch { width: max-content; }
+    .student-nudge-save { width: 100%; }
+    .student-nudge__actions { justify-content: flex-start; }
     .privacy-identity__form > div { grid-template-columns: minmax(0, 1fr); }
     .privacy-identity__value { align-items: flex-start; flex-direction: column; }
     .privacy-save { width: 100%; }

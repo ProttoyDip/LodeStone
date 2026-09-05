@@ -13,6 +13,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<StudentNumberClaim> StudentNumberClaims => Set<StudentNumberClaim>();
     public DbSet<CounselorProfile> CounselorProfiles => Set<CounselorProfile>();
     public DbSet<VolunteerProfile> VolunteerProfiles => Set<VolunteerProfile>();
+    public DbSet<VolunteerAssignment> VolunteerAssignments => Set<VolunteerAssignment>();
+    public DbSet<SupportRequest> SupportRequests => Set<SupportRequest>();
+    public DbSet<SupportInteraction> SupportInteractions => Set<SupportInteraction>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<RiskScore> RiskScores => Set<RiskScore>();
     public DbSet<RiskQueueEntry> RiskQueueEntries => Set<RiskQueueEntry>();
@@ -21,6 +24,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<RiskMonitoringConsentHistory> RiskMonitoringConsentHistory => Set<RiskMonitoringConsentHistory>();
     public DbSet<RiskScoringRun> RiskScoringRuns => Set<RiskScoringRun>();
     public DbSet<Nudge> Nudges => Set<Nudge>();
+    public DbSet<StudentNudgePreference> StudentNudgePreferences => Set<StudentNudgePreference>();
     public DbSet<ForumCategory> ForumCategories => Set<ForumCategory>();
     public DbSet<ForumPost> ForumPosts => Set<ForumPost>();
     public DbSet<ForumComment> ForumComments => Set<ForumComment>();

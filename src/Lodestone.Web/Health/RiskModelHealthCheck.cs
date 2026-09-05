@@ -1,4 +1,4 @@
-using Lodestone.Application.Interfaces;
+using Lodestone.ML.Models;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Lodestone.Web.Health;
@@ -8,34 +8,31 @@ namespace Lodestone.Web.Health;
 /// The check deliberately depends only on the Application-owned predictor boundary.
 /// </summary>
 public sealed class RiskModelHealthCheck(
-    IConfiguration configuration,
-    IRiskModelPredictor predictor) : IHealthCheck
+    IRiskModelStatusProvider statusProvider) : IHealthCheck
 {
     public Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        if (!configuration.GetValue("MachineLearning:Enabled", false))
+        var status = statusProvider.Status;
+        if (!status.IsEnabled)
         {
             return Task.FromResult(HealthCheckResult.Healthy("Risk scoring is disabled."));
         }
 
-        try
+        if (status.IsAvailable)
         {
-            var descriptor = predictor.Descriptor;
             return Task.FromResult(HealthCheckResult.Healthy(
                 "The validated risk model is available.",
                 new Dictionary<string, object>
                 {
-                    ["modelVersion"] = descriptor.ModelVersion,
-                    ["featureSchemaVersion"] = descriptor.FeatureSchemaVersion
+                    ["modelVersion"] = status.ModelVersion ?? string.Empty,
+                    ["featureSchemaVersion"] = status.FeatureSchemaVersion ?? string.Empty,
+                    ["publicationId"] = status.PublicationId ?? string.Empty
                 }));
         }
-        catch (Exception exception)
-        {
-            return Task.FromResult(HealthCheckResult.Unhealthy(
-                "Risk scoring is enabled, but no validated model is available.",
-                exception));
-        }
+
+        return Task.FromResult(HealthCheckResult.Unhealthy(
+            "Risk scoring is enabled, but no validated model is available."));
     }
 }

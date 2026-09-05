@@ -34,6 +34,58 @@ public class BookingRepository : GenericRepository<CounselorBooking>, IBookingRe
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<CounselorBooking>> GetBookingsDueForReminderAsync(
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken cancellationToken = default)
+        => await Set
+            .Include(booking => booking.StudentProfile)
+                .ThenInclude(profile => profile!.User)
+            .Include(booking => booking.CounselorProfile)
+                .ThenInclude(profile => profile!.User)
+            .Where(booking => booking.Status == BookingStatus.Confirmed
+                              && booking.ReminderSentAtUtc == null
+                              && booking.ScheduledForUtc >= fromUtc
+                              && booking.ScheduledForUtc < toUtc)
+            .OrderBy(booking => booking.ScheduledForUtc)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+    public async Task<bool> TryMarkReminderSentAsync(
+        int bookingId,
+        DateTime sentAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        // Conditional update: whoever stamps the null wins, so two workers racing the same
+        // booking cannot both proceed to send.
+        var updated = await Set
+            .Where(booking => booking.Id == bookingId && booking.ReminderSentAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(booking => booking.ReminderSentAtUtc, sentAtUtc),
+                cancellationToken);
+
+        return updated == 1;
+    }
+
+    public async Task<IReadOnlyList<CounselorBooking>> GetCounselorWorkspaceAsync(
+        int counselorProfileId,
+        DateTime recentFromUtc,
+        CancellationToken cancellationToken = default)
+        => await Set
+            .Include(booking => booking.StudentProfile)
+                .ThenInclude(profile => profile!.User)
+            .Include(booking => booking.AvailabilitySlot)
+            .Include(booking => booking.SessionReport)
+            .Where(booking => booking.CounselorProfileId == counselorProfileId
+                              && (booking.Status == BookingStatus.Confirmed
+                                  || (booking.ScheduledForUtc >= recentFromUtc
+                                      && (booking.Status == BookingStatus.Completed
+                                          || booking.Status == BookingStatus.NoShow
+                                          || booking.Status == BookingStatus.Cancelled))))
+            .OrderBy(booking => booking.ScheduledForUtc)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<CounselorAvailabilitySlot>> GetAvailableSlotsAsync(
         int? counselorProfileId, CancellationToken cancellationToken = default)
         => await Context.CounselorAvailabilitySlots
@@ -174,5 +226,53 @@ public class BookingRepository : GenericRepository<CounselorBooking>, IBookingRe
         Context.CounselorAvailabilitySlots.Remove(slot);
         await Context.SaveChangesAsync(cancellationToken);
         return AvailabilityRemovalResult.Removed;
+    }
+
+    public async Task<CounselorBookingUpdateResult> RecordCounselorOutcomeAsync(
+        int counselorProfileId,
+        string counselorUserId,
+        int bookingId,
+        BookingStatus outcome,
+        string? sessionNotes,
+        DateTime nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var booking = await Set
+            .Include(item => item.SessionReport)
+            .SingleOrDefaultAsync(
+                item => item.Id == bookingId && item.CounselorProfileId == counselorProfileId,
+                cancellationToken);
+
+        if (booking is null) return CounselorBookingUpdateResult.NotFound;
+        if (booking.Status != BookingStatus.Confirmed || booking.ScheduledForUtc > nowUtc)
+            return CounselorBookingUpdateResult.NotEligible;
+
+        booking.Status = outcome;
+        booking.ModifiedAtUtc = nowUtc;
+        booking.ModifiedBy = counselorUserId;
+
+        if (!string.IsNullOrWhiteSpace(sessionNotes))
+        {
+            if (booking.SessionReport is null)
+            {
+                booking.SessionReport = new CounselorSessionReport
+                {
+                    CounselorBookingId = booking.Id,
+                    Summary = sessionNotes,
+                    Status = ReportStatus.Submitted,
+                    CreatedAtUtc = nowUtc,
+                    CreatedBy = counselorUserId
+                };
+            }
+            else
+            {
+                booking.SessionReport.Summary = sessionNotes;
+                booking.SessionReport.Status = ReportStatus.Submitted;
+                booking.SessionReport.ModifiedAtUtc = nowUtc;
+                booking.SessionReport.ModifiedBy = counselorUserId;
+            }
+        }
+
+        return CounselorBookingUpdateResult.Updated;
     }
 }

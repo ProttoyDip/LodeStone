@@ -14,8 +14,8 @@ public sealed class ModelEvaluator
     public float SelectThreshold(
         ITransformer model,
         IDataView validationData,
-        double minimumRecall = 0.70,
-        double minimumPrecision = 0.30)
+        double minimumRecall = ModelQualityGates.MinimumRecall,
+        double minimumPrecision = ModelQualityGates.MinimumPrecision)
     {
         var rows = Score(model, validationData);
         ValidateBothClasses(rows, "validation");
@@ -73,9 +73,18 @@ public sealed class ModelEvaluator
         {
             Accuracy = thresholdMetrics.Accuracy,
             AreaUnderRocCurve = builtIn.AreaUnderRocCurve,
+            AreaUnderPrecisionRecallCurve = builtIn.AreaUnderPrecisionRecallCurve,
             F1Score = thresholdMetrics.F1,
             Precision = thresholdMetrics.Precision,
             Recall = thresholdMetrics.Recall,
+            BrierScore = rows.Average(row =>
+            {
+                var label = row.Label ? 1d : 0d;
+                return Math.Pow(row.Probability - label, 2);
+            }),
+            FalseAlertsPer100StudentWeeks = rows.Length == 0
+                ? 0d
+                : thresholdMetrics.FalsePositive * 100d / rows.Length,
             DecisionThreshold = threshold,
             RowCount = rows.Length,
             PositiveCount = rows.Count(row => row.Label),
@@ -93,6 +102,115 @@ public sealed class ModelEvaluator
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(data);
         return _mlContext.Data.CreateEnumerable<ScoredObservation>(model.Transform(data), reuseRowObject: false).ToArray();
+    }
+
+    public IReadOnlyList<ThresholdCurvePoint> BuildThresholdCurve(
+        ITransformer model,
+        IDataView data,
+        int maximumPoints = 101)
+    {
+        if (maximumPoints < 2) throw new ArgumentOutOfRangeException(nameof(maximumPoints));
+        var rows = Score(model, data);
+        ValidateBothClasses(rows, "threshold curve");
+        var thresholds = rows.Select(row => row.Probability)
+            .Append(0f)
+            .Append(1f)
+            .Distinct()
+            .OrderBy(value => value)
+            .ToArray();
+        if (thresholds.Length > maximumPoints)
+        {
+            thresholds = Enumerable.Range(0, maximumPoints)
+                .Select(index => thresholds[(int)Math.Round(index * (thresholds.Length - 1d) / (maximumPoints - 1d))])
+                .Distinct()
+                .ToArray();
+        }
+
+        return thresholds.Select(threshold =>
+        {
+            var values = Calculate(rows, threshold);
+            return new ThresholdCurvePoint
+            {
+                Threshold = threshold,
+                Precision = values.Precision,
+                Recall = values.Recall,
+                F1Score = values.F1,
+                TruePositive = values.TruePositive,
+                FalsePositive = values.FalsePositive,
+                TrueNegative = values.TrueNegative,
+                FalseNegative = values.FalseNegative
+            };
+        }).ToArray();
+    }
+
+    /// <summary>
+    /// Finds the exact highest-precision operating point for every requested recall floor. Unlike
+    /// the display curve, this sweeps every distinct model score in O(n log n) time and therefore
+    /// cannot skip a narrow gate-satisfying threshold during downsampling.
+    /// </summary>
+    public IReadOnlyList<ThresholdCurvePoint?> FindBestPrecisionAtOrAboveRecall(
+        ITransformer model,
+        IDataView data,
+        IReadOnlyList<double> recallFloors)
+    {
+        ArgumentNullException.ThrowIfNull(recallFloors);
+        if (recallFloors.Count == 0)
+            return [];
+        if (recallFloors.Any(floor => !double.IsFinite(floor) || floor is < 0 or > 1))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(recallFloors),
+                "Recall floors must be between zero and one.");
+        }
+
+        var rows = Score(model, data);
+        ValidateBothClasses(rows, "threshold frontier");
+        var sorted = rows
+            .OrderByDescending(row => row.Probability)
+            .ToArray();
+        var totalPositive = sorted.Count(row => row.Label);
+        var totalNegative = sorted.Length - totalPositive;
+        var best = new ThresholdCurvePoint?[recallFloors.Count];
+        var truePositive = 0;
+        var falsePositive = 0;
+
+        var index = 0;
+        while (index < sorted.Length)
+        {
+            var threshold = sorted[index].Probability;
+            do
+            {
+                if (sorted[index].Label) truePositive++;
+                else falsePositive++;
+                index++;
+            } while (index < sorted.Length && sorted[index].Probability.Equals(threshold));
+
+            var falseNegative = totalPositive - truePositive;
+            var trueNegative = totalNegative - falsePositive;
+            var precision = truePositive / (double)(truePositive + falsePositive);
+            var recall = truePositive / (double)totalPositive;
+            var point = new ThresholdCurvePoint
+            {
+                Threshold = threshold,
+                Precision = precision,
+                Recall = recall,
+                F1Score = precision + recall == 0 ? 0 : 2 * precision * recall / (precision + recall),
+                TruePositive = truePositive,
+                FalsePositive = falsePositive,
+                TrueNegative = trueNegative,
+                FalseNegative = falseNegative
+            };
+
+            for (var floorIndex = 0; floorIndex < recallFloors.Count; floorIndex++)
+            {
+                if (recall + 1e-12 < recallFloors[floorIndex])
+                    continue;
+                if (best[floorIndex] is null || IsBetterPrecisionPoint(point, best[floorIndex]!))
+                    best[floorIndex] = point;
+            }
+        }
+
+        return best;
     }
 
     private static ThresholdMetrics Calculate(IReadOnlyList<ScoredObservation> rows, float threshold)
@@ -126,6 +244,14 @@ public sealed class ModelEvaluator
         if (rows.Any(row => !float.IsFinite(row.Probability) || row.Probability is < 0 or > 1))
             throw new InvalidDataException($"The model produced an invalid probability in the {partition} partition.");
     }
+
+    private static bool IsBetterPrecisionPoint(ThresholdCurvePoint candidate, ThresholdCurvePoint current)
+        => candidate.Precision > current.Precision + 1e-12
+           || (NearlyEqual(candidate.Precision, current.Precision)
+               && candidate.Recall > current.Recall + 1e-12)
+           || (NearlyEqual(candidate.Precision, current.Precision)
+               && NearlyEqual(candidate.Recall, current.Recall)
+               && candidate.Threshold > current.Threshold);
 
     private static bool NearlyEqual(double left, double right) => Math.Abs(left - right) <= 1e-12;
 

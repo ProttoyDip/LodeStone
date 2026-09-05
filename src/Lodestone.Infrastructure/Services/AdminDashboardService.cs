@@ -1754,6 +1754,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
             NotificationType.BookingReminder => "Booking reminder",
             NotificationType.ForumReply => "Forum reply",
             NotificationType.CrisisEscalation => "Crisis escalation",
+            NotificationType.PeerSupportEscalation => "Peer-support escalation",
             NotificationType.System => "System",
             _ => type.ToString()
         };

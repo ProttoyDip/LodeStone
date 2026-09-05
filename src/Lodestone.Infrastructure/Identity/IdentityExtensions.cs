@@ -14,6 +14,10 @@ public static class IdentityExtensions
             {
                 options.Password.RequiredLength = 8;
                 options.SignIn.RequireConfirmedAccount = false;
+                options.User.RequireUniqueEmail = true;
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             })
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();

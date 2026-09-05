@@ -52,15 +52,22 @@
         <a class="ls-admin-icon-button"
            asp-controller="Admin"
            asp-action="Notifications"
+           data-admin-notifications
+           data-notification-count-url="@Url.Action("NotificationCount", "Admin")"
            aria-label="Notifications, @unreadNotifications unread">
             <i class="bi bi-bell" aria-hidden="true"></i>
             @if (unreadNotifications > 0)
             {
-                <span class="ls-admin-icon-button__badge" aria-hidden="true">
+                <span class="ls-admin-icon-button__badge" aria-hidden="true" data-notification-badge>
                     @(unreadNotifications > 99 ? "99+" : unreadNotifications.ToString(CultureInfo.InvariantCulture))
                 </span>
             }
         </a>
+
+        <span class="ls-admin-visually-hidden"
+              role="status"
+              aria-live="polite"
+              data-admin-notifications-live></span>
 
         <details class="ls-admin-account">
             <summary class="ls-admin-account__summary" aria-label="Open account menu for @adminName">

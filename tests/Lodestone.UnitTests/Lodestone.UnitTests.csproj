@@ -19,7 +19,9 @@
     <ProjectReference Include="..\..\src\Lodestone.Application\Lodestone.Application.csproj" />
     <ProjectReference Include="..\..\src\Lodestone.Domain\Lodestone.Domain.csproj" />
     <ProjectReference Include="..\..\src\Lodestone.Infrastructure\Lodestone.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Lodestone.Jobs\Lodestone.Jobs.csproj" />
     <ProjectReference Include="..\..\src\Lodestone.Shared\Lodestone.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Lodestone.Web\Lodestone.Web.csproj" />
   </ItemGroup>
 
 </Project>

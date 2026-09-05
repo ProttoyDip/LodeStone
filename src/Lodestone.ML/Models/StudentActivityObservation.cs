@@ -18,4 +18,15 @@ public sealed class StudentActivityObservation : StudentActivityFeatures
 
     [NoColumn]
     public int ObservationDay { get; set; }
+
+    /// <summary>Training-only course/presentation key used for leakage-safe cohort calibration.</summary>
+    [NoColumn]
+    public string CoursePresentationKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Training-only day on which withdrawal occurred, if the label is positive. It is never used
+    /// as a model feature and exists solely to report lead-time statistics after evaluation.
+    /// </summary>
+    [NoColumn]
+    public int? WithdrawalDay { get; set; }
 }

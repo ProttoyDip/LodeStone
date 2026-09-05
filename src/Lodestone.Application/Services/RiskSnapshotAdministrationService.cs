@@ -12,19 +12,13 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
     private const int MaximumErrorCount = 200;
     private const int MaximumFileBytes = 25 * 1024 * 1024;
 
-    private static readonly string[] RequiredHeaders =
+    private static readonly string[] BaseHeaders =
     {
         "StudentNumber",
         "CourseKey",
         "WindowEndUtc",
         "ObservedDays",
-        "FeatureSchemaVersion",
-        "ActiveDayRate",
-        "ActivitySpanDays",
-        "DaysSinceLastAccess",
-        "ForumInteractionCount",
-        "CourseInteractionCount",
-        "LateOrMissingAssignmentCount"
+        "FeatureSchemaVersion"
     };
 
     private readonly IRiskFeatureSnapshotRepository _snapshots;
@@ -103,10 +97,10 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
         if (headerLine is null)
             throw new InvalidDataException("The snapshot CSV is empty.");
 
-        Dictionary<string, int> indexes;
+        SnapshotImportLayout layout;
         try
         {
-            indexes = BuildHeaderIndexes(ParseCsvLine(headerLine));
+            layout = BuildHeaderIndexes(ParseCsvLine(headerLine));
         }
         catch (InvalidDataException exception)
         {
@@ -134,7 +128,7 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
             try
             {
                 var fields = ParseCsvLine(line);
-                rows.Add(ParseRow(fields, indexes, rowNumber));
+                rows.Add(ParseRow(fields, layout, rowNumber));
             }
             catch (Exception exception) when (
                 exception is FormatException or InvalidDataException or ArgumentOutOfRangeException)
@@ -168,27 +162,54 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
         CancellationToken cancellationToken = default)
         => _scoringService.RunPendingSnapshotsAsync(RequiredActor(actorUserId), cancellationToken);
 
-    private static Dictionary<string, int> BuildHeaderIndexes(IReadOnlyList<string> headers)
+    private static SnapshotImportLayout BuildHeaderIndexes(IReadOnlyList<string> headers)
     {
-        var indexes = headers
+        var normalizedHeaders = headers
             .Select((header, index) => new { Header = header.Trim().TrimStart('\uFEFF'), Index = index })
+            .ToArray();
+        var duplicates = normalizedHeaders
             .GroupBy(item => item.Header, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First().Index, StringComparer.OrdinalIgnoreCase);
+            .Where(group => group.Count() > 1)
+            .Select(group => group.First().Header)
+            .OrderBy(header => header, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (duplicates.Length > 0)
+        {
+            throw new InvalidDataException(
+                $"The snapshot CSV contains duplicate column names: {string.Join(", ", duplicates)}.");
+        }
 
-        var missing = RequiredHeaders.Where(header => !indexes.ContainsKey(header)).ToArray();
+        var indexes = normalizedHeaders
+            .ToDictionary(item => item.Header, item => item.Index, StringComparer.OrdinalIgnoreCase);
+
+        var missing = BaseHeaders.Where(header => !indexes.ContainsKey(header)).ToArray();
         if (missing.Length > 0)
             throw new InvalidDataException($"The snapshot CSV is missing required columns: {string.Join(", ", missing)}.");
-        return indexes;
+
+        var matches = new[]
+            {
+                RiskFeatureSchemas.Withdrawal28DayV1,
+                RiskFeatureSchemas.Withdrawal28DayV2
+            }
+            .Where(schema => schema.FeatureNames.All(indexes.ContainsKey))
+            .ToArray();
+        if (matches.Length != 1)
+        {
+            throw new InvalidDataException(
+                "The snapshot CSV must contain exactly one registered feature-schema column set.");
+        }
+
+        return new SnapshotImportLayout(matches[0], indexes);
     }
 
     private static RiskFeatureSnapshotImportDto ParseRow(
         IReadOnlyList<string> fields,
-        IReadOnlyDictionary<string, int> indexes,
+        SnapshotImportLayout layout,
         int rowNumber)
     {
         string Value(string name)
         {
-            var index = indexes[name];
+            var index = layout.Indexes[name];
             if (index >= fields.Count)
                 throw new InvalidDataException($"Column {name} is missing a value.");
             return fields[index].Trim();
@@ -217,19 +238,36 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
             return value;
         }
 
+        var rowSchemaVersion = Value("FeatureSchemaVersion");
+        if (!string.Equals(rowSchemaVersion, layout.Schema.Version, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"FeatureSchemaVersion must be '{layout.Schema.Version}' for this CSV header.");
+        }
+
+        var values = layout.Schema.FeatureNames.Select(FloatValue).ToArray();
+        if (string.Equals(layout.Schema.Version, RiskFeatureSchema.Withdrawal28DayV1, StringComparison.Ordinal))
+        {
+            return new RiskFeatureSnapshotImportDto(
+                studentNumber,
+                courseKey,
+                windowEnd.UtcDateTime,
+                observedDays,
+                rowSchemaVersion,
+                values[0], values[1], values[2], values[3], values[4], values[5],
+                rowNumber);
+        }
+
         return new RiskFeatureSnapshotImportDto(
             studentNumber,
             courseKey,
             windowEnd.UtcDateTime,
             observedDays,
-            Value("FeatureSchemaVersion"),
-            FloatValue("ActiveDayRate"),
-            FloatValue("ActivitySpanDays"),
-            FloatValue("DaysSinceLastAccess"),
-            FloatValue("ForumInteractionCount"),
-            FloatValue("CourseInteractionCount"),
-            FloatValue("LateOrMissingAssignmentCount"),
-            rowNumber);
+            rowSchemaVersion,
+            0, 0, 0, 0, 0, 0,
+            rowNumber,
+            values[0], values[1], values[2], values[3], values[4], values[5],
+            values[6], values[7], values[8], values[9], values[10], values[11]);
     }
 
     private static IReadOnlyList<string> ParseCsvLine(string line)
@@ -282,4 +320,8 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
         => string.IsNullOrWhiteSpace(actorUserId)
             ? throw new ArgumentException("An actor user identifier is required.", nameof(actorUserId))
             : actorUserId.Trim();
+
+    private sealed record SnapshotImportLayout(
+        RiskFeatureSchemaDefinition Schema,
+        IReadOnlyDictionary<string, int> Indexes);
 }

@@ -474,3 +474,53 @@
 @media (prefers-reduced-motion: reduce) {
     .risk-ops * { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* Risk summary report download */
+.risk-report-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px;
+}
+
+.risk-report-form__range {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    flex: 1 1 260px;
+}
+
+.risk-report-form__range label {
+    display: block;
+    font-size: .78rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--admin-muted);
+    margin-bottom: 4px;
+}
+
+.risk-report-form__range input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--admin-line);
+    border-radius: 6px;
+    background: var(--admin-surface);
+    color: inherit;
+    font: inherit;
+}
+
+.risk-report-form__range input:focus-visible {
+    outline: 2px solid var(--admin-info);
+    outline-offset: 1px;
+}
+
+.risk-report-note {
+    margin: 12px 0 0;
+    font-size: .82rem;
+    color: var(--admin-muted);
+}
+
+@media (max-width: 520px) {
+    .risk-report-form__range { grid-template-columns: minmax(0, 1fr); }
+    .risk-report-form .ls-admin-btn { width: 100%; }
+}

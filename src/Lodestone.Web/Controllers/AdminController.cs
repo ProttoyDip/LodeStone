@@ -2,12 +2,15 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Globalization;
 using Lodestone.Application.DTOs.Admin;
+using Lodestone.Application.DTOs.Risk;
 using Lodestone.Application.DTOs.Student;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
 using Lodestone.Infrastructure.Email;
 using Lodestone.ML.Models;
 using Lodestone.Web.ViewModels.Admin;
+using Lodestone.Web.ViewModels.Risk;
+using Lodestone.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
@@ -21,6 +24,7 @@ public class AdminController : Controller
     private readonly IForumService _forumService;
     private readonly ICounselorProvisioningService _counselorProvisioningService;
     private readonly IEmailService _emailService;
+    private readonly IPublicAccountLinkBuilder _publicAccountLinkBuilder;
     private readonly IRiskSnapshotAdministrationService _riskSnapshotAdministrationService;
     private readonly IRiskModelStatusProvider _riskModelStatusProvider;
     private readonly IStudentNumberVerificationService _studentNumberVerificationService;
@@ -32,6 +36,7 @@ public class AdminController : Controller
         IForumService forumService,
         ICounselorProvisioningService counselorProvisioningService,
         IEmailService emailService,
+        IPublicAccountLinkBuilder publicAccountLinkBuilder,
         IRiskSnapshotAdministrationService riskSnapshotAdministrationService,
         IRiskModelStatusProvider riskModelStatusProvider,
         IStudentNumberVerificationService studentNumberVerificationService,
@@ -42,6 +47,7 @@ public class AdminController : Controller
         _forumService = forumService;
         _counselorProvisioningService = counselorProvisioningService;
         _emailService = emailService;
+        _publicAccountLinkBuilder = publicAccountLinkBuilder;
         _riskSnapshotAdministrationService = riskSnapshotAdministrationService;
         _riskModelStatusProvider = riskModelStatusProvider;
         _studentNumberVerificationService = studentNumberVerificationService;
@@ -53,11 +59,12 @@ public class AdminController : Controller
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
         var dashboard = await _adminDashboardService.GetDashboardAsync(cancellationToken);
+        var riskRuntime = await GetRiskRuntimeStatusAsync(cancellationToken);
         ViewData["AdminShell"] = dashboard.Shell;
         ViewData["AdminActiveSection"] = AdminSectionType.Dashboard.ToString();
         ViewData["Title"] = "Support operations";
 
-        return View(new AdminDashboardViewModel(dashboard));
+        return View(new AdminDashboardViewModel(dashboard) { RiskRuntime = riskRuntime });
     }
 
     [HttpGet]
@@ -256,22 +263,29 @@ public class AdminController : Controller
     }
 
     [HttpGet]
-    public IActionResult DownloadRiskSnapshotTemplate()
+    public IActionResult DownloadRiskSnapshotTemplate(string? featureSchemaVersion)
     {
-        const string header =
-            "StudentNumber,CourseKey,WindowEndUtc,ObservedDays,FeatureSchemaVersion," +
-            "ActiveDayRate,ActivitySpanDays,DaysSinceLastAccess,ForumInteractionCount," +
-            "CourseInteractionCount,LateOrMissingAssignmentCount\r\n";
+        var requestedSchema = string.IsNullOrWhiteSpace(featureSchemaVersion)
+            ? _riskModelStatusProvider.Status.FeatureSchemaVersion ?? RiskFeatureSchema.Withdrawal28DayV1
+            : featureSchemaVersion;
+        if (!RiskFeatureSchemas.TryGet(requestedSchema, out var schema))
+            return BadRequest("The requested snapshot template schema is not supported.");
+
+        var header = string.Join(",", new[]
+        {
+            "StudentNumber", "CourseKey", "WindowEndUtc", "ObservedDays", "FeatureSchemaVersion"
+        }.Concat(schema.FeatureNames)) + "\r\n";
         var currentWindowEnd = DateTime.UtcNow.Date.ToString(
             "yyyy-MM-dd'T'HH:mm:ss'Z'",
             CultureInfo.InvariantCulture);
-        var example =
-            $"STU-0001,COURSE-01,{currentWindowEnd},28,withdrawal-28d-v1," +
-            "0.5,26,2,8,120,1\r\n";
+        var exampleValues = string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
+            ? "0.43,0.57,-0.14,4.2,8.6,-4.4,7,0.07,0.5,0.5,0.42,0.18"
+            : "0.5,26,2,8,120,1";
+        var example = $"STU-0001,COURSE-01,{currentWindowEnd},{schema.ObservedDays},{schema.Version},{exampleValues}\r\n";
         return File(
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetBytes(header + example),
             "text/csv; charset=utf-8",
-            "risk-snapshot-template.csv");
+            $"risk-snapshot-{schema.Version}-template.csv");
     }
 
     [HttpGet]
@@ -346,10 +360,6 @@ public class AdminController : Controller
     }
 
     [HttpGet]
-    public Task<IActionResult> Volunteers(string? q, int page, CancellationToken cancellationToken)
-        => RenderSectionAsync(AdminSectionType.Volunteers, q, page, cancellationToken);
-
-    [HttpGet]
     public Task<IActionResult> Users(string? q, int page, CancellationToken cancellationToken)
         => RenderSectionAsync(AdminSectionType.Users, q, page, cancellationToken);
 
@@ -405,6 +415,19 @@ public class AdminController : Controller
         return RedirectToAction(nameof(Notifications), new { q });
     }
 
+    /// <summary>
+    /// Unread count for the signed-in administrator. Polled by the top-nav badge after a SignalR
+    /// signal; the hub itself carries no notification content, so the count is read here under the
+    /// controller's existing admin authorization.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> NotificationCount(CancellationToken cancellationToken)
+    {
+        var shell = await _adminDashboardService.GetShellAsync(cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        return Json(new { unread = shell.UnreadNotifications });
+    }
+
     private async Task<IActionResult> RenderSectionAsync(
         AdminSectionType section,
         string? query,
@@ -418,6 +441,30 @@ public class AdminController : Controller
 
         var sectionPage = await _adminDashboardService.GetSectionAsync(section, query, page, cancellationToken);
         return View("Section", new AdminSectionViewModel(sectionPage));
+    }
+
+    private async Task<RiskRuntimeStatusViewModel> GetRiskRuntimeStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        var modelStatus = _riskModelStatusProvider.Status;
+        try
+        {
+            var snapshotStatus = await _riskSnapshotAdministrationService.GetStatusAsync(cancellationToken);
+            return new RiskRuntimeStatusViewModel
+            {
+                ModelStatus = modelStatus,
+                SnapshotStatus = snapshotStatus
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not load risk runtime status for the admin dashboard.");
+            return new RiskRuntimeStatusViewModel
+            {
+                ModelStatus = modelStatus,
+                StatusError = "Model availability is shown, but the latest scoring status could not be loaded."
+            };
+        }
     }
 
     private async Task<IActionResult> RenderRiskOperationsAsync(
@@ -526,7 +573,7 @@ public class AdminController : Controller
     {
         if (string.IsNullOrWhiteSpace(result.Email) || string.IsNullOrWhiteSpace(result.PasswordSetupToken)) return false;
         var token = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(result.PasswordSetupToken));
-        var resetUrl = Url.Action("ResetPassword", "Account", new { email = result.Email, token }, Request.Scheme)!;
+        var resetUrl = _publicAccountLinkBuilder.BuildPasswordResetUrl(result.Email, token);
         var safeUrl = HtmlEncoder.Default.Encode(resetUrl);
         var body = EmailTemplate.Wrap(
             EmailTemplate.Heading("Set up your counselor account")
@@ -539,9 +586,9 @@ public class AdminController : Controller
             await _emailService.SendAsync(result.Email, "Set up your Lodestone counselor account", body, cancellationToken);
             return true;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Failed to send counselor setup email to {Email}.", result.Email);
+            _logger.LogWarning("Failed to send a counselor account setup email.");
             return false;
         }
     }

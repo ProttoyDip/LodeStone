@@ -17,7 +17,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.0")
+                .HasAnnotation("ProductVersion", "8.0.30")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -244,6 +244,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ReminderSentAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime>("ScheduledForUtc")
                         .HasColumnType("datetime2");
@@ -617,6 +620,11 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<string>("Note")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("NoteProtectionVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<int>("StudentProfileId")
                         .HasColumnType("int");
 
@@ -629,7 +637,10 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .HasDatabaseName("UX_MoodJournalEntries_StudentProfileId_EntryDayUtc_Active")
                         .HasFilter("[IsDeleted] = 0");
 
-                    b.ToTable("MoodJournalEntries");
+                    b.ToTable("MoodJournalEntries", t =>
+                        {
+                            t.HasCheckConstraint("CK_MoodJournalEntries_NoteProtectionVersion", "[NoteProtectionVersion] IN (0, 1)");
+                        });
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.Notification", b =>
@@ -674,11 +685,26 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("AcknowledgedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("AvailableAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("CreatedBy")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("DismissedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsManualCounselorNudge")
+                        .HasColumnType("bit");
 
                     b.Property<string>("Message")
                         .IsRequired()
@@ -693,6 +719,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("SentAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("SnoozedUntilUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -701,9 +730,12 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("StudentProfileId");
+                    b.HasIndex("StudentProfileId", "Status", "AvailableAtUtc");
 
-                    b.ToTable("Nudges");
+                    b.ToTable("Nudges", t =>
+                        {
+                            t.HasCheckConstraint("CK_Nudges_VisibilityWindow", "[ExpiresAtUtc] > [AvailableAtUtc]");
+                        });
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.RiskFeatureSnapshot", b =>
@@ -717,7 +749,25 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<float>("ActiveDayRate")
                         .HasColumnType("real");
 
+                    b.Property<float?>("ActiveDayRateTrend")
+                        .HasColumnType("real");
+
                     b.Property<float>("ActivitySpanDays")
+                        .HasColumnType("real");
+
+                    b.Property<float?>("AssessmentDueRate")
+                        .HasColumnType("real");
+
+                    b.Property<float?>("AssessmentLateOrMissingRate")
+                        .HasColumnType("real");
+
+                    b.Property<float?>("AssessmentOnTimeRate")
+                        .HasColumnType("real");
+
+                    b.Property<float?>("CohortActivityPercentile")
+                        .HasColumnType("real");
+
+                    b.Property<float?>("CourseClickRateTrend")
                         .HasColumnType("real");
 
                     b.Property<float>("CourseInteractionCount")
@@ -727,6 +777,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
+
+                    b.Property<float?>("CourseProgressRatio")
+                        .HasColumnType("real");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
@@ -745,6 +798,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<float>("ForumInteractionCount")
                         .HasColumnType("real");
 
+                    b.Property<float?>("InactivityStreakDays")
+                        .HasColumnType("real");
+
                     b.Property<float>("LateOrMissingAssignmentCount")
                         .HasColumnType("real");
 
@@ -756,6 +812,18 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.Property<int>("ObservedDays")
                         .HasColumnType("int");
+
+                    b.Property<float?>("PriorActiveDayRate")
+                        .HasColumnType("real");
+
+                    b.Property<float?>("PriorCourseClickRate")
+                        .HasColumnType("real");
+
+                    b.Property<float?>("RecentActiveDayRate")
+                        .HasColumnType("real");
+
+                    b.Property<float?>("RecentCourseClickRate")
+                        .HasColumnType("real");
 
                     b.Property<string>("SourceFileName")
                         .IsRequired()
@@ -784,7 +852,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.ToTable("RiskFeatureSnapshots", t =>
                         {
-                            t.HasCheckConstraint("CK_RiskFeatureSnapshots_Features", "[ActiveDayRate] >= 0 AND [ActiveDayRate] <= 1 AND [ActivitySpanDays] >= 0 AND [ActivitySpanDays] <= [ObservedDays] AND [DaysSinceLastAccess] >= 0 AND [DaysSinceLastAccess] <= [ObservedDays] AND [ForumInteractionCount] >= 0 AND [CourseInteractionCount] >= 0 AND [LateOrMissingAssignmentCount] >= 0");
+                            t.HasCheckConstraint("CK_RiskFeatureSnapshots_Features", "([FeatureSchemaVersion] = 'withdrawal-28d-v1' AND [ActiveDayRate] >= 0 AND [ActiveDayRate] <= 1 AND [ActivitySpanDays] >= 0 AND [ActivitySpanDays] <= [ObservedDays] AND [DaysSinceLastAccess] >= 0 AND [DaysSinceLastAccess] <= [ObservedDays] AND [ForumInteractionCount] >= 0 AND [CourseInteractionCount] >= 0 AND [LateOrMissingAssignmentCount] >= 0) OR ([FeatureSchemaVersion] = 'withdrawal-28d-v2' AND [RecentActiveDayRate] IS NOT NULL AND [PriorActiveDayRate] IS NOT NULL AND [ActiveDayRateTrend] IS NOT NULL AND [RecentCourseClickRate] IS NOT NULL AND [PriorCourseClickRate] IS NOT NULL AND [CourseClickRateTrend] IS NOT NULL AND [InactivityStreakDays] IS NOT NULL AND [AssessmentDueRate] IS NOT NULL AND [AssessmentOnTimeRate] IS NOT NULL AND [AssessmentLateOrMissingRate] IS NOT NULL AND [CourseProgressRatio] IS NOT NULL AND [CohortActivityPercentile] IS NOT NULL AND [RecentActiveDayRate] BETWEEN 0 AND 1 AND [PriorActiveDayRate] BETWEEN 0 AND 1 AND [ActiveDayRateTrend] BETWEEN -1 AND 1 AND [RecentCourseClickRate] >= 0 AND [PriorCourseClickRate] >= 0 AND [InactivityStreakDays] BETWEEN 0 AND [ObservedDays] AND [AssessmentDueRate] >= 0 AND [AssessmentOnTimeRate] BETWEEN 0 AND 1 AND [AssessmentLateOrMissingRate] BETWEEN 0 AND 1 AND [CourseProgressRatio] BETWEEN 0 AND 1 AND [CohortActivityPercentile] BETWEEN 0 AND 1)");
 
                             t.HasCheckConstraint("CK_RiskFeatureSnapshots_ObservedDays", "[ObservedDays] > 0 AND [ObservedDays] <= 365");
                         });
@@ -1094,6 +1162,42 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                             t.HasCheckConstraint("CK_RiskScoringRuns_Status", "[Status] >= 0 AND [Status] <= 4");
                         });
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.StudentNudgePreference", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("IsInAppNudgesEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("StudentProfileId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StudentProfileId")
+                        .IsUnique();
+
+                    b.ToTable("StudentNudgePreferences");
                 });
 
             modelBuilder.Entity("Lodestone.Domain.Entities.StudentNumberClaim", b =>
@@ -1498,7 +1602,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
             modelBuilder.Entity("Lodestone.Domain.Entities.Nudge", b =>
                 {
                     b.HasOne("Lodestone.Domain.Entities.StudentProfile", "StudentProfile")
-                        .WithMany()
+                        .WithMany("Nudges")
                         .HasForeignKey("StudentProfileId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -1587,6 +1691,17 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Navigation("RiskFeatureSnapshot");
 
                     b.Navigation("RiskScoringRun");
+
+                    b.Navigation("StudentProfile");
+                });
+
+            modelBuilder.Entity("Lodestone.Domain.Entities.StudentNudgePreference", b =>
+                {
+                    b.HasOne("Lodestone.Domain.Entities.StudentProfile", "StudentProfile")
+                        .WithOne("NudgePreference")
+                        .HasForeignKey("Lodestone.Domain.Entities.StudentNudgePreference", "StudentProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("StudentProfile");
                 });
@@ -1721,6 +1836,10 @@ namespace Lodestone.Infrastructure.Data.Migrations
             modelBuilder.Entity("Lodestone.Domain.Entities.StudentProfile", b =>
                 {
                     b.Navigation("ActivityLogs");
+
+                    b.Navigation("NudgePreference");
+
+                    b.Navigation("Nudges");
 
                     b.Navigation("RiskFeatureSnapshots");
 

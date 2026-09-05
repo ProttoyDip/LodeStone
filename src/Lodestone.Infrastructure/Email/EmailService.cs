@@ -48,14 +48,17 @@ public class EmailService : IEmailService
         {
             await client.SendMailAsync(message, cancellationToken);
         }
-        catch (SmtpFailedRecipientException ex)
+        catch (SmtpFailedRecipientException)
         {
-            _logger.LogError(ex, "SMTP failed recipient. To={To} Subject={Subject}", to, subject);
+            // SMTP exception messages can contain recipient addresses and message content.
+            // Keep operational diagnostics useful without routing personal data or secrets to
+            // logs that may have a broader retention/access policy than the application data.
+            _logger.LogError("SMTP delivery failed for the recipient address supplied by the caller.");
             throw;
         }
-        catch (SmtpException ex)
+        catch (SmtpException)
         {
-            _logger.LogError(ex, "SMTP send failed. Host={Host}:{Port} From={From} To={To} Subject={Subject}", _settings.SmtpHost, _settings.SmtpPort, _settings.FromAddress, to, subject);
+            _logger.LogError("SMTP transport failed while delivering an application email.");
             throw;
         }
     }

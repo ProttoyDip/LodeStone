@@ -126,10 +126,57 @@
         });
     }
 
+    function initNudgePreference() {
+        var form = root.querySelector("[data-nudge-preference-form]");
+        if (!form) return;
+
+        var toggle = form.querySelector("[data-nudge-preference-toggle]");
+        var status = form.querySelector("[data-nudge-preference-status]");
+        var submit = form.querySelector("[data-nudge-preference-submit]");
+        if (!toggle) return;
+
+        function renderChoice() {
+            if (status) status.textContent = toggle.checked ? "On" : "Off";
+        }
+
+        toggle.addEventListener("change", renderChoice);
+        form.addEventListener("submit", function (event) {
+            if (event.defaultPrevented) return;
+            if (submit) {
+                submit.disabled = true;
+                submit.textContent = "Saving...";
+            }
+            form.setAttribute("aria-busy", "true");
+        });
+
+        renderChoice();
+    }
+
+    function initNudgeResponses() {
+        root.querySelectorAll("[data-nudge-response-form]").forEach(function (form) {
+            form.addEventListener("submit", function (event) {
+                var submitter = event.submitter;
+                if (submitter && submitter.hasAttribute("data-nudge-dismiss") &&
+                    !window.confirm("Dismiss this optional support prompt?")) {
+                    event.preventDefault();
+                    return;
+                }
+
+                form.querySelectorAll("button[type='submit']").forEach(function (button) {
+                    button.disabled = true;
+                });
+                if (submitter) submitter.textContent = "Saving...";
+                form.setAttribute("aria-busy", "true");
+            });
+        });
+    }
+
     initReveals();
     initPlannerTabs();
     initStudentNumberClaim();
     initRiskMonitoringChoice();
+    initNudgePreference();
+    initNudgeResponses();
 
     root.querySelectorAll("[data-local-datetime]").forEach(function (element) {
         var date = new Date(element.getAttribute("datetime"));

@@ -186,7 +186,15 @@ public sealed class RiskScoringService : IRiskScoringService
         }
 
         EnsureSnapshotCompatibility(snapshot, descriptor);
-        var input = ToModelInput(snapshot);
+        RiskModelInput input;
+        try
+        {
+            input = ToModelInput(snapshot);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            throw new InvalidOperationException("The stored risk snapshot contains invalid versioned feature values.", exception);
+        }
         ValidateInput(input, descriptor.ObservedDays);
         var prediction = _predictor.Predict(input)
             ?? throw new InvalidOperationException("The risk model returned no prediction.");
@@ -221,14 +229,16 @@ public sealed class RiskScoringService : IRiskScoringService
             ?? throw new InvalidOperationException("The risk model descriptor is unavailable.");
         if (string.IsNullOrWhiteSpace(descriptor.ModelVersion))
             throw new InvalidOperationException("The risk model version is required.");
-        if (!string.Equals(
-                descriptor.FeatureSchemaVersion,
-                RiskFeatureSchema.Withdrawal28DayV1,
-                StringComparison.Ordinal))
+        if (!RiskFeatureSchemas.TryGet(descriptor.FeatureSchemaVersion, out var schema))
             throw new InvalidOperationException(
                 $"The model requires unsupported feature schema '{descriptor.FeatureSchemaVersion}'.");
-        if (descriptor.ObservedDays != RiskFeatureSchema.Withdrawal28DayObservedDays)
-            throw new InvalidOperationException("The model descriptor must use a 28-day observation window.");
+        if (descriptor.ObservedDays != schema.ObservedDays)
+            throw new InvalidOperationException("The model descriptor observation window does not match its feature schema.");
+        if (descriptor.FeatureNames.Count > 0 &&
+            !descriptor.FeatureNames.SequenceEqual(schema.FeatureNames, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException("The model descriptor feature names do not match its feature schema.");
+        }
         if (!double.IsFinite(descriptor.QueueThreshold) || descriptor.QueueThreshold is < 0 or > 1)
             throw new InvalidOperationException("The model queue threshold must be between zero and one.");
         return descriptor with { ModelVersion = descriptor.ModelVersion.Trim() };
@@ -246,32 +256,76 @@ public sealed class RiskScoringService : IRiskScoringService
     }
 
     private static RiskModelInput ToModelInput(RiskFeatureSnapshot snapshot)
-        => new(
-            snapshot.ActiveDayRate,
-            snapshot.ActivitySpanDays,
-            snapshot.DaysSinceLastAccess,
-            snapshot.ForumInteractionCount,
-            snapshot.CourseInteractionCount,
-            snapshot.LateOrMissingAssignmentCount);
+        => new(snapshot.FeatureSchemaVersion, SnapshotFeatureValues(snapshot));
 
     private static void ValidateInput(RiskModelInput input, int observedDays)
     {
-        var values = new[]
+        var values = input.FeatureValues;
+        if (values.Any(value => !float.IsFinite(value)))
+            throw new InvalidOperationException("Risk model features must be finite.");
+
+        if (string.Equals(input.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal))
         {
-            input.ActiveDayRate,
-            input.ActivitySpanDays,
-            input.DaysSinceLastAccess,
-            input.ForumInteractionCount,
-            input.CourseInteractionCount,
-            input.LateOrMissingAssignmentCount
-        };
-        if (values.Any(value => !float.IsFinite(value) || value < 0))
-            throw new InvalidOperationException("Risk model features must be finite and non-negative.");
-        if (input.ActiveDayRate > 1)
-            throw new InvalidOperationException("ActiveDayRate must be between zero and one.");
-        if (input.ActivitySpanDays > observedDays || input.DaysSinceLastAccess > observedDays)
-            throw new InvalidOperationException("Day-based features cannot exceed the observation window.");
+            // V2 contains signed trend fields; all other values remain non-negative.
+            if (values.Where((_, index) => index is not 2 and not 5).Any(value => value < 0) ||
+                values.Where((_, index) => index is 2 or 5).Any(value => value is < -1 or > 1))
+                throw new InvalidOperationException("Risk model features contain invalid values.");
+        }
+        else if (values.Any(value => value < 0))
+            throw new InvalidOperationException("Risk model features must be non-negative.");
+
+        if (string.Equals(input.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV1, StringComparison.Ordinal))
+        {
+            if (input.ActiveDayRate > 1)
+                throw new InvalidOperationException("ActiveDayRate must be between zero and one.");
+            if (input.ActivitySpanDays > observedDays || input.DaysSinceLastAccess > observedDays)
+                throw new InvalidOperationException("Day-based features cannot exceed the observation window.");
+            return;
+        }
+
+        if (input.GetFeature("RecentActiveDayRate") > 1 || input.GetFeature("PriorActiveDayRate") > 1 ||
+            input.GetFeature("InactivityStreakDays") > observedDays ||
+            input.GetFeature("AssessmentOnTimeRate") > 1 ||
+            input.GetFeature("AssessmentLateOrMissingRate") > 1 ||
+            input.GetFeature("CourseProgressRatio") > 1 ||
+            input.GetFeature("CohortActivityPercentile") > 1)
+        {
+            throw new InvalidOperationException("Versioned risk-model feature values are outside their valid range.");
+        }
     }
+
+    private static IReadOnlyList<float> SnapshotFeatureValues(RiskFeatureSnapshot snapshot)
+        => snapshot.FeatureSchemaVersion switch
+        {
+            RiskFeatureSchema.Withdrawal28DayV1 =>
+            [
+                snapshot.ActiveDayRate,
+                snapshot.ActivitySpanDays,
+                snapshot.DaysSinceLastAccess,
+                snapshot.ForumInteractionCount,
+                snapshot.CourseInteractionCount,
+                snapshot.LateOrMissingAssignmentCount
+            ],
+            RiskFeatureSchema.Withdrawal28DayV2 =>
+            [
+                Required(snapshot.RecentActiveDayRate, nameof(snapshot.RecentActiveDayRate)),
+                Required(snapshot.PriorActiveDayRate, nameof(snapshot.PriorActiveDayRate)),
+                Required(snapshot.ActiveDayRateTrend, nameof(snapshot.ActiveDayRateTrend)),
+                Required(snapshot.RecentCourseClickRate, nameof(snapshot.RecentCourseClickRate)),
+                Required(snapshot.PriorCourseClickRate, nameof(snapshot.PriorCourseClickRate)),
+                Required(snapshot.CourseClickRateTrend, nameof(snapshot.CourseClickRateTrend)),
+                Required(snapshot.InactivityStreakDays, nameof(snapshot.InactivityStreakDays)),
+                Required(snapshot.AssessmentDueRate, nameof(snapshot.AssessmentDueRate)),
+                Required(snapshot.AssessmentOnTimeRate, nameof(snapshot.AssessmentOnTimeRate)),
+                Required(snapshot.AssessmentLateOrMissingRate, nameof(snapshot.AssessmentLateOrMissingRate)),
+                Required(snapshot.CourseProgressRatio, nameof(snapshot.CourseProgressRatio)),
+                Required(snapshot.CohortActivityPercentile, nameof(snapshot.CohortActivityPercentile))
+            ],
+            _ => throw new InvalidOperationException("The snapshot has an unsupported feature schema.")
+        };
+
+    private static float Required(float? value, string name)
+        => value ?? throw new InvalidOperationException($"The snapshot is missing required feature '{name}'.");
 
     private static RiskLevel ToRiskLevel(double probability)
         => probability switch

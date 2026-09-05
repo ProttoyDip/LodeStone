@@ -95,6 +95,53 @@ public sealed class RiskScoringServiceTests
         persistedDescriptor!.QueueThreshold.Should().Be(0.62);
     }
 
+    [Fact]
+    public async Task ScoreSnapshotAsync_MapsTheExplicitV2FeatureContractWithoutUsingV1Fields()
+    {
+        var descriptor = new RiskModelDescriptor(
+            "model-v2",
+            RiskFeatureSchema.Withdrawal28DayV2,
+            RiskFeatureSchema.Withdrawal28DayObservedDays,
+            .50)
+        {
+            FeatureNames = RiskFeatureSchemas.Withdrawal28DayV2.FeatureNames
+        };
+        var fixture = new Fixture(descriptor);
+        var snapshot = ValidV2Snapshot();
+        fixture.Snapshots.Setup(value => value.GetByIdForScoringAsync(
+                snapshot.Id,
+                It.IsAny<DateTime>(),
+                RiskScoringPolicy.MaximumSnapshotAgeDays,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(snapshot);
+        RiskModelInput? observedInput = null;
+        fixture.Predictor.Setup(value => value.Predict(It.IsAny<RiskModelInput>()))
+            .Callback<RiskModelInput>(input => observedInput = input)
+            .Returns(new RiskModelPrediction(.8));
+        fixture.Scoring.Setup(value => value.PersistAsync(
+                snapshot,
+                descriptor,
+                .8,
+                RiskLevel.Critical,
+                It.IsAny<DateTime>(),
+                null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RiskScorePersistenceResult(
+                RiskScorePersistenceOutcome.Created,
+                null,
+                true,
+                false));
+
+        var result = await fixture.Service.ScoreSnapshotAsync(snapshot.Id);
+
+        result.Scored.Should().BeTrue();
+        observedInput.Should().NotBeNull();
+        observedInput!.FeatureSchemaVersion.Should().Be(RiskFeatureSchema.Withdrawal28DayV2);
+        observedInput.FeatureValues.Should().Equal(
+            .1f, .2f, -.1f, 1f, 2f, -1f, 10f, .05f, .5f, .5f, .4f, .25f);
+        fixture.Notifier.Verify(value => value.NotifyChangedAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Theory]
     [InlineData("active-rate")]
     [InlineData("activity-span")]
@@ -298,6 +345,29 @@ public sealed class RiskScoringServiceTests
             ForumInteractionCount = 3,
             CourseInteractionCount = 40,
             LateOrMissingAssignmentCount = 1
+        };
+
+    private static RiskFeatureSnapshot ValidV2Snapshot(int id = 1)
+        => new()
+        {
+            Id = id,
+            StudentProfileId = 100,
+            CourseKey = "COURSE-A",
+            WindowEndUtc = Now.UtcDateTime.AddDays(-1),
+            ObservedDays = RiskFeatureSchema.Withdrawal28DayObservedDays,
+            FeatureSchemaVersion = RiskFeatureSchema.Withdrawal28DayV2,
+            RecentActiveDayRate = .1f,
+            PriorActiveDayRate = .2f,
+            ActiveDayRateTrend = -.1f,
+            RecentCourseClickRate = 1,
+            PriorCourseClickRate = 2,
+            CourseClickRateTrend = -1,
+            InactivityStreakDays = 10,
+            AssessmentDueRate = .05f,
+            AssessmentOnTimeRate = .5f,
+            AssessmentLateOrMissingRate = .5f,
+            CourseProgressRatio = .4f,
+            CohortActivityPercentile = .25f
         };
 
     private static RiskScoringRun RunningRun(int candidateCount)

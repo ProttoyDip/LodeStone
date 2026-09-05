@@ -1,4 +1,3 @@
-using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,16 +8,20 @@ namespace Lodestone.Web.Controllers;
 [Authorize]
 public class DashboardController : Controller
 {
-    private readonly IRiskScoringService _riskScoringService;
-
-    public DashboardController(IRiskScoringService riskScoringService)
-        => _riskScoringService = riskScoringService;
-
     public IActionResult Index()
     {
-        if (!User.IsInRole(RoleConstants.Admin) && !User.IsInRole(RoleConstants.Counselor))
+        if (User.IsInRole(RoleConstants.Admin))
+            return RedirectToAction("Index", "Admin");
+
+        if (User.IsInRole(RoleConstants.Counselor))
+            return RedirectToAction("Queue", "Counselor");
+
+        if (User.IsInRole(RoleConstants.Student))
             return RedirectToAction("Index", "Student");
 
-        return View();
+        if (User.IsInRole(RoleConstants.Volunteer))
+            return RedirectToAction("Dashboard", "Volunteer");
+
+        return Forbid();
     }
 }

@@ -1,0 +1,227 @@
+@using Lodestone.Domain.Enums
+@model Lodestone.Web.ViewModels.Counselor.CounselorAppointmentsViewModel
+@{
+    ViewData["Title"] = "Counselor Appointments";
+    var pageData = Model.Page;
+    var successMessage = TempData["AppointmentSuccess"] as string;
+    var conflictMessage = TempData["AppointmentConflict"] as string;
+    var errorMessage = TempData["AppointmentError"] as string;
+    var manualNudgeSuccess = TempData["ManualNudgeSuccess"] as string;
+    var manualNudgeConflict = TempData["ManualNudgeConflict"] as string;
+    var manualNudgeError = TempData["ManualNudgeError"] as string;
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/booking.css" asp-append-version="true" />
+}
+
+<div class="booking-page counselor-appointments">
+    <header class="booking-hero counselor-appointments__hero">
+        <div>
+            <p class="booking-kicker">Counselor workspace</p>
+            <h1>Appointments</h1>
+            <p>Review appointments, record outcomes, and send an optional neutral prompt only from an appointment in your workspace.</p>
+        </div>
+        <a class="booking-btn booking-btn--secondary"
+           asp-controller="CounselorAvailability"
+           asp-action="Index">Manage availability</a>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="booking-alert booking-alert--success" role="status">@successMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(conflictMessage))
+    {
+        <div class="booking-alert booking-alert--error" role="alert">@conflictMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="booking-alert booking-alert--error" role="alert">@errorMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(manualNudgeSuccess))
+    {
+        <div class="booking-alert booking-alert--success" role="status">@manualNudgeSuccess</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(manualNudgeConflict))
+    {
+        <div class="booking-alert booking-alert--error" role="alert">@manualNudgeConflict</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(manualNudgeError))
+    {
+        <div class="booking-alert booking-alert--error" role="alert">@manualNudgeError</div>
+    }
+
+    @if (Model.LoadFailed || pageData is null)
+    {
+        <section class="booking-section" aria-labelledby="appointment-error-title">
+            <div class="booking-empty" role="alert">
+                <h2 id="appointment-error-title">Appointments are temporarily unavailable.</h2>
+                <p>@(Model.ErrorMessage ?? "No appointment records were changed.")</p>
+                <a class="booking-btn booking-btn--secondary" asp-action="Reviews">Try again</a>
+            </div>
+        </section>
+    }
+    else
+    {
+        <p class="counselor-appointments__refreshed">
+            Welcome, @pageData.CounselorName. Refreshed
+            <time datetime="@Model.RefreshedAtUtc.ToString("O")" data-local-datetime>@Model.RefreshedAtUtc.ToString("MMM d, yyyy 'at' HH:mm 'UTC'")</time>.
+        </p>
+
+        <section class="booking-section" aria-labelledby="outcomes-title">
+            <div class="booking-section__head">
+                <div>
+                    <p class="booking-kicker">Follow-up</p>
+                    <h2 id="outcomes-title">Ready for an outcome</h2>
+                </div>
+                <span class="counselor-appointments__count">@pageData.AwaitingOutcome.Count</span>
+            </div>
+
+            @if (pageData.AwaitingOutcome.Count == 0)
+            {
+                <div class="booking-empty">
+                    <h3>No appointments need an outcome.</h3>
+                    <p>Confirmed sessions move here once their scheduled start time has passed.</p>
+                </div>
+            }
+            else
+            {
+                <div class="counselor-appointment-list">
+                    @foreach (var appointment in pageData.AwaitingOutcome)
+                    {
+                        <article class="counselor-appointment">
+                            <div class="counselor-appointment__summary">
+                                <span class="booking-status booking-status--confirmed">Awaiting outcome</span>
+                                <h3>@appointment.StudentName</h3>
+                                @if (!string.IsNullOrWhiteSpace(appointment.StudentNumber))
+                                {
+                                    <p class="counselor-appointment__student-id">Student ID @appointment.StudentNumber</p>
+                                }
+                                <p class="counselor-appointment__time">
+                                    <time datetime="@appointment.StartUtc.ToString("O")" data-local-datetime>@appointment.StartUtc.ToString("MMM d, yyyy 'at' HH:mm 'UTC'")</time>
+                                    &ndash;
+                                    <time datetime="@appointment.EndUtc.ToString("O")" data-local-time>@appointment.EndUtc.ToString("HH:mm")</time>
+                                </p>
+                                @if (!string.IsNullOrWhiteSpace(appointment.RequestNotes))
+                                {
+                                    <div class="counselor-appointment__request-note">
+                                        <strong>Student note</strong>
+                                        <p>@appointment.RequestNotes</p>
+                                    </div>
+                                }
+                                @await Html.PartialAsync("_ManualNudgeForm", appointment)
+                            </div>
+
+                            <form asp-action="RecordAppointmentOutcome"
+                                  method="post"
+                                  class="counselor-outcome-form"
+                                  data-appointment-outcome-form>
+                                <input type="hidden" name="bookingId" value="@appointment.BookingId" />
+                                <label class="booking-field">
+                                    <span>Session notes <small>Optional, 2,000 characters</small></span>
+                                    <textarea name="sessionNotes"
+                                              rows="4"
+                                              maxlength="2000"
+                                              aria-describedby="session-notes-help-@appointment.BookingId"></textarea>
+                                </label>
+                                <p class="booking-muted" id="session-notes-help-@appointment.BookingId">Keep notes brief and relevant to this appointment.</p>
+                                <div class="counselor-outcome-form__actions">
+                                    <button class="booking-btn booking-btn--primary"
+                                            type="submit"
+                                            name="outcome"
+                                            value="@BookingStatus.Completed">Mark completed</button>
+                                    <button class="booking-btn booking-btn--danger"
+                                            type="submit"
+                                            name="outcome"
+                                            value="@BookingStatus.NoShow"
+                                            data-confirm="Mark this appointment as a no-show?">Mark no-show</button>
+                                </div>
+                            </form>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="booking-section" aria-labelledby="upcoming-title">
+            <div class="booking-section__head">
+                <div>
+                    <p class="booking-kicker">Scheduled</p>
+                    <h2 id="upcoming-title">Upcoming appointments</h2>
+                </div>
+                <span class="counselor-appointments__count">@pageData.Upcoming.Count</span>
+            </div>
+
+            @if (pageData.Upcoming.Count == 0)
+            {
+                <div class="booking-empty"><h3>No upcoming appointments.</h3><p>Booked times will appear here automatically.</p></div>
+            }
+            else
+            {
+                <div class="booking-list">
+                    @foreach (var appointment in pageData.Upcoming)
+                    {
+                        <article class="booking-item">
+                            <div>
+                                <span class="booking-status booking-status--confirmed">Confirmed</span>
+                                <h3>@appointment.StudentName</h3>
+                                @if (!string.IsNullOrWhiteSpace(appointment.StudentNumber))
+                                {
+                                    <p>Student ID @appointment.StudentNumber</p>
+                                }
+                            </div>
+                            <div class="booking-time">
+                                <time datetime="@appointment.StartUtc.ToString("O")" data-local-datetime>@appointment.StartUtc.ToString("MMM d, yyyy 'at' HH:mm 'UTC'")</time>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(appointment.RequestNotes))
+                            {
+                                <p class="counselor-appointment__compact-note">@appointment.RequestNotes</p>
+                            }
+                            @await Html.PartialAsync("_ManualNudgeForm", appointment)
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="booking-section" aria-labelledby="recent-title">
+            <div class="booking-section__head">
+                <div>
+                    <p class="booking-kicker">Last 30 days</p>
+                    <h2 id="recent-title">Recent outcomes</h2>
+                </div>
+            </div>
+
+            @if (pageData.Recent.Count == 0)
+            {
+                <div class="booking-empty"><h3>No recent outcomes.</h3><p>Completed, no-show, and cancelled appointments will be listed here.</p></div>
+            }
+            else
+            {
+                <div class="booking-history">
+                    @foreach (var appointment in pageData.Recent)
+                    {
+                        <div>
+                            <div><strong>@appointment.StudentName</strong><p>@appointment.StudentNumber</p></div>
+                            <time datetime="@appointment.StartUtc.ToString("O")" data-local-datetime>@appointment.StartUtc.ToString("MMM d, yyyy 'at' HH:mm 'UTC'")</time>
+                            <span class="booking-status">@(appointment.Status == BookingStatus.NoShow ? "No-show" : appointment.Status.ToString())</span>
+                            @if (!string.IsNullOrWhiteSpace(appointment.SessionNotes))
+                            {
+                                <p class="counselor-appointment__recent-note">@appointment.SessionNotes</p>
+                            }
+                            @if (appointment.Status == BookingStatus.Completed)
+                            {
+                                @await Html.PartialAsync("_ManualNudgeForm", appointment)
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@section Scripts {
+    <script src="~/js/booking.js" asp-append-version="true" defer></script>
+    <script src="~/js/counselor-appointments.js" asp-append-version="true" defer></script>
+}

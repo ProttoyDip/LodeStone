@@ -1,0 +1,182 @@
+@model ViewRequestViewModel
+@{
+    ViewData["Title"] = Model.Title;
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="container my-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <a href="@Url.Action("MyRequests")" class="btn btn-outline-secondary btn-sm mb-3">← Back to My Requests</a>
+            <h1>@Model.Title</h1>
+            <p class="text-muted">
+                <span class="badge bg-secondary">@Model.Category</span>
+                <span class="text-muted ms-2">Posted @Model.CreatedDate.ToString("MMM d, yyyy 'at' h:mm tt")</span>
+            </p>
+        </div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @TempData["Success"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            @TempData["Error"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Your Request</h5>
+                </div>
+                <div class="card-body">
+                    <p class="lead">@Model.Message</p>
+                </div>
+            </div>
+
+            @if (Model.Interactions.Count > 0)
+            {
+                <div class="card">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">Conversation</h5>
+                    </div>
+                    <div class="card-body">
+                        @foreach (var interaction in Model.Interactions)
+                        {
+                            <div class="mb-3 p-3 bg-light rounded">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <strong>
+                                        @if (interaction.StudentUserId == @User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)
+                                        {
+                                            <span>You</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@(Model.VolunteerName ?? "Volunteer")</span>
+                                        }
+                                    </strong>
+                                    <small class="text-muted">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</small>
+                                </div>
+                                <p class="mb-0">@interaction.Message</p>
+                                @if (interaction.EscalatedToCounselor)
+                                {
+                                    <p class="mb-0 mt-2">
+                                        <span class="badge bg-warning text-dark">Escalated to Counselor</span>
+                                    </p>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else if (Model.Status == SupportRequestStatus.Accepted)
+            {
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Great news!</strong> @(Model.VolunteerName ?? "A volunteer") has accepted your request.
+                    They'll reach out soon with their first message.
+                </div>
+            }
+            else if (Model.Status == SupportRequestStatus.Open)
+            {
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    Your request is open and waiting for a volunteer to accept it.
+                    Volunteers typically respond within 24-48 hours.
+                </div>
+            }
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Request Status</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-2">
+                        <strong>Status:</strong>
+                        @{
+                            var statusBadgeClass = Model.Status switch
+                            {
+                                SupportRequestStatus.Open => "bg-secondary",
+                                SupportRequestStatus.Accepted => "bg-success",
+                                SupportRequestStatus.Declined => "bg-danger",
+                                SupportRequestStatus.Completed => "bg-info",
+                                SupportRequestStatus.Escalated => "bg-warning",
+                                _ => "bg-secondary"
+                            };
+                        }
+                        <span class="badge @statusBadgeClass">@Model.Status</span>
+                    </p>
+
+                    @if (Model.VolunteerName != null)
+                    {
+                        <p class="mb-2">
+                            <strong>Volunteer:</strong><br />
+                            @Model.VolunteerName
+                        </p>
+                    }
+
+                    <p class="mb-0">
+                        <strong>Posted:</strong><br />
+                        @Model.CreatedDate.ToString("MMM d, yyyy")
+                    </p>
+                </div>
+            </div>
+
+            @if (Model.Status == SupportRequestStatus.Escalated)
+            {
+                <div class="card mt-3">
+                    <div class="card-header bg-warning bg-opacity-25">
+                        <h5 class="mb-0 text-dark">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            Escalated to Counselor
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Your request has been escalated to our professional counseling team because it may need specialized support.</p>
+                        <p>A counselor will be in touch with you soon.</p>
+                        <p class="mb-0 small text-muted">If you need immediate help, call 988 or visit the student center.</p>
+                    </div>
+                </div>
+            }
+
+            <div class="card mt-3">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Tips for Getting Help</h5>
+                </div>
+                <div class="card-body small">
+                    <ul>
+                        <li>Be honest and specific about what you need</li>
+                        <li>Respond to messages promptly</li>
+                        <li>Let them know what's been helpful</li>
+                        <li>Don't hesitate to ask for clarification</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Need Professional Help?</h5>
+                </div>
+                <div class="card-body small">
+                    <p>If you're experiencing a crisis or urgent situation:</p>
+                    <p>
+                        <strong>Call 988</strong> - Suicide & Crisis Lifeline<br />
+                        <strong>Text "HELLO"</strong> to 741741<br />
+                        <strong>Visit</strong> your campus counseling center
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

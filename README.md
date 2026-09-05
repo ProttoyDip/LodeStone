@@ -1,129 +1,88 @@
 # Lodestone
 
-### A consent-gated behavioral early-warning and peer-support platform
+### Consent-gated runtime ML with quality-gated model publication and fail-closed loading
 
-Lodestone is an ASP.NET Core MVC application for student wellbeing. It combines student-owned
-support tools with privacy-controlled learning analytics so institutions can identify possible
-disengagement and route it to human counselors.
+Lodestone is an ASP.NET Core MVC student-wellbeing application. It combines student-owned support tools with privacy-controlled learning analytics so a validated withdrawal-risk signal can be routed to human counselors.
 
-Behavioral risk monitoring is **off unless a student explicitly opts in**. A student-supplied LMS
-number is only a claim until an Admin verifies it; imports cannot connect learning data to the
-account before that approval. Students can withdraw at any time, which disables monitoring and
-deletes their derived activity logs, feature snapshots, scores, and all risk-queue records.
+Behavioral risk monitoring is off unless a student explicitly opts in. A student-supplied LMS number remains an untrusted claim until an Admin approves it. Students can withdraw consent at any time, which disables monitoring and deletes their derived activity logs, feature snapshots, risk scores, and risk-queue records.
 
-> Lodestone is not a diagnostic or clinical system. A risk probability estimates withdrawal risk
-> from limited behavioral features; it does not diagnose mental illness, determine grades, or make
-> disciplinary decisions. Queue entries are reviewed by people.
+Lodestone is not a diagnostic or clinical system. ML predictions are support-routing signals only; they never diagnose, change grades, discipline students, open crisis cases, contact emergency services, or send automatic risk-based nudges.
 
----
+## Current Status
 
-## Table of Contents
+**State B: Runtime integration complete but no acceptable model.**
 
-- [Implemented product areas](#implemented-product-areas)
-- [Technology](#technology)
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Getting started](#getting-started)
-- [Configuration](#configuration)
-- [Consent and verified student numbers](#consent-and-verified-student-numbers)
-- [ML model and OULAD training](#ml-model-and-oulad-training)
-- [Runtime snapshot import and scoring](#runtime-snapshot-import-and-scoring)
-- [Counselor queue](#counselor-queue)
-- [Background jobs and real-time updates](#background-jobs-and-real-time-updates)
-- [Database migrations](#database-migrations)
-- [Tests](#tests)
-- [Privacy and security](#privacy-and-security)
-- [Current status](#current-status)
-- [Troubleshooting](#troubleshooting)
+- Runtime ML is implemented as a first-class application feature through the Application-owned `IRiskModelPredictor` boundary.
+- `MachineLearning:Enabled=true` is supported for local/demo runs only after a validated model, metadata, and publication manifest are present.
+- The real OULAD v2 experiment completed on 2026-08-31 and failed the fixed validation gate. No locked-test evaluation was performed and no runtime artifact was published.
+- `src/Lodestone.Web/App_Data/ml` contains only `.gitkeep`; tracked config keeps `MachineLearning:Enabled=false`.
+- Release build passes with zero warnings. Full tests pass: 84 Unit, 45 Integration, 29 ML, 158 total.
+- EF reports no pending model changes after `20260831094114_RuntimeMlV2AndManualNudges`.
 
----
+## Implemented Product Areas
 
-## Implemented product areas
+- Student registration/login, role redirects, dashboard, private mood journal, crisis resources, peer forum, and counselor booking.
+- Explicit monitoring consent at registration and from the Student Privacy area.
+- Admin-reviewed LMS/student-number claims with approve, reject, reset, duplicate checks, and row-version protection.
+- Admin import of versioned weekly behavioral snapshots for consented and verified students.
+- Runtime risk scoring, auditable scoring runs, idempotent score persistence, one open counselor case per student, and concurrency-safe counselor resolution.
+- Admin and Counselor operational views that show real ML availability, model/schema identity, latest scoring status, skipped/failed counts, and queue state.
+- Manual counselor nudges from eligible counselor/student interactions, kept independent from ML risk monitoring and requiring separate student opt-in.
+- Fail-closed ML loading with model hash, metadata hash, schema, feature order, version, window, stride, manifest, publication eligibility, and loadability validation.
+- Local Docker/CI hardening, public-link validation for account email links, sanitized account/setup logging, and persistent Data Protection key configuration.
 
-- Student authentication, dashboard, private mood journal, crisis resources, peer forum, and
-  published-slot counselor booking.
-- Explicit weekly risk-monitoring choice during registration and from the Student Privacy area.
-- Admin review of pending LMS/student-number claims, with approve, reject, and reset workflows.
-- Admin CSV import of versioned 28-day feature snapshots for consented, verified students.
-- ML.NET OULAD download, leakage-safe feature engineering, grouped train/validation/test split,
-  constrained threshold selection, quality-gated artifact publication, and fail-closed loading.
-- Idempotent risk scoring, auditable scoring runs, one open counselor case per student, and
-  concurrency-safe counselor resolution.
-- Payload-free SignalR queue refresh notifications; confidential queue data remains behind an
-  authorized server-side query.
-- Live Admin operations views for model readiness, import status, scoring runs, student-number
-  verification, forum moderation, notifications, bookings, and people records.
-
-Some broader repository areas remain scaffolds. In particular, PDF report generators, the nudge
-service, and the booking-reminder, forum-moderation, and crisis-escalation background jobs still
-throw `NotImplementedException`. The generic analytics Dashboard view is also still a placeholder.
-
----
+Deferred areas are deliberately not advertised as complete: PDF report generation, generic analytics templates, Admin notification real-time badge wiring, and automatic risk-based nudges.
 
 ## Technology
 
 | Concern | Technology |
 | --- | --- |
-| Web | ASP.NET Core MVC with Razor views |
+| Web | ASP.NET Core MVC, Razor |
 | Runtime | .NET 8 |
-| Data | Entity Framework Core 8, code-first migrations |
-| Database | **SQL Server only** (SQL Express is the current local target) |
-| Authentication | ASP.NET Core Identity and role/policy authorization |
-| Machine learning | ML.NET |
-| Background work | Hangfire with SQL Server storage |
-| Real-time | ASP.NET Core SignalR |
-| Frontend | Server-rendered Razor, hand-written CSS, vanilla JavaScript |
+| Data | Entity Framework Core 8, SQL Server |
+| Auth | ASP.NET Core Identity |
+| ML | ML.NET FastTree and LightGBM training/evaluation |
+| Jobs | Hangfire with SQL Server storage |
+| Real-time | SignalR |
+| Frontend | Hand-written CSS, vanilla JavaScript |
 | Tests | xUnit, Moq, FluentAssertions, EF Core InMemory, WebApplicationFactory |
-
-The tracked project does not include a PostgreSQL provider or PostgreSQL migrations.
-
----
 
 ## Architecture
 
-Lodestone follows Clean Architecture. Domain rules and Application contracts do not depend on
-EF Core, MVC, Hangfire, SignalR, or ML.NET.
+Lodestone follows Clean Architecture. Domain and Application do not depend on EF Core, MVC, Hangfire, SignalR, or ML.NET.
 
 | Project | Responsibility |
 | --- | --- |
 | `Lodestone.Domain` | Entities, enums, constants, and core state |
 | `Lodestone.Application` | Use cases, DTOs, validation, and framework-neutral interfaces |
-| `Lodestone.Infrastructure` | EF Core repositories, SQL Server persistence, Identity, email |
+| `Lodestone.Infrastructure` | EF Core repositories, SQL Server persistence, Identity, email, security |
 | `Lodestone.ML` | OULAD loading, feature engineering, training, artifact validation, prediction |
-| `Lodestone.Jobs` | Hangfire job definitions and schedules |
-| `Lodestone.Reporting` | QuestPDF/reporting scaffold; generators are not yet implemented |
-| `Lodestone.Web` | MVC, Razor UI, health endpoint, SignalR hubs, composition root |
-| `tools/Lodestone.ModelTrainer` | Offline dataset download and model-training CLI |
+| `Lodestone.Jobs` | Hangfire jobs and startup scheduling |
+| `Lodestone.Reporting` | Reporting scaffold; generators are deferred |
+| `Lodestone.Web` | MVC, Razor UI, health endpoints, SignalR hubs, composition root |
+| `tools/Lodestone.ModelTrainer` | OULAD download and model-training CLI |
 
-Runtime scoring depends on the Application-owned `IRiskModelPredictor` boundary. ML.NET stays in
-the outer ML project, and Web supplies only composition and transport concerns.
+Runtime scoring depends on `IRiskModelPredictor` in Application. ML.NET stays in the outer ML project.
 
----
+## Getting Started
 
-## Prerequisites
+Prerequisites:
 
 - .NET 8 SDK or later
 - SQL Server or SQL Server Express
-- The `dotnet-ef` CLI for migrations
 - Git
-- Optional: the official OULAD dataset, downloaded by the included trainer tool
-
----
-
-## Getting started
+- Optional: Docker
 
 ```bash
-git clone <repository-url>
-cd Lodestone
 dotnet restore Lodestone.sln
 dotnet build Lodestone.sln
 dotnet ef database update --project src/Lodestone.Infrastructure --startup-project src/Lodestone.Web
 dotnet run --project src/Lodestone.Web
 ```
 
-The local configuration binds to `http://localhost:5000` and `https://localhost:5001`. Startup
-normally applies migrations, seeds roles/reference data, and configures Hangfire. For a
-database-independent health smoke test, use:
+The local app binds to `http://localhost:5000` and `https://localhost:5001`.
+
+For a database-independent startup smoke:
 
 ```powershell
 $env:Startup__InitializeDatabase = "false"
@@ -131,20 +90,14 @@ $env:Startup__UseHangfire = "false"
 dotnet run --project src/Lodestone.Web
 ```
 
-Use User Secrets or environment variables for passwords and other credentials. Do not commit them.
+Use User Secrets or environment variables for passwords and credentials. Do not commit secrets.
 
----
+## Runtime ML Configuration
 
-## Configuration
-
-Tracked defaults intentionally keep ML scoring disabled:
+Tracked defaults keep ML disabled:
 
 ```jsonc
 {
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=<sql-server>;Database=Lodestone;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True",
-    "HangfireConnection": "Server=<sql-server>;Database=LodestoneHangfire;Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True"
-  },
   "MachineLearning": {
     "Enabled": false,
     "ModelPath": "App_Data/ml/risk-model.zip",
@@ -157,310 +110,176 @@ Tracked defaults intentionally keep ML scoring disabled:
 }
 ```
 
-`ModelPath` and `MetadataPath` are resolved relative to the Web content root, so the defaults mean:
+The default artifact paths resolve under:
 
 ```text
 src/Lodestone.Web/App_Data/ml/risk-model.zip
 src/Lodestone.Web/App_Data/ml/risk-model.metadata.json
+src/Lodestone.Web/App_Data/ml/risk-model.publication.json
 ```
 
-Set `MachineLearning__Enabled=true` only after a model and matching metadata sidecar have passed the
-training gate. The runtime validates schema, feature order, window sizes, model hash, metadata, and
-loadability. Any mismatch makes the predictor unavailable; it never silently falls back to an old,
-synthetic, or incompatible model.
+When `MachineLearning:Enabled=false`, `/health/ml` is healthy with a disabled status. When enabled with missing or invalid artifacts, `/health/ml` and `/health/ready` are unhealthy, scoring does not execute, and the weekly scoring job is removed. When enabled with a validated artifact, the model loads during startup and weekly snapshot scoring can run.
 
-The ML-only readiness endpoint is:
+## Consent And Student Identity
 
-```text
-GET /health/ml
-```
+Monitoring eligibility requires both:
 
-It reports healthy when ML is intentionally disabled, healthy with only non-sensitive model/schema
-identifiers when a validated artifact is available, and unhealthy when ML is enabled but the model
-cannot be safely loaded. It does not expose local artifact paths.
+1. explicit student opt-in; and
+2. an Admin-verified LMS/student-number mapping.
 
----
+Registration stores the student number as a pending claim. Admins approve/reject/reset claims from `/Admin/RiskMonitoring`. Students see only their consent and verification state; they never see risk probabilities, queue status, hidden monitoring data, or model decisions.
 
-## Consent and verified student numbers
+Consent withdrawal removes the student's `ActivityLogs`, `RiskFeatureSnapshots`, `RiskScores`, and `RiskQueueEntries`. Consent history and privacy audit records remain.
 
-Monitoring eligibility requires both conditions:
+Manual in-app nudges are separate from ML risk monitoring. Students must opt in to in-app prompts, and counselors can create only fixed-template manual prompts from eligible counselor/student interactions. Automatic risk-based nudges are disabled.
 
-1. The student has explicitly enabled weekly support monitoring.
-2. An Admin has approved the student's submitted LMS/student number.
+## OULAD Training
 
-Registration requires a student number but stores it as a **pending claim**, not as a trusted
-mapping. Students can inspect the verification state and resubmit after rejection from the Privacy
-area. Admins review pending claims from `/Admin/RiskMonitoring`; duplicate verified numbers are
-rejected, and row-version checks protect review actions from stale updates.
+The trainer uses the Open University Learning Analytics Dataset (OULAD) from UCI Machine Learning Repository. Raw data, reports, and runtime artifacts are gitignored.
 
-Turning monitoring off is a destructive privacy action for derived monitoring data. It removes that
-student's `ActivityLogs`, `RiskFeatureSnapshots`, `RiskScores`, and `RiskQueueEntries`. The consent
-history and privacy audit trail remain so the institution can demonstrate the choice without
-retaining the withdrawn behavioral data.
-
-An Admin identity reset performs the same purge, disables consent, clears the verified mapping, and
-requires a new claim, Admin approval, and student opt-in before future imports can attach. Audit-log
-details deliberately avoid recording the student number itself.
-
----
-
-## ML model and OULAD training
-
-The trainer uses the [Open University Learning Analytics Dataset (OULAD)](https://archive.ics.uci.edu/dataset/349/open)
-from UCI Machine Learning Repository (dataset 349, DOI `10.24432/C5KK69`, CC BY 4.0). Raw dataset
-files and generated artifacts are gitignored.
-
-### Download
-
-From the repository root:
+Download:
 
 ```bash
 dotnet run --project tools/Lodestone.ModelTrainer -- download
 ```
 
-The command downloads over HTTPS, computes SHA-256, extracts through a traversal-safe staging
-directory, verifies exactly one copy of all seven canonical OULAD CSV tables, records provenance in
-`source.json`, and atomically moves the dataset to:
+Run v2 experiment:
+
+```bash
+dotnet run --project tools/Lodestone.ModelTrainer -- experiment-v2
+```
+
+The v2 pipeline:
+
+- uses deterministic student-grouped 70/15/15 train/validation/test split;
+- tunes FastTree and LightGBM candidates using grouped cross-validation inside training only;
+- uses anchor-time behavioral features only;
+- selects algorithm, hyperparameters, and operating threshold on validation only;
+- requires validation AUC >= 0.70, recall >= 0.70, and precision >= 0.30;
+- evaluates the locked test partition exactly once only if validation passes;
+- publishes runtime artifacts only if both validation and locked-test gates pass.
+
+Excluded from ML features: demographics, grades, assessment scores, final outcomes, journal text, peer-chat/forum text, counseling/session text, crisis-case text, and future activity.
+
+## Runtime Snapshot Import
+
+Admins import pre-aggregated weekly behavioral snapshots from `/Admin/RiskMonitoring`. The application does not import raw OULAD rows into student accounts.
+
+The model schema controls the required snapshot header. `withdrawal-28d-v1` keeps the original six-feature contract. `withdrawal-28d-v2` adds behavior-only trend, inactivity, assessment timing, course-progress, and cohort-relative activity fields. Runtime scoring requires the imported snapshot schema to match the loaded model schema exactly.
+
+Imports accept only active consent plus verified student-number matches. They validate duplicate headers, source provenance, schema, feature ranges, UTC timestamps, duplicate snapshots, and maximum snapshot age.
+
+## V2 Experiment Result
+
+Real-data v2 report:
 
 ```text
-src/Lodestone.ML/Data/OULAD
+src/Lodestone.ML/Reports/experiments/risk-model.v2.report.failed-withdrawal-28d-v2-20260831T161658356Z.json
 ```
 
-Pin an expected archive hash when reproducibility requires it:
+Dataset provenance:
 
-```bash
-dotnet run --project tools/Lodestone.ModelTrainer -- download --sha256 <64-character-sha256>
-```
+- Source URL: `https://archive.ics.uci.edu/static/public/349/open%2Buniversity%2Blearning%2Banalytics%2Bdataset.zip`
+- Source SHA-256: `f2ed1902616c1fe8d2824d872c0b7d2d72be435bf0124d077044fe4be2c6d3e4`
+- Dataset directory hash: `6049a6bc0295a92eb556a28a0fc6ab82b8a31aab716df723cb68218d62f2256e`
+- Seed: `20260831`
+- Rows: 505,179 train, 108,709 validation, 108,728 locked test
+- Students: 17,393 train, 3,726 validation, 3,729 locked test
 
-### Train
+Best grouped-CV candidates reached ROC AUC around `0.748`, but precision stayed around `0.05`, far below the required `0.30`. No validation candidate satisfied the fixed AUC/recall/precision gate. The locked test partition was not evaluated, `eligibleForRuntimeIntegration=false`, `modelSha256` is empty, and no runtime artifact was published.
 
-```bash
-dotnet run --project tools/Lodestone.ModelTrainer -- train
-```
+## Background Jobs And Real-Time Updates
 
-Defaults:
+`WeeklyRiskScoringJob` is implemented and registered only when the validated model status is available. Without a valid model, the recurring risk job is removed.
 
-- Input: `src/Lodestone.ML/Data/OULAD`
-- Model: `src/Lodestone.Web/App_Data/ml/risk-model.zip`
-- Metadata: `src/Lodestone.Web/App_Data/ml/risk-model.metadata.json`
-- Evaluation report: `src/Lodestone.ML/Reports/risk-model.report.json`
-- Random seed: `42`
-- Minimum untouched-test AUC: `0.70`
-- Minimum recall: `0.70`
-- Minimum precision: `0.30`
+Unfinished automatic jobs are not scheduled. Risk scoring never automatically creates a crisis case, contacts external services, or sends risk-based student nudges.
 
-The pipeline trains a class-weighted ML.NET FastTree binary classifier on a deterministic 70/15/15
-split.
-Students, not observation rows, are grouped across training, validation, and untouched test sets,
-preventing one student's rolling windows from leaking between partitions. The decision threshold is
-selected on validation data from candidates satisfying recall >= 0.70 and precision >= 0.30; among
-them it prefers the best F1 score. The untouched test set must then meet all three fixed gates.
+When scoring creates or escalates a support case, Web broadcasts a payload-free `QueueUpdated` SignalR event through `CounselorQueueHub`. Clients reload authorized queue details through the server.
 
-Failed training exits with code `3`, writes a versioned `*.failed-*.json` report, and leaves any
-previous production artifacts untouched. Successful publication verifies save/reload prediction
-parity, hashes the model, writes the hash-bound metadata sidecar, and atomically publishes model,
-metadata, and report.
+## Health Endpoints
 
-### `withdrawal-28d-v1` semantics
-
-Each row observes the previous 28 days, advances on a seven-day stride, and labels whether the
-student unregisters in the following 28 days. It uses only behavioral fields:
-
-| Feature | Meaning |
+| Endpoint | Meaning |
 | --- | --- |
-| `ActiveDayRate` | Days with any VLE click divided by 28 |
-| `ActivitySpanDays` | Inclusive first-to-last active-day span; `0` when inactive |
-| `DaysSinceLastAccess` | Days from the window end to last activity; `28` when inactive |
-| `ForumInteractionCount` | `forumng` clicks in the observation window |
-| `CourseInteractionCount` | Non-forum VLE clicks; forum clicks are not double-counted |
-| `LateOrMissingAssignmentCount` | Assessments due in-window that were missing or late at the anchor; banked work is excluded |
+| `/health/live` | Process liveness |
+| `/health/ml` | ML disabled/available/unavailable status without exposing local paths |
+| `/health/ready` | Database readiness plus ML readiness policy |
 
-Demographics, final results, assessment scores, private journal text, forum text, and counseling
-content are not model features.
+## Database Migrations
 
-### Current artifact status
-
-The official archive is downloaded locally with SHA-256
-`f2ed1902616c1fe8d2824d872c0b7d2d72be435bf0124d077044fe4be2c6d3e4`. Two real-data attempts were
-correctly rejected:
-
-- The SDCA baseline reached validation AUC `0.654` and untouched-test AUC `0.648`; at threshold
-  `0.5`, test recall was `0.612` and precision was `0.040`.
-- The current FastTree trainer improved validation AUC to `0.678` and untouched-test AUC to `0.671`,
-  but no validation threshold satisfied both recall >= `0.70` and precision >= `0.30`.
-
-No runtime model or metadata artifact was published. `MachineLearning:Enabled` therefore remains
-`false`; this is a safe, expected state rather than a synthetic-model fallback or a reason to lower
-the approved quality gates.
-
----
-
-## Runtime snapshot import and scoring
-
-Runtime training and runtime data ingestion are intentionally separate. Admins import weekly,
-pre-aggregated feature snapshots from `/Admin/RiskMonitoring`; the application does not import raw
-OULAD rows into student accounts.
-
-CSV columns, in this exact order:
-
-```text
-StudentNumber,CourseKey,WindowEndUtc,ObservedDays,FeatureSchemaVersion,ActiveDayRate,ActivitySpanDays,DaysSinceLastAccess,ForumInteractionCount,CourseInteractionCount,LateOrMissingAssignmentCount
-```
-
-Example:
-
-```csv
-StudentNumber,CourseKey,WindowEndUtc,ObservedDays,FeatureSchemaVersion,ActiveDayRate,ActivitySpanDays,DaysSinceLastAccess,ForumInteractionCount,CourseInteractionCount,LateOrMissingAssignmentCount
-STU-0001,COURSE-01,2026-08-24T00:00:00Z,28,withdrawal-28d-v1,0.5,26,2,8,120,1
-```
-
-Imports accept only verified student-number matches with active consent. They validate the schema,
-28-day window, UTC/future timestamps, feature ranges, source filename/hash, duplicates, and maximum
-snapshot age. Snapshots older than eight days are not eligible for scoring.
-
-Scoring is idempotent per snapshot/model. A run records candidates, scored/skipped/failed counts,
-queue creations/escalations, status, and a bounded failure summary. A late consent withdrawal is
-rechecked during persistence so it cannot create a score or queue case after consent is removed.
-
----
-
-## Counselor queue
-
-The validation-selected model threshold controls queue admission. Probability bands map to display
-levels (`Low < 0.25`, `Moderate < 0.50`, `High < 0.75`, otherwise `Critical`), but those display
-bands do not replace the learned queue threshold.
-
-There can be only one open queue entry per student. A later qualifying score refreshes its current
-probability/features and preserves the peak severity reached by the open case. The queue sorts by
-severity descending and age ascending. Counselor/Admin resolution is audited and protected by a
-row-version token; stale or duplicate actions do not silently overwrite another counselor's work.
-
-The authorized route is `GET /Counselor/Queue`, with the anti-forgery-protected resolve action at
-`POST /Counselor/Resolve`.
-
----
-
-## Background jobs and real-time updates
-
-`WeeklyRiskScoringJob` is implemented. By default it would run Mondays at 02:00 UTC (`0 2 * * 1`),
-with non-overlap protection and bounded retries, but it is registered only when a validated runtime
-artifact is available. If ML is disabled or unavailable, the recurring risk job is removed.
-
-The following scheduled jobs are still scaffolds and should not be treated as working:
-
-- `NudgeNotificationJob` delegates to an unimplemented nudge service.
-- `BookingReminderJob` throws `NotImplementedException`.
-- `ForumModerationJob` throws `NotImplementedException`.
-- `CrisisResourceEscalationJob` throws `NotImplementedException`.
-
-When scoring creates or escalates a case, the Web implementation broadcasts a payload-free
-`QueueUpdated` SignalR event through `CounselorQueueHub`. Clients then reload the authorized queue;
-student identity, probability, and features are never placed in the broadcast payload.
-
-The Hangfire dashboard is mapped at `/hangfire` only when `Startup:UseHangfire=true` and requires the
-Admin access policy.
-
----
-
-## Database migrations
-
-EF Core migrations are owned by `Lodestone.Infrastructure`:
+EF migrations live in `src/Lodestone.Infrastructure/Data/Migrations`.
 
 ```bash
 dotnet ef migrations add <MigrationName> --project src/Lodestone.Infrastructure --startup-project src/Lodestone.Web
 dotnet ef database update --project src/Lodestone.Infrastructure --startup-project src/Lodestone.Web
 ```
 
-`20260829032603_ConsentGatedRiskMonitoring` adds the consent, consent-history, snapshot, scoring-run,
-student-number claim, score provenance, and queue-concurrency schema. Its approved upgrade policy is
-privacy-first and intentionally destructive for legacy monitoring data:
+Latest source migration:
 
-- Deletes all pre-consent `RiskQueueEntries`, `RiskScores`, and `ActivityLogs`.
-- Converts valid existing profile student numbers into pending Admin-review claims.
-- Clears every profile's verified `StudentNumber`; no legacy mapping is implicitly trusted.
+```text
+20260831094114_RuntimeMlV2AndManualNudges
+```
 
-The generated SQL was validated and the migration was applied successfully to the local
-`DESKTOP-F5ATA0B\SQLEXPRESS` `Lodestone` database. The verified post-migration state is zero legacy
-activity logs, scores, queue entries, verified profile numbers, and consented students, plus one
-pending claim created from the valid legacy number. The new tables are present and
-`20260829032603` is the latest migration-history entry. The migration's `Down` path cannot
-reconstruct the purged legacy data.
+This migration adds v2 snapshot columns, manual-nudge fields and preferences, and journal note protection versioning. EF currently reports no pending model changes. Apply the migration to the configured local/demo database before running the full app against persistent SQL data.
 
----
+The prior `20260829032603_ConsentGatedRiskMonitoring` migration used a privacy-first upgrade policy that deletes pre-consent monitoring data, converts valid legacy student numbers into pending claims, and clears untrusted verified mappings.
+
+## Local Docker
+
+From the repo root:
+
+```bash
+docker compose --env-file deployment/docker/.env.example -f deployment/docker/docker-compose.yml up --build
+```
+
+The Docker setup is for local/demo evaluation. It uses persisted volumes for SQL Server, ASP.NET Data Protection keys, HTTPS certs, and optional ML artifacts. Do not use `docker compose down -v` with real encrypted journal data unless the SQL and key-ring volumes are backed up.
+
+Production should use external TLS, managed secrets, least-privilege DB credentials, controlled migrations, persistent backed-up SQL storage, and a protected shared Data Protection key ring.
 
 ## Tests
 
-Run the complete suite:
+Run all tests:
 
 ```bash
 dotnet test Lodestone.sln
 ```
 
-Or run focused projects:
+Latest verified counts:
 
-```bash
-dotnet test tests/Lodestone.UnitTests
-dotnet test tests/Lodestone.IntegrationTests
-dotnet test tests/Lodestone.MLTests
-```
+- Unit: 84
+- Integration: 45
+- ML: 29
+- Total: 158
 
-The risk/ML tests cover OULAD parsing and leakage boundaries, grouped splitting, metric and threshold
-selection, quality-gated publication, runtime artifact validation, consent/revocation, snapshot
-eligibility and deduplication, idempotent scoring, queue behavior, verified student numbers,
-concurrency outcomes, controller authorization, and health-endpoint contracts.
+Additional verification performed:
 
-The latest full verification completed with 116 passing tests: 56 Unit, 38 Integration, and 22 ML.
+- Release solution build: 0 warnings, 0 errors.
+- All 13 shipped JavaScript files pass `node --check`.
+- Docker Compose config validates with `.env.example`; local Docker config access warning is environment-specific.
+- EF reports no pending model changes after the latest migration.
+- `git diff --check` reports no whitespace errors, only expected LF-to-CRLF warnings.
 
----
+## Privacy And Security
 
-## Privacy and security
-
-- Monitoring is explicit opt-in, not opt-out.
-- A claimed LMS identifier is not trusted until Admin verification.
-- Withdrawal and Admin reset purge derived monitoring data.
-- Imports are aggregated behavioral features, not journal/forum/counseling text.
-- Risk is used only for human support routing, never diagnosis, grading, or discipline.
-- Counselor queue broadcasts carry no confidential payload.
-- Sensitive actions require authorization, anti-forgery protection, audit entries, and concurrency
-  checks where stale writes matter.
-- Secrets belong in User Secrets/environment variables; never commit SMTP/admin credentials.
-- Use least-privilege database and Hangfire-dashboard access in production.
-
----
-
-## Current status
-
-- Consent-gated import/scoring, verified student-number workflow, risk persistence, counselor queue,
-  Admin operations UI, trainer CLI, and fail-closed runtime integration are implemented in source.
-- The consent/risk migration is SQL-validated and applied to the local SQL Express `Lodestone`
-  database; the privacy-first purge and pending-claim conversion were verified directly.
-- The official OULAD dataset is present locally, but both the SDCA baseline and current FastTree run
-  failed the fixed quality gate, so no runtime artifact exists and ML remains disabled by default.
-- The full build and all 116 tests pass. The ML health endpoint is healthy while intentionally
-  disabled and fail-closed when enabled without an accepted artifact.
-- Unrelated nudge, reminder/moderation/escalation jobs, PDF report generators, and the generic
-  analytics Dashboard view remain incomplete.
-
----
+- Monitoring is explicit opt-in.
+- Claimed LMS identifiers require Admin verification.
+- Withdrawal deletes derived monitoring data.
+- ML uses only aggregate behavioral features available at prediction time.
+- Journal notes are protected with ASP.NET Data Protection.
+- Account reset/setup links use a configured public base URL, not request host headers.
+- Account/setup failure logs are sanitized and do not include reset tokens, setup URLs, or recipient addresses.
+- Sensitive actions use role authorization, anti-forgery protection, audit records, and row-version checks where stale writes matter.
 
 ## Troubleshooting
 
 | Issue | Likely cause and action |
 | --- | --- |
-| Database connection fails | Check both SQL Server connection strings, instance availability, and certificate/encryption settings. |
-| A future migration fails | Generate and inspect its SQL, back up affected data, and verify the configured SQL Server instance before retrying `database update`. |
-| `/health/ml` says healthy while disabled | Expected: the subsystem is intentionally off. Inspect the JSON description. |
-| `/health/ml` is unhealthy after enabling ML | Model/metadata is missing, corrupt, incompatible, or fails hash/schema checks. Do not bypass the check; retrain or restore a validated pair. |
-| Weekly risk job is absent | It is registered only when the model status is available. Check `/health/ml` and startup logs. |
-| Snapshot row is rejected | Verify Admin-approved student-number mapping, active consent, exact CSV header/schema, UTC window end, 28 observed days, feature ranges, and age <= 8 days. |
-| Training exits with code 3 | The validation threshold or untouched test quality gate failed. Inspect the versioned failed report; no artifact should be enabled. |
-| Hangfire emits failures from other jobs | Several unrelated recurring jobs remain explicit stubs; disable Hangfire for isolated ML health tests. |
-| Browser still shows an old Razor view | Development uses Razor runtime compilation, but static CSS/JS may require a hard refresh. |
+| `/health/ml` healthy while disabled | Expected. The subsystem is intentionally off. |
+| `/health/ml` unhealthy after enabling ML | Artifact, metadata, manifest, hash, schema, gate evidence, or loadability validation failed. Retrain or restore an accepted artifact. |
+| Weekly risk job is absent | The model is not available. Check `/health/ml`. |
+| Snapshot import rejects rows | Check consent, Admin-approved student number, exact schema header, UTC window end, 28 observed days, feature ranges, source hash, duplicates, and age. |
+| Training exits with code `3` | The validation or locked-test gate failed. Failed reports stay outside `App_Data/ml`. |
+| Docker app loses encrypted notes after reset | The Data Protection key volume was removed or changed. Restore the old key ring backup. |
 
----
+## License And Academic Use
 
-## License and academic use
-
-Lodestone is an academic/capstone project licensed under the [MIT License](LICENSE). OULAD is a
-separate dataset distributed by its authors/UCI under CC BY 4.0; follow its attribution and license
-terms when redistributing or publishing derived work.
+Lodestone is an academic/capstone project licensed under the [MIT License](LICENSE). OULAD is distributed by its authors/UCI under CC BY 4.0; follow its attribution and license terms when using or redistributing derived work.

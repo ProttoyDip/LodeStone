@@ -5,6 +5,8 @@
     var successMessage = TempData["QueueSuccess"] as string;
     var conflictMessage = TempData["QueueConflict"] as string;
     var errorMessage = TempData["QueueError"] as string;
+    var riskRuntime = Model.RiskRuntime;
+    var latestRiskRun = riskRuntime?.LatestRun;
 
     static string LevelClass(RiskLevel level) => level switch
     {
@@ -58,6 +60,49 @@
                 <span aria-hidden="true">!</span>
                 <p>@errorMessage</p>
             </div>
+        }
+
+        @if (riskRuntime is not null)
+        {
+            <section class="queue-runtime queue-runtime--@riskRuntime.StateTone" aria-labelledby="queue-runtime-title">
+                <span class="queue-runtime__mark" aria-hidden="true">@(riskRuntime.ModelStatus.IsAvailable ? "✓" : "!")</span>
+                <div class="queue-runtime__content">
+                    <p class="queue-eyebrow">Runtime model</p>
+                    <h2 id="queue-runtime-title">Risk scoring @riskRuntime.StateLabel.ToLowerInvariant()</h2>
+                    <p>@riskRuntime.StateDescription</p>
+                    @if (!riskRuntime.ModelStatus.IsAvailable && !string.IsNullOrWhiteSpace(riskRuntime.UnavailableReason))
+                    {
+                        <p class="queue-runtime__reason">@riskRuntime.UnavailableReason</p>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(riskRuntime.StatusError))
+                    {
+                        <p class="queue-runtime__reason">@riskRuntime.StatusError</p>
+                    }
+                </div>
+                <dl class="queue-runtime__facts">
+                    <div>
+                        <dt>Model</dt>
+                        <dd>@riskRuntime.ModelVersion</dd>
+                    </div>
+                    <div>
+                        <dt>Schema</dt>
+                        <dd>@riskRuntime.FeatureSchemaVersion</dd>
+                    </div>
+                    <div>
+                        <dt>Latest run</dt>
+                        <dd>
+                            @if (latestRiskRun is null)
+                            {
+                                <text>No run recorded</text>
+                            }
+                            else
+                            {
+                                <text>@latestRiskRun.ScoredCount.ToString("N0") scored, @latestRiskRun.SkippedCount.ToString("N0") skipped, @latestRiskRun.FailedCount.ToString("N0") failed</text>
+                            }
+                        </dd>
+                    </div>
+                </dl>
+            </section>
         }
 
         @if (Model.LoadFailed)

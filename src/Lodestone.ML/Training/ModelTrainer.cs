@@ -1,5 +1,6 @@
 using Microsoft.ML;
 using Microsoft.ML.Trainers.FastTree;
+using Microsoft.ML.Trainers.LightGbm;
 
 namespace Lodestone.ML.Training;
 
@@ -11,22 +12,45 @@ public class ModelTrainer
     public ModelTrainer(MLContext mlContext) => _mlContext = mlContext;
 
     public ITransformer Train(IDataView trainingData, IEstimator<ITransformer> pipeline)
+        => Train(trainingData, pipeline, ModelTrainingCandidate.V1FastTree);
+
+    public ITransformer Train(
+        IDataView trainingData,
+        IEstimator<ITransformer> pipeline,
+        ModelTrainingCandidate candidate)
     {
         ArgumentNullException.ThrowIfNull(trainingData);
         ArgumentNullException.ThrowIfNull(pipeline);
+        ArgumentNullException.ThrowIfNull(candidate);
 
-        var trainer = _mlContext.BinaryClassification.Trainers.FastTree(
-            new FastTreeBinaryTrainer.Options
-            {
-                LabelColumnName = "Label",
-                FeatureColumnName = FeatureEngineering.FeaturesColumnName,
-                ExampleWeightColumnName = nameof(Models.StudentActivityObservation.ExampleWeight),
-                NumberOfTrees = 200,
-                NumberOfLeaves = 31,
-                MinimumExampleCountPerLeaf = 20,
-                LearningRate = 0.1,
-                NumberOfThreads = 1,
-            });
+        IEstimator<ITransformer> trainer = candidate.Algorithm switch
+        {
+            ModelTrainingAlgorithm.FastTree => _mlContext.BinaryClassification.Trainers.FastTree(
+                new FastTreeBinaryTrainer.Options
+                {
+                    LabelColumnName = "Label",
+                    FeatureColumnName = FeatureEngineering.FeaturesColumnName,
+                    ExampleWeightColumnName = nameof(Models.StudentActivityObservation.ExampleWeight),
+                    NumberOfTrees = candidate.Iterations,
+                    NumberOfLeaves = candidate.NumberOfLeaves,
+                    MinimumExampleCountPerLeaf = candidate.MinimumExampleCountPerLeaf,
+                    LearningRate = candidate.LearningRate,
+                    NumberOfThreads = 1
+                }),
+            ModelTrainingAlgorithm.LightGbm => _mlContext.BinaryClassification.Trainers.LightGbm(
+                new LightGbmBinaryTrainer.Options
+                {
+                    LabelColumnName = "Label",
+                    FeatureColumnName = FeatureEngineering.FeaturesColumnName,
+                    ExampleWeightColumnName = nameof(Models.StudentActivityObservation.ExampleWeight),
+                    NumberOfIterations = candidate.Iterations,
+                    NumberOfLeaves = candidate.NumberOfLeaves,
+                    MinimumExampleCountPerLeaf = candidate.MinimumExampleCountPerLeaf,
+                    LearningRate = candidate.LearningRate,
+                    NumberOfThreads = 1
+                }),
+            _ => throw new ArgumentOutOfRangeException(nameof(candidate), candidate.Algorithm, "Unsupported model algorithm.")
+        };
 
         // Both the normalizer and classifier are fitted exclusively on the training partition.
         return pipeline.AppendCacheCheckpoint(_mlContext).Append(trainer).Fit(trainingData);

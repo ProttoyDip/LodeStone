@@ -23,15 +23,13 @@ public sealed class AdminUserSeederTests
             .Setup(manager => manager.RoleExistsAsync(RoleConstants.Admin))
             .ReturnsAsync(true);
         userManager
-            .Setup(manager => manager.FindByEmailAsync(It.IsAny<string>()))
-            .ReturnsAsync(admin);
-        userManager
-            .Setup(manager => manager.IsInRoleAsync(admin, RoleConstants.Admin))
-            .ReturnsAsync(true);
+            .Setup(manager => manager.GetUsersInRoleAsync(RoleConstants.Admin))
+            .ReturnsAsync(new List<ApplicationUser> { admin });
 
         var action = () => AdminUserSeeder.SeedAsync(
             userManager.Object,
             roleManager.Object,
+            null,
             string.Empty,
             resetExistingPassword: false);
 
@@ -60,12 +58,16 @@ public sealed class AdminUserSeederTests
             .Setup(manager => manager.RoleExistsAsync(RoleConstants.Admin))
             .ReturnsAsync(true);
         userManager
-            .Setup(manager => manager.FindByEmailAsync(It.IsAny<string>()))
+            .Setup(manager => manager.GetUsersInRoleAsync(RoleConstants.Admin))
+            .ReturnsAsync(new List<ApplicationUser>());
+        userManager
+            .Setup(manager => manager.FindByEmailAsync("admin@example.edu"))
             .ReturnsAsync((ApplicationUser?)null);
 
         var action = () => AdminUserSeeder.SeedAsync(
             userManager.Object,
             roleManager.Object,
+            "admin@example.edu",
             "   ",
             resetExistingPassword: false);
 
@@ -88,12 +90,19 @@ public sealed class AdminUserSeederTests
             .Setup(manager => manager.RoleExistsAsync(RoleConstants.Admin))
             .ReturnsAsync(true);
         userManager
-            .Setup(manager => manager.FindByEmailAsync(It.IsAny<string>()))
+            .Setup(manager => manager.GetUsersInRoleAsync(RoleConstants.Admin))
+            .ReturnsAsync(new List<ApplicationUser> { admin });
+        userManager
+            .Setup(manager => manager.FindByEmailAsync("admin@example.edu"))
             .ReturnsAsync(admin);
+        userManager
+            .Setup(manager => manager.IsInRoleAsync(admin, RoleConstants.Admin))
+            .ReturnsAsync(true);
 
         var action = () => AdminUserSeeder.SeedAsync(
             userManager.Object,
             roleManager.Object,
+            "admin@example.edu",
             string.Empty,
             resetExistingPassword: true);
 

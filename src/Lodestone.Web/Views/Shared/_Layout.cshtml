@@ -35,6 +35,7 @@
                     else if (User.IsInRole(RoleConstants.Counselor))
                     {
                         <li><a asp-controller="Counselor" asp-action="Queue">Support queue</a></li>
+                        <li><a asp-controller="Counselor" asp-action="Reviews">Appointments</a></li>
                         <li><a asp-controller="CounselorAvailability" asp-action="Index">Availability</a></li>
                         <li><a asp-controller="Forum" asp-action="Index">Forum</a></li>
                     }

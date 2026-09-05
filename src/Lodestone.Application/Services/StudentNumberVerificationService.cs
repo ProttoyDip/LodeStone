@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Lodestone.Application.DTOs.Student;
 using Lodestone.Application.Interfaces;
+using Lodestone.Domain.Enums;
 
 namespace Lodestone.Application.Services;
 
@@ -10,9 +11,15 @@ public sealed partial class StudentNumberVerificationService : IStudentNumberVer
     private const int MaximumStudentNumberLength = 64;
     private const int MaximumActorLength = 450;
     private readonly IStudentNumberVerificationRepository _repository;
+    private readonly INotificationService _notifications;
 
-    public StudentNumberVerificationService(IStudentNumberVerificationRepository repository)
-        => _repository = repository;
+    public StudentNumberVerificationService(
+        IStudentNumberVerificationRepository repository,
+        INotificationService notifications)
+    {
+        _repository = repository;
+        _notifications = notifications;
+    }
 
     public Task<StudentNumberVerificationStateDto?> GetCurrentAsync(
         string userId,
@@ -34,7 +41,21 @@ public sealed partial class StudentNumberVerificationService : IStudentNumberVer
         if (!TryNormalize(studentNumber, out var normalized))
             return new StudentNumberClaimResultDto(StudentNumberClaimOutcome.InvalidStudentNumber);
 
-        return await _repository.SubmitAsync(userId.Trim(), normalized, cancellationToken);
+        var result = await _repository.SubmitAsync(userId.Trim(), normalized, cancellationToken);
+
+        // A newly submitted claim sits in the admin review queue, so raise it for whoever is on
+        // duty. Only a genuine submission notifies: re-submissions and validation rejections must
+        // not create queue noise. The student number itself stays out of the message body.
+        if (result.Outcome == StudentNumberClaimOutcome.Submitted)
+        {
+            await _notifications.NotifyAdministratorsAsync(
+                NotificationType.System,
+                "Student number awaiting review",
+                "A student submitted a student number claim for verification.",
+                cancellationToken);
+        }
+
+        return result;
     }
 
     public Task<IReadOnlyList<StudentNumberClaimDto>> GetPendingAsync(
