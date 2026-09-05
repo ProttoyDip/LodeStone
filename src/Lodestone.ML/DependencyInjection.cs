@@ -30,7 +30,16 @@ public static class DependencyInjection
             contentRootPath,
             Path.ChangeExtension(Path.GetRelativePath(contentRootPath, modelPath), ".metadata.json"));
 
-        return Register(services, enabled, modelPath, metadataPath);
+        // Operational cut-off for the counselor queue, separate from the artifact's gate threshold.
+        var queueThreshold = double.TryParse(
+            configuration["MachineLearning:QueueThreshold"],
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var configuredThreshold)
+            ? configuredThreshold
+            : (double?)null;
+
+        return Register(services, enabled, modelPath, metadataPath, queueThreshold);
     }
 
     /// <summary>Compatibility overload for non-hosted callers; a supplied path means enabled.</summary>
@@ -42,18 +51,20 @@ public static class DependencyInjection
             services,
             enabled: true,
             resolvedModelPath,
-            Path.ChangeExtension(resolvedModelPath, ".metadata.json"));
+            Path.ChangeExtension(resolvedModelPath, ".metadata.json"),
+            queueThresholdOverride: null);
     }
 
     private static IServiceCollection Register(
         IServiceCollection services,
         bool enabled,
         string modelPath,
-        string metadataPath)
+        string metadataPath,
+        double? queueThresholdOverride)
     {
         var mlContext = new MLContext(seed: 42);
         var loadResult = enabled
-            ? LoadedRiskModelPredictor.TryLoad(mlContext, modelPath, metadataPath)
+            ? LoadedRiskModelPredictor.TryLoad(mlContext, modelPath, metadataPath, queueThresholdOverride)
             : new RiskModelLoadResult(
                 new UnavailableRiskModelPredictor("Machine learning is disabled by configuration."),
                 RiskModelStatus.Disabled());

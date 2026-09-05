@@ -55,6 +55,11 @@ public sealed class VolunteerSupportRepository : GenericRepository<SupportReques
         CancellationToken cancellationToken = default)
         => Context.VolunteerProfiles.AddAsync(volunteer, cancellationToken).AsTask();
 
+    public Task<ApplicationUser?> GetTrackedUserAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+        => Context.Users.FirstOrDefaultAsync(user => user.Id == userId, cancellationToken);
+
     public async Task<IReadOnlyList<VolunteerProfile>> GetAvailableVolunteersAsync(
         CancellationToken cancellationToken = default)
         => await Context.VolunteerProfiles

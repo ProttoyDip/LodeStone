@@ -362,8 +362,10 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
             return;
         }
 
-        // V2 explicitly permits signed trend features at indices 2 and 5 only.
-        if (values.Where((_, index) => index is not 2 and not 5).Any(value => value < 0) ||
+        // Signed features: the v2 trends at indices 2 and 5, plus v3's activity-trend acceleration
+        // at index 12, which is a difference of differences and so spans -2 to 2.
+        var isV3 = string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal);
+        if (values.Where((_, index) => index is not 2 and not 5 and not 12).Any(value => value < 0) ||
             values.Where((_, index) => index is 2 or 5).Any(value => value is < -1 or > 1) ||
             row.RecentActiveDayRate > 1 || row.PriorActiveDayRate > 1 ||
             row.InactivityStreakDays > row.ObservedDays ||
@@ -371,6 +373,17 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
             row.CourseProgressRatio > 1 || row.CohortActivityPercentile > 1)
         {
             AddError(errors, row.SourceRowNumber, "V2 feature values are outside their valid range.");
+            return;
+        }
+
+        if (isV3 &&
+            (row.ActivityTrendAcceleration is < -2 or > 2 ||
+             row.ForumEngagementShare is < 0 or > 1 ||
+             row.InactiveWeekRate is < 0 or > 1 ||
+             row.ClickVolatility < 0 ||
+             row.AssessmentMissStreak < 0))
+        {
+            AddError(errors, row.SourceRowNumber, "V3 feature values are outside their valid range.");
         }
     }
 
@@ -423,7 +436,10 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
             CreatedAtUtc = createdAtUtc,
             CreatedBy = createdBy
         };
-        if (string.Equals(row.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal))
+        var storesWindowedFeatures =
+            string.Equals(row.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
+            || string.Equals(row.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal);
+        if (storesWindowedFeatures)
         {
             snapshot.RecentActiveDayRate = row.RecentActiveDayRate;
             snapshot.PriorActiveDayRate = row.PriorActiveDayRate;
@@ -437,6 +453,15 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
             snapshot.AssessmentLateOrMissingRate = row.AssessmentLateOrMissingRate;
             snapshot.CourseProgressRatio = row.CourseProgressRatio;
             snapshot.CohortActivityPercentile = row.CohortActivityPercentile;
+        }
+
+        if (string.Equals(row.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV3, StringComparison.Ordinal))
+        {
+            snapshot.ActivityTrendAcceleration = row.ActivityTrendAcceleration;
+            snapshot.ClickVolatility = row.ClickVolatility;
+            snapshot.ForumEngagementShare = row.ForumEngagementShare;
+            snapshot.InactiveWeekRate = row.InactiveWeekRate;
+            snapshot.AssessmentMissStreak = row.AssessmentMissStreak;
         }
 
         return snapshot;
@@ -468,6 +493,26 @@ public sealed class RiskFeatureSnapshotRepository : IRiskFeatureSnapshotReposito
                 Required(snapshot.AssessmentLateOrMissingRate, nameof(snapshot.AssessmentLateOrMissingRate)),
                 Required(snapshot.CourseProgressRatio, nameof(snapshot.CourseProgressRatio)),
                 Required(snapshot.CohortActivityPercentile, nameof(snapshot.CohortActivityPercentile))
+            ],
+            RiskFeatureSchema.Withdrawal28DayV3 =>
+            [
+                Required(snapshot.RecentActiveDayRate, nameof(snapshot.RecentActiveDayRate)),
+                Required(snapshot.PriorActiveDayRate, nameof(snapshot.PriorActiveDayRate)),
+                Required(snapshot.ActiveDayRateTrend, nameof(snapshot.ActiveDayRateTrend)),
+                Required(snapshot.RecentCourseClickRate, nameof(snapshot.RecentCourseClickRate)),
+                Required(snapshot.PriorCourseClickRate, nameof(snapshot.PriorCourseClickRate)),
+                Required(snapshot.CourseClickRateTrend, nameof(snapshot.CourseClickRateTrend)),
+                Required(snapshot.InactivityStreakDays, nameof(snapshot.InactivityStreakDays)),
+                Required(snapshot.AssessmentDueRate, nameof(snapshot.AssessmentDueRate)),
+                Required(snapshot.AssessmentOnTimeRate, nameof(snapshot.AssessmentOnTimeRate)),
+                Required(snapshot.AssessmentLateOrMissingRate, nameof(snapshot.AssessmentLateOrMissingRate)),
+                Required(snapshot.CourseProgressRatio, nameof(snapshot.CourseProgressRatio)),
+                Required(snapshot.CohortActivityPercentile, nameof(snapshot.CohortActivityPercentile)),
+                Required(snapshot.ActivityTrendAcceleration, nameof(snapshot.ActivityTrendAcceleration)),
+                Required(snapshot.ClickVolatility, nameof(snapshot.ClickVolatility)),
+                Required(snapshot.ForumEngagementShare, nameof(snapshot.ForumEngagementShare)),
+                Required(snapshot.InactiveWeekRate, nameof(snapshot.InactiveWeekRate)),
+                Required(snapshot.AssessmentMissStreak, nameof(snapshot.AssessmentMissStreak))
             ],
             _ => throw new InvalidOperationException("The stored snapshot has an unsupported feature schema.")
         };

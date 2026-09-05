@@ -19,6 +19,7 @@ public class CounselorController : Controller
     private readonly ICurrentUserService _currentUserService;
     private readonly IRiskSnapshotAdministrationService _riskSnapshotAdministrationService;
     private readonly IRiskModelStatusProvider _riskModelStatusProvider;
+    private readonly IAdminDashboardService _adminDashboardService;
     private readonly ILogger<CounselorController> _logger;
 
     public CounselorController(
@@ -28,15 +29,47 @@ public class CounselorController : Controller
         ICurrentUserService currentUserService,
         IRiskSnapshotAdministrationService riskSnapshotAdministrationService,
         IRiskModelStatusProvider riskModelStatusProvider,
+        IAdminDashboardService adminDashboardService,
         ILogger<CounselorController> logger)
         => (_queueService, _bookingService, _nudgeService, _currentUserService, _riskSnapshotAdministrationService,
-                _riskModelStatusProvider, _logger) =
+                _riskModelStatusProvider, _adminDashboardService, _logger) =
             (queueService, bookingService, nudgeService, currentUserService, riskSnapshotAdministrationService,
-                riskModelStatusProvider, logger);
+                riskModelStatusProvider, adminDashboardService, logger);
+
+    /// <summary>
+    /// The support queue is reachable from both the counselor navigation and the admin sidebar.
+    /// When an administrator opens it, supply the admin shell so the page keeps its sidebar and
+    /// top bar instead of dropping them for the public layout.
+    /// </summary>
+    private async Task SetAdminShellIfAdminAsync(CancellationToken cancellationToken)
+    {
+        if (!User.IsInRole(RoleConstants.Admin)) return;
+
+        try
+        {
+            ViewData["AdminShell"] = await _adminDashboardService.GetShellAsync(cancellationToken);
+            ViewData["AdminActiveSection"] = AdminSupportQueueSection;
+        }
+        catch (Exception exception)
+        {
+            // The queue itself still renders; only the surrounding chrome degrades.
+            _logger.LogWarning(exception, "Could not load the admin shell for the support queue.");
+        }
+    }
+
+    /// <summary>
+    /// Sidebar highlight key. The support queue lives on the counselor controller, so it has no
+    /// AdminSectionType of its own. Public because _AdminSidebar reads it, and runtime-compiled
+    /// Razor views build into a separate assembly that cannot see internal members.
+    /// </summary>
+    public const string AdminSupportQueueSection = "SupportQueue";
 
     [HttpGet]
     public async Task<IActionResult> Queue(CancellationToken cancellationToken)
     {
+        // Set before either branch so the failure page keeps the same chrome as the success page.
+        await SetAdminShellIfAdminAsync(cancellationToken);
+
         try
         {
             var items = await _queueService.GetQueueAsync(cancellationToken);

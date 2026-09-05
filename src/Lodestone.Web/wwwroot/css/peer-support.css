@@ -1,0 +1,229 @@
+/* Peer-support pages (student requests and volunteer handling).
+
+   These views were authored against Bootstrap utility classes, but the public layout loads no CSS
+   framework — only site.css — so every one of those classes was inert and the pages rendered as
+   unstyled markup. This file implements the subset actually used, expressed in Lodestone's own
+   tokens, so the markup renders in the site's visual language rather than a generic framework's.
+
+   It is deliberately not a general Bootstrap port: it covers the classes these six views use and
+   nothing more. New markup here should prefer the .volunteer-* classes in volunteer.css. */
+
+/* ---- layout ---- */
+
+.container {
+    width: 100%;
+    max-width: 68rem;
+    margin-inline: auto;
+    padding-inline: clamp(1.25rem, 4vw, 2rem);
+}
+
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-inline: -0.6rem;
+}
+
+.row > [class*="col-"] { padding-inline: .6rem; width: 100%; }
+
+.col-12 { flex: 0 0 100%; max-width: 100%; }
+
+@media (min-width: 768px) {
+    .col-md-6 { flex: 0 0 50%; max-width: 50%; }
+}
+
+@media (min-width: 992px) {
+    .col-lg-4 { flex: 0 0 33.3333%; max-width: 33.3333%; }
+    .col-lg-8 { flex: 0 0 66.6667%; max-width: 66.6667%; }
+}
+
+/* ---- spacing ---- */
+
+.my-5 { margin-block: clamp(2.5rem, 6vw, 4rem); }
+.mb-0 { margin-bottom: 0 !important; }
+.mb-1 { margin-bottom: .25rem; }
+.mb-2 { margin-bottom: .5rem; }
+.mb-3 { margin-bottom: 1rem; }
+.mb-4 { margin-bottom: 1.5rem; }
+.mt-1 { margin-top: .25rem; }
+.mt-2 { margin-top: .5rem; }
+.mt-3 { margin-top: 1rem; }
+.ms-2 { margin-left: .5rem; }
+.p-3 { padding: 1rem; }
+
+/* ---- flex helpers ---- */
+
+.d-flex { display: flex; }
+.d-block { display: block; }
+.d-inline { display: inline; }
+.justify-content-between { justify-content: space-between; }
+.align-items-start { align-items: flex-start; }
+.flex-grow-1 { flex: 1 1 auto; min-width: 0; }
+.gap-2 { gap: .5rem; }
+
+/* ---- typography ---- */
+
+.text-muted { color: var(--muted); }
+.text-danger { color: var(--clay-deep); }
+.text-dark { color: var(--ink); }
+.small, small { font-size: .84rem; }
+.lead { font-size: 1.05rem; color: var(--ink-soft); line-height: 1.65; }
+
+.display-4 {
+    font-family: var(--font-display);
+    font-size: clamp(1.9rem, 4.5vw, 2.6rem);
+    font-weight: 400;
+    line-height: 1.1;
+}
+
+.rounded { border-radius: var(--r-md); }
+
+/* ---- cards ---- */
+
+.card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-print);
+    overflow: hidden;
+}
+
+.card-header {
+    padding: .9rem 1.15rem;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+}
+
+.card-header h5, .card-header h6 { margin: 0; font-size: .98rem; font-weight: 600; }
+
+.card-body { padding: 1.15rem; }
+.card-title { margin: 0 0 .5rem; font-size: 1rem; font-weight: 600; }
+.card-text { margin: 0 0 .5rem; color: var(--ink-soft); line-height: 1.6; }
+
+/* bg-light is used to tint card headers; keep it inside the paper palette. */
+.bg-light { background: var(--paper); }
+
+/* ---- list groups ---- */
+
+.list-group { display: grid; gap: .6rem; }
+
+.list-group-item {
+    padding: .95rem 1.05rem;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+}
+
+/* ---- badges ---- */
+
+.badge {
+    display: inline-block;
+    padding: .28rem .6rem;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.badge.bg-secondary { color: var(--ink); background: var(--line); }
+.badge.bg-success { color: var(--paper); background: var(--forest); }
+.badge.bg-warning { color: var(--ink); background: #E4C486; }
+.badge.bg-danger { color: var(--paper); background: var(--clay); }
+.badge.bg-info { color: var(--ink); background: var(--forest-wash); }
+
+/* ---- buttons ---- */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .7rem 1.1rem;
+    border-radius: var(--r-sm);
+    border: 1px solid transparent;
+    font: inherit;
+    font-size: .9rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform .2s ease, background .2s ease, box-shadow .2s ease;
+}
+
+.btn-sm { padding: .45rem .75rem; font-size: .82rem; }
+
+.btn-primary { color: var(--paper); background: var(--clay); border-color: var(--clay); }
+.btn-primary:hover { background: var(--clay-deep); transform: translateY(-1px); }
+
+.btn-outline-secondary { color: var(--ink); background: transparent; border-color: var(--line-strong); }
+.btn-outline-secondary:hover { background: var(--paper); transform: translateY(-1px); }
+
+.btn-danger { color: var(--paper); background: var(--clay-deep); border-color: var(--clay-deep); }
+.btn-success { color: var(--paper); background: var(--forest); border-color: var(--forest); }
+
+.btn:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; }
+
+/* ---- alerts ----
+   Dismissal needs Bootstrap's JavaScript, which is not loaded. The close control is hidden rather
+   than left inert: these are one-shot TempData messages that clear on the next navigation, so a
+   button that visibly does nothing would be worse than no button. */
+
+.alert {
+    padding: .9rem 1.1rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    font-size: .9rem;
+    line-height: 1.55;
+}
+
+.alert-success { color: var(--forest); background: var(--forest-wash); border-color: rgba(60, 86, 71, .28); }
+.alert-danger { color: var(--clay-deep); background: var(--clay-wash); border-color: rgba(154, 63, 42, .3); }
+.alert-info { color: var(--ink-soft); background: var(--paper); border-color: var(--line); }
+.alert-warning { color: var(--ink); background: #F6EAD2; border-color: rgba(180, 118, 42, .3); }
+
+.alert .btn-close { display: none; }
+
+/* Without Bootstrap's JS, .fade alone would leave content at zero opacity. */
+.fade { opacity: 1; }
+
+/* ---- forms ---- */
+
+.form-label { display: block; margin-bottom: .35rem; font-size: .92rem; font-weight: 600; }
+
+.form-control {
+    width: 100%;
+    padding: .75rem .9rem;
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-md);
+    font: inherit;
+    line-height: 1.6;
+}
+
+.form-control::placeholder { color: var(--muted); opacity: 1; }
+.form-control:focus { outline: 2px solid var(--clay); outline-offset: 2px; }
+textarea.form-control { resize: vertical; min-height: 5rem; }
+
+.form-select {
+    width: 100%;
+    padding: .75rem .9rem;
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-md);
+    font: inherit;
+}
+
+.form-text { display: block; margin-top: .3rem; color: var(--muted); font-size: .82rem; }
+
+@media (prefers-reduced-motion: reduce) {
+    .btn { transition: none; }
+    .btn:hover { transform: none; }
+}

@@ -1,4 +1,5 @@
 @using Lodestone.Application.DTOs.Admin
+@using Lodestone.Web.Controllers
 
 @{
     var active = ViewData["AdminActiveSection"]?.ToString() ?? AdminSectionType.Dashboard.ToString();
@@ -30,9 +31,10 @@
 
     <div class="ls-admin-side__group">
         <p class="ls-admin-side__group-label">Care Operations</p>
-        <a class="ls-admin-link"
+        <a class="ls-admin-link @(active == CounselorController.AdminSupportQueueSection ? "is-active" : string.Empty)"
            asp-controller="Counselor"
-           asp-action="Queue">
+           asp-action="Queue"
+           aria-current="@(active == CounselorController.AdminSupportQueueSection ? "page" : null)">
             <i class="bi bi-life-preserver" aria-hidden="true"></i>
             <span>Support Queue</span>
         </a>

@@ -1,3 +1,4 @@
+using Lodestone.Application.DTOs.Volunteer;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Constants;
 using Lodestone.Web.ViewModels.Volunteer;
@@ -30,6 +31,12 @@ public sealed class VolunteerController : Controller
         try
         {
             var dashboard = await _supportService.GetVolunteerDashboardAsync(cancellationToken);
+
+            // An invitation creates the account without a profile, so send a volunteer who has
+            // not filled one in to the form rather than showing an empty dashboard.
+            if (dashboard.Profile is null)
+                return RedirectToAction(nameof(CompleteProfile));
+
             ViewData["Title"] = "Volunteer dashboard";
             return View("~/Views/Volunteer/Dashboard.cshtml", new VolunteerDashboardViewModel
             {
@@ -39,6 +46,69 @@ public sealed class VolunteerController : Controller
         catch (UnauthorizedAccessException)
         {
             return Forbid();
+        }
+    }
+
+    [HttpGet("Profile")]
+    public async Task<IActionResult> CompleteProfile(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var dashboard = await _supportService.GetVolunteerDashboardAsync(cancellationToken);
+            if (dashboard.Profile is not null)
+                return RedirectToAction(nameof(Dashboard));
+
+            ViewData["Title"] = "Complete your volunteer profile";
+            return View("~/Views/Volunteer/CompleteProfile.cshtml", new CompleteVolunteerProfileViewModel());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    [HttpPost("Profile")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CompleteProfile(
+        CompleteVolunteerProfileViewModel model,
+        CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            ViewData["Title"] = "Complete your volunteer profile";
+            return View("~/Views/Volunteer/CompleteProfile.cshtml", model);
+        }
+
+        try
+        {
+            await _supportService.CreateVolunteerProfileAsync(
+                new CreateVolunteerProfileDto(
+                    model.FullName,
+                    model.Department,
+                    model.Skills,
+                    model.Availability,
+                    model.Bio),
+                cancellationToken);
+
+            TempData["SupportSuccess"] =
+                "Thank you. Your profile has been sent to an administrator for approval.";
+            return RedirectToAction(nameof(Dashboard));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (InvalidOperationException exception)
+        {
+            // Most likely a profile created in another tab since this form was opened.
+            _logger.LogInformation(exception, "A volunteer profile could not be created.");
+            return RedirectToAction(nameof(Dashboard));
+        }
+        catch (ArgumentException exception)
+        {
+            ModelState.AddModelError(string.Empty, exception.Message);
+            ViewData["Title"] = "Complete your volunteer profile";
+            return View("~/Views/Volunteer/CompleteProfile.cshtml", model);
         }
     }
 

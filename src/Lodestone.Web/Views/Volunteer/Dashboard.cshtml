@@ -1,5 +1,6 @@
-@model VolunteerDashboardViewModel
 @using Lodestone.Application.DTOs.Volunteer
+@using Lodestone.Domain.Enums
+@model Lodestone.Web.ViewModels.Volunteer.VolunteerDashboardViewModel
 @{
     ViewData["Title"] = "Volunteer Dashboard";
     Layout = "~/Views/Shared/_Layout.cshtml";
@@ -11,7 +12,6 @@
     <link rel="stylesheet" href="~/css/peer-support.css" asp-append-version="true" />
 }
 
-@* This view is a fallback; VolunteerController.Index() redirects to Dashboard. *@
 <div class="container my-5">
     <div class="row mb-4">
         <div class="col-12">
@@ -20,27 +20,26 @@
         </div>
     </div>
 
-    @if (TempData["SupportSuccess"] is string success)
+    @if (TempData["SupportSuccess"] != null)
     {
         <div class="alert alert-success alert-dismissible fade show" role="alert">
-            @success
+            @TempData["SupportSuccess"]
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     }
 
-    @if (TempData["SupportError"] is string error)
+    @if (TempData["SupportError"] != null)
     {
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            @error
+            @TempData["SupportError"]
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     }
 
     @if (!Model.Dashboard.CanHandleRequests)
     {
-        <div class="alert alert-warning">
-            <i class="bi bi-exclamation-triangle"></i>
-            @Model.Dashboard.AccessMessage
+        <div class="alert alert-warning" role="alert">
+            @(Model.Dashboard.AccessMessage ?? "You are not currently eligible to handle peer support requests.")
         </div>
     }
     else
@@ -99,7 +98,7 @@
                 }
                 else
                 {
-                    <div class="alert alert-info">
+                    <div class="alert alert-info mb-4">
                         <i class="bi bi-info-circle"></i>
                         No pending requests at this time. Check back soon!
                     </div>
@@ -107,7 +106,7 @@
 
                 @if (Model.Dashboard.ActiveRequests.Count > 0)
                 {
-                    <div class="card">
+                    <div class="card mb-4">
                         <div class="card-header bg-light">
                             <h5 class="mb-0">Active Support</h5>
                         </div>
@@ -127,6 +126,44 @@
                                             </div>
                                             <a href="@Url.Action("ViewRequest", "Volunteer", new { requestId = request.Id })" class="btn btn-sm btn-primary">
                                                 Continue
+                                            </a>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @if (Model.Dashboard.History.Count > 0)
+                {
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">History</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="list-group">
+                                @foreach (var request in Model.Dashboard.History)
+                                {
+                                    var date = request.CompletedAtUtc ?? request.EscalatedAtUtc ?? request.CreatedAtUtc;
+                                    var statusBadgeClass = request.Status switch
+                                    {
+                                        SupportRequestStatus.Completed => "bg-info",
+                                        SupportRequestStatus.Escalated => "bg-warning text-dark",
+                                        _ => "bg-secondary"
+                                    };
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div class="flex-grow-1">
+                                                <h6 class="mb-1">@request.Title</h6>
+                                                <p class="mb-1 text-muted">
+                                                    <span class="badge @statusBadgeClass">@request.Status</span>
+                                                    <span class="badge bg-secondary">@request.Category</span>
+                                                </p>
+                                                <small class="text-muted">@date.ToString("MMM d, yyyy")</small>
+                                            </div>
+                                            <a href="@Url.Action("ViewRequest", "Volunteer", new { requestId = request.Id })" class="btn btn-sm btn-outline-secondary">
+                                                View Request
                                             </a>
                                         </div>
                                     </div>

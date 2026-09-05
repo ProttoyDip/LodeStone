@@ -186,13 +186,21 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
         if (missing.Length > 0)
             throw new InvalidDataException($"The snapshot CSV is missing required columns: {string.Join(", ", missing)}.");
 
+        // Ordered most specific first: v3 is a superset of v2's columns, so a v3 file also
+        // satisfies v2 and would otherwise match both and be rejected as ambiguous.
         var matches = new[]
             {
-                RiskFeatureSchemas.Withdrawal28DayV1,
-                RiskFeatureSchemas.Withdrawal28DayV2
+                RiskFeatureSchemas.Withdrawal28DayV3,
+                RiskFeatureSchemas.Withdrawal28DayV2,
+                RiskFeatureSchemas.Withdrawal28DayV1
             }
             .Where(schema => schema.FeatureNames.All(indexes.ContainsKey))
             .ToArray();
+        if (matches.Length > 1)
+        {
+            // Take the richest contract the file satisfies rather than refusing it.
+            matches = [matches[0]];
+        }
         if (matches.Length != 1)
         {
             throw new InvalidDataException(
@@ -258,6 +266,7 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
                 rowNumber);
         }
 
+        // v2 and v3 share their first twelve values in the schema's declared order; v3 appends five.
         return new RiskFeatureSnapshotImportDto(
             studentNumber,
             courseKey,
@@ -267,8 +276,17 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
             0, 0, 0, 0, 0, 0,
             rowNumber,
             values[0], values[1], values[2], values[3], values[4], values[5],
-            values[6], values[7], values[8], values[9], values[10], values[11]);
+            values[6], values[7], values[8], values[9], values[10], values[11],
+            ActivityTrendAcceleration: Optional(values, 12),
+            ClickVolatility: Optional(values, 13),
+            ForumEngagementShare: Optional(values, 14),
+            InactiveWeekRate: Optional(values, 15),
+            AssessmentMissStreak: Optional(values, 16));
     }
+
+    /// <summary>Reads a value the active schema may not define, keeping v2 imports unchanged.</summary>
+    private static float? Optional(IReadOnlyList<float> values, int index)
+        => index < values.Count ? values[index] : null;
 
     private static IReadOnlyList<string> ParseCsvLine(string line)
     {

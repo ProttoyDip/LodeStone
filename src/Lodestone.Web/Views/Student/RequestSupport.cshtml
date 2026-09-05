@@ -4,6 +4,12 @@
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
+
+@section Styles {
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/css/peer-support.css" asp-append-version="true" />
+}
+
 <div class="container my-5">
     <div class="row mb-4">
         <div class="col-12">
@@ -41,17 +47,11 @@
                             <option value="">-- Select a category --</option>
                             <option value="@SupportRequestCategory.AcademicGuidance">Academic Guidance</option>
                             <option value="@SupportRequestCategory.CampusAdjustment">Campus Adjustment</option>
-                            <option value="@SupportRequestCategory.GeneralPeerDiscussion">Peer Discussion</option>
-                            <option value="@SupportRequestCategory.TechnicalHelpGuidance">Technical Help</option>
+                            <option value="@SupportRequestCategory.PeerDiscussion">Peer Discussion</option>
+                            <option value="@SupportRequestCategory.TechnicalHelp">Technical Help</option>
+                            <option value="@SupportRequestCategory.GeneralSupport">General Support</option>
                         </select>
                         <span asp-validation-for="Category" class="text-danger small d-block mt-1"></span>
-                    </div>
-
-                    <div class="mb-4">
-                        <label for="Title" class="form-label">Subject</label>
-                        <input type="text" class="form-control" id="Title" asp-for="Title" placeholder="Brief description of what you need help with" required maxlength="200">
-                        <small class="form-text text-muted">5-200 characters</small>
-                        <span asp-validation-for="Title" class="text-danger small d-block mt-1"></span>
                     </div>
 
                     <div class="mb-4">
@@ -59,6 +59,13 @@
                         <textarea class="form-control" id="Message" asp-for="Message" rows="6" placeholder="Share more details about what you need help with..." maxlength="2000"></textarea>
                         <small class="form-text text-muted">0-2000 characters. The more details you provide, the better we can match you with the right volunteer.</small>
                         <span asp-validation-for="Message" class="text-danger small d-block mt-1"></span>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="Availability" class="form-label">Your availability (optional)</label>
+                        <textarea class="form-control" id="Availability" asp-for="Availability" rows="3" placeholder="When are you available to meet or chat? e.g. weekday evenings, weekends..." maxlength="500"></textarea>
+                        <small class="form-text text-muted">0-500 characters. Helps volunteers schedule a time to connect.</small>
+                        <span asp-validation-for="Availability" class="text-danger small d-block mt-1"></span>
                     </div>
 
                     <div class="d-grid gap-2">

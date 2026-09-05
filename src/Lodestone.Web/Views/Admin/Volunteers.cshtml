@@ -1,0 +1,223 @@
+@using Lodestone.Application.DTOs.Volunteer
+@model AdminVolunteerIndexViewModel
+@{
+    Layout = "~/Views/Shared/_AdminLayout.cshtml";
+    ViewData["Title"] = "Volunteers";
+
+    var successMessage = TempData["AdminSuccess"] as string;
+    var errorMessage = TempData["AdminError"] as string;
+
+    // Only an approved, active volunteer can take over another volunteer's support requests.
+    var replacements = Model.Overview.Volunteers
+        .Where(candidate => candidate.Status == VolunteerApprovalState.Approved)
+        .ToList();
+}
+
+<div class="ls-admin-page">
+    <header class="ls-admin-page-header">
+        <div class="ls-admin-page-header__content">
+            <p class="ls-admin-page-header__eyebrow">Community</p>
+            <h1>Volunteers</h1>
+            <p>Manage volunteer applications, approve profiles, and assign peer mentors.</p>
+        </div>
+        <div class="ls-admin-page-actions">
+            <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Admin" asp-action="Index">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Dashboard
+            </a>
+            <a class="ls-admin-btn ls-admin-btn--primary" asp-action="Invite">
+                <i class="bi bi-envelope-plus" aria-hidden="true"></i>
+                Invite volunteer
+            </a>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <div class="ls-admin-alert ls-admin-alert--success" role="status">
+            <i class="bi bi-check-circle" aria-hidden="true"></i>
+            <span>@successMessage</span>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="ls-admin-alert ls-admin-alert--error" role="alert">
+            <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+            <span>@errorMessage</span>
+        </div>
+    }
+
+    <section aria-labelledby="volunteers-summary-heading">
+        <h2 class="ls-admin-sr-only" id="volunteers-summary-heading">Volunteers summary</h2>
+        <div class="ls-admin-kpi-grid ls-admin-kpi-grid--compact">
+            <article class="ls-admin-kpi ls-admin-kpi--compact ls-admin-kpi--neutral">
+                <span class="ls-admin-kpi__label">Total volunteers</span>
+                <strong class="ls-admin-kpi__value">@Model.Overview.TotalVolunteers</strong>
+            </article>
+            <article class="ls-admin-kpi ls-admin-kpi--compact ls-admin-kpi--warning">
+                <span class="ls-admin-kpi__label">Pending approval</span>
+                <strong class="ls-admin-kpi__value">@Model.Overview.PendingApproval</strong>
+            </article>
+            <article class="ls-admin-kpi ls-admin-kpi--compact ls-admin-kpi--success">
+                <span class="ls-admin-kpi__label">Active volunteers</span>
+                <strong class="ls-admin-kpi__value">@Model.Overview.ActiveVolunteers</strong>
+            </article>
+            <article class="ls-admin-kpi ls-admin-kpi--compact ls-admin-kpi--neutral">
+                <span class="ls-admin-kpi__label">Pending requests</span>
+                <strong class="ls-admin-kpi__value">@Model.Overview.PendingRequests</strong>
+            </article>
+        </div>
+    </section>
+
+    <section class="ls-admin-panel" aria-labelledby="volunteers-directory-heading">
+        <header class="ls-admin-panel__header ls-admin-panel__header--toolbar">
+            <div>
+                <p class="ls-admin-panel__eyebrow">Directory</p>
+                <h2 id="volunteers-directory-heading">Volunteer directory</h2>
+            </div>
+            <form class="ls-admin-toolbar" method="get" role="search" action="/Admin/Volunteers">
+                <label class="ls-admin-sr-only" for="volunteer-search">Search volunteers</label>
+                <div class="ls-admin-field ls-admin-field--search">
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                    <input class="ls-admin-input"
+                           id="volunteer-search"
+                           name="q"
+                           type="search"
+                           value="@Model.Query"
+                           maxlength="100"
+                           placeholder="Search volunteers..." />
+                </div>
+                <button class="ls-admin-btn ls-admin-btn--secondary" type="submit">Search</button>
+                @if (!string.IsNullOrWhiteSpace(Model.Query))
+                {
+                    <a class="ls-admin-btn ls-admin-btn--quiet" href="/Admin/Volunteers">Clear</a>
+                }
+            </form>
+        </header>
+
+        <div class="ls-admin-panel__body ls-admin-panel__body--flush">
+            @if (Model.Overview.Volunteers.Count == 0)
+            {
+                <div class="ls-admin-empty">
+                    <i class="bi bi-inbox" aria-hidden="true"></i>
+                    <h3>No volunteers found</h3>
+                    <p>@(string.IsNullOrWhiteSpace(Model.Query) ? "There are no volunteer applications or profiles to display." : "No volunteers match your search criteria.")</p>
+                    @if (!string.IsNullOrWhiteSpace(Model.Query))
+                    {
+                        <a class="ls-admin-btn ls-admin-btn--secondary" href="/Admin/Volunteers">Clear search</a>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="ls-admin-table-wrap">
+                    <table class="ls-admin-table">
+                        <caption class="ls-admin-sr-only">Volunteer roster</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Name</th>
+                                <th scope="col">Department</th>
+                                <th scope="col">Skills</th>
+                                <th scope="col">Status</th>
+                                <th scope="col" class="is-numeric">Assignments</th>
+                                <th scope="col" class="is-numeric">Requests</th>
+                                <th scope="col" class="ls-admin-table__actions-heading">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var volunteer in Model.Overview.Volunteers)
+                            {
+                                <tr>
+                                    <th scope="row" data-label="Name">
+                                        <div class="ls-admin-table__primary">@volunteer.FullName</div>
+                                    </th>
+                                    <td data-label="Department">@(volunteer.Department ?? "—")</td>
+                                    <td data-label="Skills">@(volunteer.Skills ?? "—")</td>
+                                    <td data-label="Status">
+                                        @switch (volunteer.Status)
+                                        {
+                                            case VolunteerApprovalState.Pending:
+                                                <span class="ls-admin-badge ls-admin-badge--warning">Pending</span>
+                                                break;
+                                            case VolunteerApprovalState.Approved:
+                                                <span class="ls-admin-badge ls-admin-badge--success">Active</span>
+                                                break;
+                                            case VolunteerApprovalState.Rejected:
+                                                <span class="ls-admin-badge ls-admin-badge--error">Rejected</span>
+                                                break;
+                                            case VolunteerApprovalState.Inactive:
+                                                <span class="ls-admin-badge ls-admin-badge--neutral">Inactive</span>
+                                                break;
+                                        }
+                                    </td>
+                                    <td data-label="Assignments" class="is-numeric">
+                                        <span class="ls-admin-table__number">@volunteer.ActiveAssignments</span>
+                                    </td>
+                                    <td data-label="Requests" class="is-numeric">
+                                        <span class="ls-admin-table__number">@volunteer.PendingRequests</span>
+                                    </td>
+                                    <td class="ls-admin-table__actions" data-label="Actions">
+                                        @if (volunteer.Status == VolunteerApprovalState.Pending)
+                                        {
+                                            <form method="post" action="/Admin/Volunteers/@volunteer.Id/approve">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="q" value="@Model.Query" />
+                                                <button class="ls-admin-btn ls-admin-btn--primary" type="submit">Approve</button>
+                                            </form>
+                                            <form method="post" action="/Admin/Volunteers/@volunteer.Id/reject">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="q" value="@Model.Query" />
+                                                <button class="ls-admin-btn ls-admin-btn--danger" type="submit">Reject</button>
+                                            </form>
+                                        }
+                                        else if (volunteer.Status == VolunteerApprovalState.Approved)
+                                        {
+                                            <a class="ls-admin-btn ls-admin-btn--secondary" href="/Admin/Volunteers/@volunteer.Id/assign">Assign</a>
+                                            <form method="post" action="/Admin/Volunteers/@volunteer.Id/deactivate">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="q" value="@Model.Query" />
+                                                <button class="ls-admin-btn ls-admin-btn--danger" type="submit">Deactivate</button>
+                                            </form>
+                                        }
+                                        else if (volunteer.Status == VolunteerApprovalState.Inactive)
+                                        {
+                                            <form method="post" action="/Admin/Volunteers/@volunteer.Id/activate">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="q" value="@Model.Query" />
+                                                <button class="ls-admin-btn ls-admin-btn--primary" type="submit">Activate</button>
+                                            </form>
+                                        }
+                                        <form method="post"
+                                              action="/Admin/Volunteers/@volunteer.Id/remove"
+                                              class="ls-admin-remove"
+                                              data-admin-confirm="Remove @volunteer.FullName permanently? This deletes the account and cannot be undone.">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="q" value="@Model.Query" />
+                                            @if (volunteer.PendingRequests > 0 && replacements.Count > 0)
+                                            {
+                                                <label class="ls-admin-visually-hidden" for="replacement-@volunteer.Id">
+                                                    Volunteer to receive @volunteer.FullName's support requests
+                                                </label>
+                                                <select class="ls-admin-input ls-admin-remove__select"
+                                                        id="replacement-@volunteer.Id"
+                                                        name="replacementVolunteerProfileId"
+                                                        required>
+                                                    <option value="">Move requests to…</option>
+                                                    @foreach (var candidate in replacements.Where(option => option.Id != volunteer.Id))
+                                                    {
+                                                        <option value="@candidate.Id">@candidate.FullName</option>
+                                                    }
+                                                </select>
+                                            }
+                                            <button class="ls-admin-btn ls-admin-btn--danger" type="submit">Remove</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </section>
+</div>

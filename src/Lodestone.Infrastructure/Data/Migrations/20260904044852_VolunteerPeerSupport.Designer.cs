@@ -4,6 +4,7 @@ using Lodestone.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Lodestone.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904044852_VolunteerPeerSupport")]
+    partial class VolunteerPeerSupport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -755,22 +758,13 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<float>("ActivitySpanDays")
                         .HasColumnType("real");
 
-                    b.Property<float?>("ActivityTrendAcceleration")
-                        .HasColumnType("real");
-
                     b.Property<float?>("AssessmentDueRate")
                         .HasColumnType("real");
 
                     b.Property<float?>("AssessmentLateOrMissingRate")
                         .HasColumnType("real");
 
-                    b.Property<float?>("AssessmentMissStreak")
-                        .HasColumnType("real");
-
                     b.Property<float?>("AssessmentOnTimeRate")
-                        .HasColumnType("real");
-
-                    b.Property<float?>("ClickVolatility")
                         .HasColumnType("real");
 
                     b.Property<float?>("CohortActivityPercentile")
@@ -804,13 +798,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<float?>("ForumEngagementShare")
-                        .HasColumnType("real");
-
                     b.Property<float>("ForumInteractionCount")
-                        .HasColumnType("real");
-
-                    b.Property<float?>("InactiveWeekRate")
                         .HasColumnType("real");
 
                     b.Property<float?>("InactivityStreakDays")
@@ -867,7 +855,7 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.ToTable("RiskFeatureSnapshots", t =>
                         {
-                            t.HasCheckConstraint("CK_RiskFeatureSnapshots_Features", "([FeatureSchemaVersion] = 'withdrawal-28d-v1' AND [ActiveDayRate] >= 0 AND [ActiveDayRate] <= 1 AND [ActivitySpanDays] >= 0 AND [ActivitySpanDays] <= [ObservedDays] AND [DaysSinceLastAccess] >= 0 AND [DaysSinceLastAccess] <= [ObservedDays] AND [ForumInteractionCount] >= 0 AND [CourseInteractionCount] >= 0 AND [LateOrMissingAssignmentCount] >= 0) OR ([FeatureSchemaVersion] = 'withdrawal-28d-v2' AND [RecentActiveDayRate] IS NOT NULL AND [PriorActiveDayRate] IS NOT NULL AND [ActiveDayRateTrend] IS NOT NULL AND [RecentCourseClickRate] IS NOT NULL AND [PriorCourseClickRate] IS NOT NULL AND [CourseClickRateTrend] IS NOT NULL AND [InactivityStreakDays] IS NOT NULL AND [AssessmentDueRate] IS NOT NULL AND [AssessmentOnTimeRate] IS NOT NULL AND [AssessmentLateOrMissingRate] IS NOT NULL AND [CourseProgressRatio] IS NOT NULL AND [CohortActivityPercentile] IS NOT NULL AND [RecentActiveDayRate] BETWEEN 0 AND 1 AND [PriorActiveDayRate] BETWEEN 0 AND 1 AND [ActiveDayRateTrend] BETWEEN -1 AND 1 AND [RecentCourseClickRate] >= 0 AND [PriorCourseClickRate] >= 0 AND [InactivityStreakDays] BETWEEN 0 AND [ObservedDays] AND [AssessmentDueRate] >= 0 AND [AssessmentOnTimeRate] BETWEEN 0 AND 1 AND [AssessmentLateOrMissingRate] BETWEEN 0 AND 1 AND [CourseProgressRatio] BETWEEN 0 AND 1 AND [CohortActivityPercentile] BETWEEN 0 AND 1) OR ([FeatureSchemaVersion] = 'withdrawal-28d-v3' AND [RecentActiveDayRate] IS NOT NULL AND [PriorActiveDayRate] IS NOT NULL AND [ActiveDayRateTrend] IS NOT NULL AND [RecentCourseClickRate] IS NOT NULL AND [PriorCourseClickRate] IS NOT NULL AND [CourseClickRateTrend] IS NOT NULL AND [InactivityStreakDays] IS NOT NULL AND [AssessmentDueRate] IS NOT NULL AND [AssessmentOnTimeRate] IS NOT NULL AND [AssessmentLateOrMissingRate] IS NOT NULL AND [CourseProgressRatio] IS NOT NULL AND [CohortActivityPercentile] IS NOT NULL AND [RecentActiveDayRate] BETWEEN 0 AND 1 AND [PriorActiveDayRate] BETWEEN 0 AND 1 AND [ActiveDayRateTrend] BETWEEN -1 AND 1 AND [RecentCourseClickRate] >= 0 AND [PriorCourseClickRate] >= 0 AND [InactivityStreakDays] BETWEEN 0 AND [ObservedDays] AND [AssessmentDueRate] >= 0 AND [AssessmentOnTimeRate] BETWEEN 0 AND 1 AND [AssessmentLateOrMissingRate] BETWEEN 0 AND 1 AND [CourseProgressRatio] BETWEEN 0 AND 1 AND [CohortActivityPercentile] BETWEEN 0 AND 1 AND [ActivityTrendAcceleration] IS NOT NULL AND [ClickVolatility] IS NOT NULL AND [ForumEngagementShare] IS NOT NULL AND [InactiveWeekRate] IS NOT NULL AND [AssessmentMissStreak] IS NOT NULL AND [ActivityTrendAcceleration] BETWEEN -2 AND 2 AND [ClickVolatility] >= 0 AND [ForumEngagementShare] BETWEEN 0 AND 1 AND [InactiveWeekRate] BETWEEN 0 AND 1 AND [AssessmentMissStreak] >= 0)");
+                            t.HasCheckConstraint("CK_RiskFeatureSnapshots_Features", "([FeatureSchemaVersion] = 'withdrawal-28d-v1' AND [ActiveDayRate] >= 0 AND [ActiveDayRate] <= 1 AND [ActivitySpanDays] >= 0 AND [ActivitySpanDays] <= [ObservedDays] AND [DaysSinceLastAccess] >= 0 AND [DaysSinceLastAccess] <= [ObservedDays] AND [ForumInteractionCount] >= 0 AND [CourseInteractionCount] >= 0 AND [LateOrMissingAssignmentCount] >= 0) OR ([FeatureSchemaVersion] = 'withdrawal-28d-v2' AND [RecentActiveDayRate] IS NOT NULL AND [PriorActiveDayRate] IS NOT NULL AND [ActiveDayRateTrend] IS NOT NULL AND [RecentCourseClickRate] IS NOT NULL AND [PriorCourseClickRate] IS NOT NULL AND [CourseClickRateTrend] IS NOT NULL AND [InactivityStreakDays] IS NOT NULL AND [AssessmentDueRate] IS NOT NULL AND [AssessmentOnTimeRate] IS NOT NULL AND [AssessmentLateOrMissingRate] IS NOT NULL AND [CourseProgressRatio] IS NOT NULL AND [CohortActivityPercentile] IS NOT NULL AND [RecentActiveDayRate] BETWEEN 0 AND 1 AND [PriorActiveDayRate] BETWEEN 0 AND 1 AND [ActiveDayRateTrend] BETWEEN -1 AND 1 AND [RecentCourseClickRate] >= 0 AND [PriorCourseClickRate] >= 0 AND [InactivityStreakDays] BETWEEN 0 AND [ObservedDays] AND [AssessmentDueRate] >= 0 AND [AssessmentOnTimeRate] BETWEEN 0 AND 1 AND [AssessmentLateOrMissingRate] BETWEEN 0 AND 1 AND [CourseProgressRatio] BETWEEN 0 AND 1 AND [CohortActivityPercentile] BETWEEN 0 AND 1)");
 
                             t.HasCheckConstraint("CK_RiskFeatureSnapshots_ObservedDays", "[ObservedDays] > 0 AND [ObservedDays] <= 365");
                         });

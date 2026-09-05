@@ -16,6 +16,12 @@ namespace Lodestone.Infrastructure;
 /// <summary>Registers EF Core, Identity, repositories, email and security services.</summary>
 public static class DependencyInjection
 {
+    /// <summary>
+    /// Service key for the real SMTP sender, so a decorator can depend on it without the default
+    /// <see cref="IEmailService"/> registration resolving back into itself.
+    /// </summary>
+    public const string SmtpEmailServiceKey = "smtp";
+
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -31,10 +37,13 @@ public static class DependencyInjection
 
         // Application contracts implemented here.
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        // Keyed as well as default so a host can wrap the real sender without a resolution cycle.
         services.AddScoped<IEmailService, EmailService>();
+        services.AddKeyedScoped<IEmailService, EmailService>(SmtpEmailServiceKey);
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();
         services.AddScoped<IStudentDashboardService, StudentDashboardService>();
         services.AddScoped<ICounselorProvisioningService, CounselorProvisioningService>();
+        services.AddScoped<IVolunteerProvisioningService, VolunteerProvisioningService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<IReportDataProvider, ReportDataProvider>();

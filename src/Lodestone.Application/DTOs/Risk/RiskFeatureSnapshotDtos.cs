@@ -24,7 +24,12 @@ public sealed record RiskFeatureSnapshotImportDto(
     float? AssessmentOnTimeRate = null,
     float? AssessmentLateOrMissingRate = null,
     float? CourseProgressRatio = null,
-    float? CohortActivityPercentile = null)
+    float? CohortActivityPercentile = null,
+    float? ActivityTrendAcceleration = null,
+    float? ClickVolatility = null,
+    float? ForumEngagementShare = null,
+    float? InactiveWeekRate = null,
+    float? AssessmentMissStreak = null)
 {
     /// <summary>Returns values in the immutable order declared by FeatureSchemaVersion.</summary>
     public IReadOnlyList<float> GetFeatureValues()
@@ -56,12 +61,32 @@ public sealed record RiskFeatureSnapshotImportDto(
                 Required(CourseProgressRatio, nameof(CourseProgressRatio)),
                 Required(CohortActivityPercentile, nameof(CohortActivityPercentile))
             ],
+            RiskFeatureSchema.Withdrawal28DayV3 =>
+            [
+                Required(RecentActiveDayRate, nameof(RecentActiveDayRate)),
+                Required(PriorActiveDayRate, nameof(PriorActiveDayRate)),
+                Required(ActiveDayRateTrend, nameof(ActiveDayRateTrend)),
+                Required(RecentCourseClickRate, nameof(RecentCourseClickRate)),
+                Required(PriorCourseClickRate, nameof(PriorCourseClickRate)),
+                Required(CourseClickRateTrend, nameof(CourseClickRateTrend)),
+                Required(InactivityStreakDays, nameof(InactivityStreakDays)),
+                Required(AssessmentDueRate, nameof(AssessmentDueRate)),
+                Required(AssessmentOnTimeRate, nameof(AssessmentOnTimeRate)),
+                Required(AssessmentLateOrMissingRate, nameof(AssessmentLateOrMissingRate)),
+                Required(CourseProgressRatio, nameof(CourseProgressRatio)),
+                Required(CohortActivityPercentile, nameof(CohortActivityPercentile)),
+                Required(ActivityTrendAcceleration, nameof(ActivityTrendAcceleration)),
+                Required(ClickVolatility, nameof(ClickVolatility)),
+                Required(ForumEngagementShare, nameof(ForumEngagementShare)),
+                Required(InactiveWeekRate, nameof(InactiveWeekRate)),
+                Required(AssessmentMissStreak, nameof(AssessmentMissStreak))
+            ],
             _ => throw new ArgumentException($"Unsupported risk feature schema '{FeatureSchemaVersion}'.")
         };
     }
 
     private static float Required(float? value, string name)
-        => value ?? throw new InvalidOperationException($"{name} is required for withdrawal-28d-v2.");
+        => value ?? throw new InvalidOperationException($"{name} is required for this feature schema.");
 }
 
 public sealed record RiskFeatureSnapshotDto(

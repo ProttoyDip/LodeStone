@@ -52,10 +52,27 @@ internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposabl
 
     public void Dispose() => _engine.Dispose();
 
+    /// <param name="queueThresholdOverride">
+    /// Operational cut-off for entering the counselor queue. This is a capacity decision, not a
+    /// property of the artifact: the metadata's DecisionThreshold is the point the publication
+    /// gate was measured at, and using it to select students queues roughly a third of all
+    /// student-weeks. When null the artifact's own threshold is used, preserving prior behaviour.
+    /// </param>
+    /// <summary>
+    /// Chooses the score at which a student enters the counselor queue. A configured value wins,
+    /// but only when it is a usable probability; anything else falls back to the artifact's own
+    /// threshold so a malformed setting cannot silently empty or flood the queue.
+    /// </summary>
+    public static double ResolveQueueThreshold(double? configuredThreshold, double artifactThreshold)
+        => configuredThreshold is { } configured && double.IsFinite(configured) && configured is >= 0 and <= 1
+            ? configured
+            : artifactThreshold;
+
     public static RiskModelLoadResult TryLoad(
         MLContext mlContext,
         string modelPath,
-        string metadataPath)
+        string metadataPath,
+        double? queueThresholdOverride = null)
     {
         try
         {
@@ -84,11 +101,15 @@ internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposabl
                 if (!float.IsFinite(probe.Probability) || probe.Probability is < 0 or > 1)
                     throw new InvalidDataException("The risk model failed its startup prediction probe.");
 
+                var queueThreshold = ResolveQueueThreshold(
+                    queueThresholdOverride,
+                    metadata.DecisionThreshold);
+
                 var descriptor = new RiskModelDescriptor(
                     metadata.ModelVersion,
                     metadata.SchemaVersion,
                     metadata.ObservationWindowDays,
-                    metadata.DecisionThreshold)
+                    queueThreshold)
                 {
                     FeatureNames = metadata.FeatureNames.AsReadOnly(),
                     PublicationId = manifest.PublicationId

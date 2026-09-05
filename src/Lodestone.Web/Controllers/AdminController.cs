@@ -359,6 +359,49 @@ public class AdminController : Controller
         return RedirectToAction(nameof(CreateCounselor));
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveCounselor(
+        int counselorProfileId,
+        int? replacementCounselorProfileId,
+        string? q,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _counselorProvisioningService.RemoveAsync(
+                counselorProfileId,
+                replacementCounselorProfileId,
+                cancellationToken);
+
+            if (result.RequiresReplacement)
+            {
+                TempData["AdminError"] =
+                    $"This counselor has {result.TransferredItems} " +
+                    $"{(result.TransferredItems == 1 ? "appointment" : "appointments")}. " +
+                    "Choose another counselor to take them over before removing the account.";
+            }
+            else if (!result.Succeeded)
+            {
+                TempData["AdminError"] = result.Errors.FirstOrDefault() ?? "The counselor could not be removed.";
+            }
+            else
+            {
+                TempData["AdminSuccess"] = result.TransferredItems == 0
+                    ? "Counselor removed."
+                    : $"Counselor removed and {result.TransferredItems} " +
+                      $"{(result.TransferredItems == 1 ? "appointment was" : "appointments were")} moved to the chosen counselor.";
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Could not remove counselor {CounselorProfileId}.", counselorProfileId);
+            TempData["AdminError"] = "The counselor could not be removed.";
+        }
+
+        return RedirectToAction(nameof(Counselors), new { q });
+    }
+
     [HttpGet]
     public Task<IActionResult> Users(string? q, int page, CancellationToken cancellationToken)
         => RenderSectionAsync(AdminSectionType.Users, q, page, cancellationToken);

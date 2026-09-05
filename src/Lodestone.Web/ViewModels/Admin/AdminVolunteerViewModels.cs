@@ -65,3 +65,16 @@ public sealed class VolunteerAssignmentInputModel : IValidatableObject
         }
     }
 }
+
+/// <summary>
+/// Invitation form. An administrator supplies only an email address; the volunteer fills in
+/// everything that describes them once they accept.
+/// </summary>
+public sealed class InviteVolunteerViewModel
+{
+    [Required(ErrorMessage = "Enter the volunteer's email address.")]
+    [EmailAddress(ErrorMessage = "Enter a valid email address.")]
+    [StringLength(256)]
+    [Display(Name = "Email address")]
+    public string Email { get; set; } = string.Empty;
+}

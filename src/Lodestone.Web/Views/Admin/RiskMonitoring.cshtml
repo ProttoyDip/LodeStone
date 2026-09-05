@@ -394,7 +394,9 @@
                     <dl class="risk-ops-contract">
                         <div><dt>Feature schema</dt><dd>@descriptor.FeatureSchemaVersion</dd></div>
                         <div><dt>Observation window</dt><dd>@descriptor.ObservedDays days</dd></div>
-                        <div><dt>Queue threshold</dt><dd>@descriptor.QueueThreshold.ToString("P1")</dd></div>
+                        @* A score cut-off, not a probability: percent formatting would read as a
+                           withdrawal likelihood, which this value is not. *@
+                        <div><dt>Queue threshold</dt><dd>@descriptor.QueueThreshold.ToString("F2") <span class="ls-admin-muted">score</span></dd></div>
                     </dl>
                 }
             </div>
