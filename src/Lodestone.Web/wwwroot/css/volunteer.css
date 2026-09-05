@@ -1,0 +1,119 @@
+/* Volunteer peer-support pages. Uses the site tokens from site.css; the public layout loads no
+   CSS framework, so every class here is defined locally rather than assumed. */
+
+.volunteer-page {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 6vw, 4.5rem) clamp(1.25rem, 4vw, 2rem) clamp(4rem, 8vw, 6rem);
+}
+
+.volunteer-page__header { max-width: 42rem; margin-bottom: clamp(1.75rem, 4vw, 2.5rem); }
+
+.volunteer-page__eyebrow {
+    display: block;
+    margin-bottom: .6rem;
+    color: var(--clay);
+    font-family: var(--font-mono);
+    font-size: .68rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+}
+
+.volunteer-page__title {
+    margin: 0 0 .7rem;
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    font-weight: 400;
+    line-height: 1.08;
+}
+
+.volunteer-page__lede { margin: 0; max-width: 46rem; color: var(--ink-soft); line-height: 1.65; }
+
+/* ---- form ---- */
+
+.volunteer-form {
+    display: grid;
+    gap: 1.35rem;
+    padding: clamp(1.4rem, 3.5vw, 2.2rem);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-print);
+}
+
+.volunteer-field { display: grid; gap: .45rem; }
+
+.volunteer-field label {
+    font-size: .93rem;
+    font-weight: 600;
+    letter-spacing: -.005em;
+}
+
+.volunteer-field__help { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.5; }
+
+.volunteer-field input,
+.volunteer-field textarea {
+    width: 100%;
+    padding: .8rem .95rem;
+    color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-md);
+    font: inherit;
+    line-height: 1.6;
+}
+
+.volunteer-field textarea { resize: vertical; min-height: 5.5rem; }
+.volunteer-field input::placeholder,
+.volunteer-field textarea::placeholder { color: var(--muted); opacity: 1; }
+.volunteer-field input:focus,
+.volunteer-field textarea:focus { outline: 2px solid var(--clay); outline-offset: 2px; }
+
+.volunteer-form__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: .4rem;
+    border-top: 1px solid var(--line);
+}
+
+.volunteer-form__footer p { margin: 0; max-width: 34rem; color: var(--muted); font-size: .82rem; line-height: 1.55; }
+
+.volunteer-submit {
+    padding: .85rem 1.3rem;
+    color: var(--paper);
+    background: var(--clay);
+    border: 1px solid var(--clay);
+    border-radius: var(--r-sm);
+    font: inherit;
+    font-size: .92rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .25s ease, box-shadow .25s ease, background .2s ease;
+}
+
+.volunteer-submit:hover { transform: translateY(-2px); background: var(--clay-deep); box-shadow: 5px 5px 0 rgba(154, 63, 42, .24); }
+.volunteer-submit:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; }
+
+/* ---- messages ---- */
+
+.volunteer-alert {
+    padding: .9rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    font-size: .9rem;
+    line-height: 1.55;
+}
+
+.volunteer-alert--error { color: var(--clay-deep); background: var(--clay-wash); border-color: rgba(154, 63, 42, .3); }
+.volunteer-alert--ok { color: var(--forest); background: var(--forest-wash); border-color: rgba(60, 86, 71, .28); }
+.volunteer-alert:empty { display: none; }
+
+.field-validation-error { color: var(--clay-deep); font-size: .82rem; }
+
+@media (prefers-reduced-motion: reduce) {
+    .volunteer-submit { transition: none; }
+    .volunteer-submit:hover { transform: none; }
+}

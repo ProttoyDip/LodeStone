@@ -1,33 +1,40 @@
-@model ViewRequestViewModel
+@model Lodestone.Application.DTOs.Volunteer.SupportRequestDto
+@using Lodestone.Domain.Enums
 @{
     ViewData["Title"] = Model.Title;
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
+
+@section Styles {
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/css/peer-support.css" asp-append-version="true" />
+}
+
 <div class="container my-5">
     <div class="row mb-4">
         <div class="col-12">
-            <a href="@Url.Action("MyRequests")" class="btn btn-outline-secondary btn-sm mb-3">← Back to My Requests</a>
+            <a href="@Url.Action("MyRequests", "StudentSupport")" class="btn btn-outline-secondary btn-sm mb-3">← Back to My Requests</a>
             <h1>@Model.Title</h1>
             <p class="text-muted">
                 <span class="badge bg-secondary">@Model.Category</span>
-                <span class="text-muted ms-2">Posted @Model.CreatedDate.ToString("MMM d, yyyy 'at' h:mm tt")</span>
+                <span class="text-muted ms-2">Posted @Model.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</span>
             </p>
         </div>
     </div>
 
-    @if (TempData["Success"] != null)
+    @if (TempData["SupportSuccess"] is string success)
     {
         <div class="alert alert-success alert-dismissible fade show" role="alert">
-            @TempData["Success"]
+            @success
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     }
 
-    @if (TempData["Error"] != null)
+    @if (TempData["SupportError"] is string error)
     {
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            @TempData["Error"]
+            @error
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     }
@@ -40,6 +47,10 @@
                 </div>
                 <div class="card-body">
                     <p class="lead">@Model.Message</p>
+                    @if (!string.IsNullOrWhiteSpace(Model.Availability))
+                    {
+                        <p class="text-muted"><strong>Availability:</strong> @Model.Availability</p>
+                    }
                 </div>
             </div>
 
@@ -55,13 +66,13 @@
                             <div class="mb-3 p-3 bg-light rounded">
                                 <div class="d-flex justify-content-between mb-2">
                                     <strong>
-                                        @if (interaction.StudentUserId == @User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)
+                                        @if (interaction.IsFromVolunteer)
                                         {
-                                            <span>You</span>
+                                            <span>@(Model.VolunteerDisplayName ?? "Volunteer")</span>
                                         }
                                         else
                                         {
-                                            <span>@(Model.VolunteerName ?? "Volunteer")</span>
+                                            <span>You</span>
                                         }
                                     </strong>
                                     <small class="text-muted">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</small>
@@ -82,11 +93,11 @@
             {
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle"></i>
-                    <strong>Great news!</strong> @(Model.VolunteerName ?? "A volunteer") has accepted your request.
+                    <strong>Great news!</strong> @(Model.VolunteerDisplayName ?? "A volunteer") has accepted your request.
                     They'll reach out soon with their first message.
                 </div>
             }
-            else if (Model.Status == SupportRequestStatus.Open)
+            else if (Model.Status == SupportRequestStatus.Pending)
             {
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle"></i>
@@ -107,28 +118,27 @@
                         @{
                             var statusBadgeClass = Model.Status switch
                             {
-                                SupportRequestStatus.Open => "bg-secondary",
+                                SupportRequestStatus.Pending => "bg-secondary",
                                 SupportRequestStatus.Accepted => "bg-success",
-                                SupportRequestStatus.Declined => "bg-danger",
                                 SupportRequestStatus.Completed => "bg-info",
-                                SupportRequestStatus.Escalated => "bg-warning",
+                                SupportRequestStatus.Escalated => "bg-warning text-dark",
                                 _ => "bg-secondary"
                             };
                         }
                         <span class="badge @statusBadgeClass">@Model.Status</span>
                     </p>
 
-                    @if (Model.VolunteerName != null)
+                    @if (Model.VolunteerDisplayName != null)
                     {
                         <p class="mb-2">
                             <strong>Volunteer:</strong><br />
-                            @Model.VolunteerName
+                            @Model.VolunteerDisplayName
                         </p>
                     }
 
                     <p class="mb-0">
                         <strong>Posted:</strong><br />
-                        @Model.CreatedDate.ToString("MMM d, yyyy")
+                        @Model.CreatedAtUtc.ToString("MMM d, yyyy")
                     </p>
                 </div>
             </div>
@@ -171,7 +181,7 @@
                 <div class="card-body small">
                     <p>If you're experiencing a crisis or urgent situation:</p>
                     <p>
-                        <strong>Call 988</strong> - Suicide & Crisis Lifeline<br />
+                        <strong>Call 988</strong> - Suicide &amp; Crisis Lifeline<br />
                         <strong>Text "HELLO"</strong> to 741741<br />
                         <strong>Visit</strong> your campus counseling center
                     </p>

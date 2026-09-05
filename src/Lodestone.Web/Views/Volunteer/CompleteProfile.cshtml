@@ -4,59 +4,63 @@
     Layout = "~/Views/Shared/_Layout.cshtml";
 }
 
-<div class="container my-5">
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
-            <h1>Complete your profile</h1>
-            <p class="text-muted">
-                Tell us a little about yourself. An administrator reviews your profile before you can
-                take peer-support requests, so the detail here helps them match you to students.
-            </p>
+@section Styles {
+    <link rel="stylesheet" href="~/css/volunteer.css" asp-append-version="true" />
+}
 
-            <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+<div class="volunteer-page">
+    <header class="volunteer-page__header">
+        <span class="volunteer-page__eyebrow">Peer support</span>
+        <h1 class="volunteer-page__title">Complete your profile</h1>
+        <p class="volunteer-page__lede">
+            Tell us a little about yourself. An administrator reviews your profile before you can
+            take peer-support requests, so the detail here helps them match you to students.
+        </p>
+    </header>
 
-            <form asp-action="CompleteProfile" method="post" class="card p-4 shadow-sm">
-                <div class="mb-3">
-                    <label asp-for="FullName" class="form-label"></label>
-                    <input asp-for="FullName" class="form-control" autocomplete="name" autofocus />
-                    <span asp-validation-for="FullName" class="text-danger"></span>
-                </div>
+    <form class="volunteer-form" asp-action="CompleteProfile" method="post">
+        <div asp-validation-summary="ModelOnly" class="volunteer-alert volunteer-alert--error" role="alert"></div>
 
-                <div class="mb-3">
-                    <label asp-for="Department" class="form-label"></label>
-                    <input asp-for="Department" class="form-control" placeholder="For example: Computer Science" />
-                    <span asp-validation-for="Department" class="text-danger"></span>
-                </div>
-
-                <div class="mb-3">
-                    <label asp-for="Skills" class="form-label"></label>
-                    <input asp-for="Skills" class="form-control" placeholder="For example: study planning, first-year transition" />
-                    <div class="form-text">What you feel confident helping another student with.</div>
-                    <span asp-validation-for="Skills" class="text-danger"></span>
-                </div>
-
-                <div class="mb-3">
-                    <label asp-for="Availability" class="form-label"></label>
-                    <textarea asp-for="Availability" class="form-control" rows="2" placeholder="For example: weekday evenings"></textarea>
-                    <span asp-validation-for="Availability" class="text-danger"></span>
-                </div>
-
-                <div class="mb-4">
-                    <label asp-for="Bio" class="form-label"></label>
-                    <textarea asp-for="Bio" class="form-control" rows="4"></textarea>
-                    <div class="form-text">A short introduction students may see when you support them.</div>
-                    <span asp-validation-for="Bio" class="text-danger"></span>
-                </div>
-
-                <button type="submit" class="btn btn-primary">Submit for approval</button>
-            </form>
-
-            <p class="text-muted small mt-3">
-                Only your name and the details you enter here are shared. You will not see any student
-                information until an administrator approves you and assigns you to students.
-            </p>
+        <div class="volunteer-field">
+            <label asp-for="FullName"></label>
+            <input asp-for="FullName" autocomplete="name" autofocus />
+            <span class="field-validation-error" asp-validation-for="FullName"></span>
         </div>
-    </div>
+
+        <div class="volunteer-field">
+            <label asp-for="Department"></label>
+            <input asp-for="Department" placeholder="For example: Computer Science" />
+            <span class="field-validation-error" asp-validation-for="Department"></span>
+        </div>
+
+        <div class="volunteer-field">
+            <label asp-for="Skills"></label>
+            <input asp-for="Skills" placeholder="For example: study planning, first-year transition" />
+            <p class="volunteer-field__help">What you feel confident helping another student with.</p>
+            <span class="field-validation-error" asp-validation-for="Skills"></span>
+        </div>
+
+        <div class="volunteer-field">
+            <label asp-for="Availability"></label>
+            <textarea asp-for="Availability" rows="2" placeholder="For example: weekday evenings"></textarea>
+            <span class="field-validation-error" asp-validation-for="Availability"></span>
+        </div>
+
+        <div class="volunteer-field">
+            <label asp-for="Bio"></label>
+            <textarea asp-for="Bio" rows="4"></textarea>
+            <p class="volunteer-field__help">A short introduction students may see when you support them.</p>
+            <span class="field-validation-error" asp-validation-for="Bio"></span>
+        </div>
+
+        <div class="volunteer-form__footer">
+            <p>
+                Only your name and the details you enter here are shared. You will not see any
+                student information until an administrator approves you and assigns you to students.
+            </p>
+            <button class="volunteer-submit" type="submit">Submit for approval</button>
+        </div>
+    </form>
 </div>
 
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }
