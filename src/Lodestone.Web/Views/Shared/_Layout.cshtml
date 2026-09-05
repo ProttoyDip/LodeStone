@@ -41,6 +41,9 @@
                     }
                     else if (User.IsInRole(RoleConstants.Volunteer))
                     {
+                        @*  Every role leads with its own landing page; without this a volunteer
+                            who opens Forum or Moderation has no route back to their requests.  *@
+                        <li><a asp-controller="Volunteer" asp-action="Dashboard">Dashboard</a></li>
                         <li><a asp-controller="Forum" asp-action="Index">Forum</a></li>
                         <li><a asp-controller="Forum" asp-action="Moderation">Moderation</a></li>
                     }
