@@ -163,7 +163,8 @@ public sealed class StaffRemovalTests
         await context.SaveChangesAsync();
 
         var service = new VolunteerProvisioningService(
-            UserManagerFor(leaver.User!).Object, context, Mock.Of<IAuditLogService>());
+            UserManagerFor(leaver.User!).Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.RemoveAsync(leaver.Id, successor.Id);
 
@@ -192,7 +193,8 @@ public sealed class StaffRemovalTests
         await context.SaveChangesAsync();
 
         var service = new VolunteerProvisioningService(
-            UserManagerFor(leaver.User!).Object, context, Mock.Of<IAuditLogService>());
+            UserManagerFor(leaver.User!).Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.RemoveAsync(leaver.Id, null);
 
@@ -226,7 +228,8 @@ public sealed class StaffRemovalTests
         await context.SaveChangesAsync();
 
         var service = new VolunteerProvisioningService(
-            UserManagerFor(leaver.User!).Object, context, Mock.Of<IAuditLogService>());
+            UserManagerFor(leaver.User!).Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.RemoveAsync(leaver.Id, successor.Id);
 
@@ -250,7 +253,8 @@ public sealed class StaffRemovalTests
         await context.SaveChangesAsync();
 
         var service = new VolunteerProvisioningService(
-            UserManagerFor(leaver.User!).Object, context, Mock.Of<IAuditLogService>());
+            UserManagerFor(leaver.User!).Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.RemoveAsync(leaver.Id, null);
 

@@ -21,6 +21,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
     private readonly IAuditLogService _auditLog;
     private readonly INotificationService _notificationService;
     private readonly IPeerSupportNotifier _peerSupportNotifier;
+    private readonly IVolunteerRosterNotifier _volunteerRosterNotifier;
     private readonly ILogger<VolunteerSupportService> _logger;
 
     public VolunteerSupportService(
@@ -30,6 +31,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         IAuditLogService auditLog,
         INotificationService notificationService,
         IPeerSupportNotifier peerSupportNotifier,
+        IVolunteerRosterNotifier volunteerRosterNotifier,
         ILogger<VolunteerSupportService> logger)
     {
         _repository = repository;
@@ -38,6 +40,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         _auditLog = auditLog;
         _notificationService = notificationService;
         _peerSupportNotifier = peerSupportNotifier;
+        _volunteerRosterNotifier = volunteerRosterNotifier;
         _logger = logger;
     }
 
@@ -87,6 +90,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             "Volunteer profile awaiting approval",
             "An invited volunteer completed their profile and is waiting for approval.",
             cancellationToken);
+        await NotifyRosterChangedAsync(cancellationToken);
 
         return MapVolunteer(volunteer);
     }
@@ -208,6 +212,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             volunteer.Id.ToString(),
             isActive ? "Volunteer support access activated." : "Volunteer support access deactivated.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyRosterChangedAsync(cancellationToken);
         return true;
     }
 
@@ -668,6 +673,27 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         }
     }
 
+    /// <summary>
+    /// Tells administrators their volunteer list is out of date. Best-effort by design: this runs
+    /// after the roster change is committed, so a transport failure must not turn a saved change
+    /// into an error for whoever made it.
+    /// </summary>
+    private async Task NotifyRosterChangedAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _volunteerRosterNotifier.NotifyRosterChangedAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Could not signal administrators that the volunteer roster changed.");
+        }
+    }
+
     private async Task<bool> ReviewVolunteerAsync(
         int volunteerProfileId,
         bool approve,
@@ -697,6 +723,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             volunteer.Id.ToString(),
             approve ? "Volunteer application approved." : "Volunteer application rejected and assignments deactivated.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyRosterChangedAsync(cancellationToken);
         return true;
     }
 

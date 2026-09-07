@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.TryAddSingleton<IRiskQueueNotifier, NullRiskQueueNotifier>();
         services.TryAddSingleton<IAdminNotificationNotifier, NullAdminNotificationNotifier>();
         services.TryAddSingleton<IPeerSupportNotifier, NullPeerSupportNotifier>();
+        services.TryAddSingleton<IVolunteerRosterNotifier, NullVolunteerRosterNotifier>();
         return services;
     }
 }

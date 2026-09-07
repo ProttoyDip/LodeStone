@@ -74,6 +74,7 @@ builder.Services.AddApplication();
 builder.Services.AddScoped<IRiskQueueNotifier, SignalRRiskQueueNotifier>();
 builder.Services.AddScoped<IAdminNotificationNotifier, SignalRAdminNotifier>();
 builder.Services.AddScoped<IPeerSupportNotifier, SignalRPeerSupportNotifier>();
+builder.Services.AddScoped<IVolunteerRosterNotifier, SignalRVolunteerRosterNotifier>();
 
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
 if (builder.Environment.IsDevelopment())

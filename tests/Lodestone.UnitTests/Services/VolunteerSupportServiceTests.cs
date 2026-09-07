@@ -287,6 +287,39 @@ public sealed class VolunteerSupportServiceTests
         unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task CreateVolunteerProfileAsync_TellsAdministratorsTheirVolunteerListChanged()
+    {
+        var repo = ProfileCreationRepo(_ => { });
+        var roster = new Mock<IVolunteerRosterNotifier>();
+        var service = CreateService(repo, Volunteer("vol-1"), roster: roster);
+
+        await service.CreateVolunteerProfileAsync(Profile(), CancellationToken.None);
+
+        // This is the one roster change no administrator causes themselves, so it is the one their
+        // open list would otherwise never learn about.
+        roster.Verify(n => n.NotifyRosterChangedAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateVolunteerProfileAsync_SucceedsEvenIfTheRosterSignalFails()
+    {
+        var repo = ProfileCreationRepo(_ => { });
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var roster = new Mock<IVolunteerRosterNotifier>();
+        roster.Setup(n => n.NotifyRosterChangedAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("hub unavailable"));
+
+        var service = CreateService(repo, Volunteer("vol-1"), unitOfWork, roster: roster);
+
+        // The profile is committed before the signal is sent; a volunteer who has just filled in
+        // their details must not be told it failed because a hub was unreachable.
+        var act = async () => await service.CreateVolunteerProfileAsync(Profile(), CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     // ---------- helpers ----------
 
     private static CreateVolunteerProfileDto Profile(string fullName = "Volunteer A")
@@ -324,7 +357,8 @@ public sealed class VolunteerSupportServiceTests
         Mock<IUnitOfWork>? unitOfWork = null,
         Mock<IAuditLogService>? audit = null,
         Mock<INotificationService>? notifications = null,
-        Mock<IPeerSupportNotifier>? peerSupport = null)
+        Mock<IPeerSupportNotifier>? peerSupport = null,
+        Mock<IVolunteerRosterNotifier>? roster = null)
         => new(
             repo.Object,
             currentUser.Object,
@@ -332,5 +366,6 @@ public sealed class VolunteerSupportServiceTests
             (audit ?? new Mock<IAuditLogService>()).Object,
             (notifications ?? new Mock<INotificationService>()).Object,
             (peerSupport ?? new Mock<IPeerSupportNotifier>()).Object,
+            (roster ?? new Mock<IVolunteerRosterNotifier>()).Object,
             NullLogger<VolunteerSupportService>.Instance);
 }

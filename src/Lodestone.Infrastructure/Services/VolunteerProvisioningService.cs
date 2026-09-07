@@ -5,6 +5,7 @@ using Lodestone.Domain.Constants;
 using Lodestone.Domain.Entities;
 using Lodestone.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 
 namespace Lodestone.Infrastructure.Services;
@@ -28,12 +29,16 @@ public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
     private readonly UserManager<ApplicationUser> _users;
     private readonly ApplicationDbContext _context;
     private readonly IAuditLogService _audit;
+    private readonly IVolunteerRosterNotifier _rosterNotifier;
+    private readonly ILogger<VolunteerProvisioningService> _logger;
 
     public VolunteerProvisioningService(
         UserManager<ApplicationUser> users,
         ApplicationDbContext context,
-        IAuditLogService audit)
-        => (_users, _context, _audit) = (users, context, audit);
+        IAuditLogService audit,
+        IVolunteerRosterNotifier rosterNotifier,
+        ILogger<VolunteerProvisioningService> logger)
+        => (_users, _context, _audit, _rosterNotifier, _logger) = (users, context, audit, rosterNotifier, logger);
 
     public async Task<VolunteerProvisioningResult> InviteAsync(
         InviteVolunteerDto dto,
@@ -212,6 +217,17 @@ public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
             $"TransferredRequests={requests.Count}; ReplacementProfileId={replacementVolunteerProfileId?.ToString() ?? "none"}");
         await _context.SaveChangesAsync(cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+
+        // Another administrator may be looking at a list that still offers this volunteer. Signal
+        // after the commit, and never let a transport failure surface as a failed removal.
+        try
+        {
+            await _rosterNotifier.NotifyRosterChangedAsync(cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Could not signal administrators that the volunteer roster changed.");
+        }
 
         return StaffRemovalResult.Removed(requests.Count);
     }
