@@ -20,6 +20,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLog;
     private readonly INotificationService _notificationService;
+    private readonly IPeerSupportNotifier _peerSupportNotifier;
     private readonly ILogger<VolunteerSupportService> _logger;
 
     public VolunteerSupportService(
@@ -28,6 +29,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         IUnitOfWork unitOfWork,
         IAuditLogService auditLog,
         INotificationService notificationService,
+        IPeerSupportNotifier peerSupportNotifier,
         ILogger<VolunteerSupportService> logger)
     {
         _repository = repository;
@@ -35,6 +37,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         _unitOfWork = unitOfWork;
         _auditLog = auditLog;
         _notificationService = notificationService;
+        _peerSupportNotifier = peerSupportNotifier;
         _logger = logger;
     }
 
@@ -368,6 +371,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             details: "Student created a peer-support request.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        await NotifyParticipantsAsync(request, cancellationToken);
         return MapRequest(request);
     }
 
@@ -479,6 +483,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             request.Id.ToString(),
             "Assigned volunteer accepted a peer-support request.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return true;
     }
 
@@ -513,6 +518,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             request.Id.ToString(),
             "Assigned volunteer declined a pending peer-support request; it remains pending for other assigned volunteers.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return true;
     }
 
@@ -543,6 +549,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             nameof(SupportInteraction),
             details: $"Volunteer added a peer-guidance interaction to request {request.Id}.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return MapInteraction(interaction);
     }
 
@@ -574,6 +581,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             request.Id.ToString(),
             "Assigned volunteer marked the peer-support request complete.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return true;
     }
 
@@ -610,7 +618,54 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await NotifyCounselorsOfEscalationAsync(request.Id, cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// Tells the people who can currently see this request that it changed, so their page refreshes
+    /// itself. The set is resolved server-side and always includes the student, whichever volunteer
+    /// holds it, and every volunteer assigned to that student -- the last of those matters because a
+    /// request being accepted or completed removes it from other volunteers' lists too.
+    /// </summary>
+    private async Task NotifyParticipantsAsync(SupportRequest request, CancellationToken cancellationToken)
+    {
+        // Everything here runs after the change is committed, so resolving the audience is as
+        // non-fatal as delivering to it: neither may turn a saved change into an error.
+        try
+        {
+            var recipients = new HashSet<string>(StringComparer.Ordinal);
+
+            if (!string.IsNullOrWhiteSpace(request.StudentProfile?.UserId))
+                recipients.Add(request.StudentProfile!.UserId);
+            if (!string.IsNullOrWhiteSpace(request.VolunteerProfile?.UserId))
+                recipients.Add(request.VolunteerProfile!.UserId);
+
+            var assigned = await _repository.GetAssignedVolunteerUserIdsAsync(
+                request.StudentProfileId,
+                cancellationToken);
+            foreach (var volunteerUserId in assigned ?? Array.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(volunteerUserId)) recipients.Add(volunteerUserId);
+            }
+
+            if (recipients.Count == 0) return;
+
+            await _peerSupportNotifier.NotifyChangedAsync(recipients.ToArray(), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // The change is already committed. A transport failure must not undo it; the page
+            // still shows the new state on its next load.
+            _logger.LogWarning(
+                exception,
+                "Could not signal peer-support participants for request {RequestId}.",
+                request.Id);
+        }
     }
 
     private async Task<bool> ReviewVolunteerAsync(

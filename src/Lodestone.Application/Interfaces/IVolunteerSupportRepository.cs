@@ -32,4 +32,13 @@ public interface IVolunteerSupportRepository
     Task AddInteractionAsync(SupportInteraction interaction, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SupportRequest>> GetRequestsForStudentAsync(string studentUserId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<string>> GetActiveCounselorUserIdsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// User identifiers of approved, active volunteers currently assigned to a student. These are
+    /// the only volunteers to whom that student's unassigned request is visible, so they are the
+    /// only ones worth telling that it changed.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetAssignedVolunteerUserIdsAsync(
+        int studentProfileId,
+        CancellationToken cancellationToken = default);
 }

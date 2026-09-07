@@ -248,6 +248,22 @@ public sealed class VolunteerSupportRepository : GenericRepository<SupportReques
                               profile.User.IsActive)
             .Select(profile => profile.Id);
 
+    public async Task<IReadOnlyList<string>> GetAssignedVolunteerUserIdsAsync(
+        int studentProfileId,
+        CancellationToken cancellationToken = default)
+        => await Context.VolunteerAssignments
+            .AsNoTracking()
+            .Where(assignment => assignment.StudentProfileId == studentProfileId &&
+                                 assignment.IsActive &&
+                                 assignment.VolunteerProfile != null &&
+                                 assignment.VolunteerProfile.IsApproved &&
+                                 assignment.VolunteerProfile.IsActive &&
+                                 assignment.VolunteerProfile.User != null &&
+                                 assignment.VolunteerProfile.User.IsActive)
+            .Select(assignment => assignment.VolunteerProfile!.UserId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
     private IQueryable<SupportRequest> RequestQuery(bool tracking)
     {
         var query = Context.SupportRequests

@@ -223,6 +223,70 @@ public sealed class VolunteerSupportServiceTests
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [Fact]
+    public async Task CreateSupportRequestAsync_SignalsOnlyTheVolunteersAssignedToThatStudent()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetStudentProfileByUserIdAsync("student-42", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StudentProfile
+            {
+                Id = 7,
+                UserId = "student-42",
+                User = new ApplicationUser { Id = "student-42", FullName = "Student A" }
+            });
+        repo.Setup(r => r.AddSupportRequestAsync(It.IsAny<SupportRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.GetAssignedVolunteerUserIdsAsync(7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { "vol-assigned" });
+
+        IReadOnlyCollection<string>? signalled = null;
+        var peerSupport = new Mock<IPeerSupportNotifier>();
+        peerSupport.Setup(n => n.NotifyChangedAsync(
+                It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyCollection<string>, CancellationToken>((ids, _) => signalled = ids)
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(repo, Student("student-42"), peerSupport: peerSupport);
+
+        await service.CreateSupportRequestAsync(
+            new CreateSupportRequestDto(SupportRequestCategory.GeneralSupport, "Help please.", null),
+            CancellationToken.None);
+
+        // Only the student and the volunteers actually assigned to them; a request is private to
+        // the people already entitled to see it.
+        signalled.Should().NotBeNull();
+        signalled.Should().BeEquivalentTo(new[] { "student-42", "vol-assigned" });
+    }
+
+    [Fact]
+    public async Task CreateSupportRequestAsync_SucceedsEvenIfTheRealtimeSignalFails()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetStudentProfileByUserIdAsync("student-42", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StudentProfile { Id = 7, UserId = "student-42" });
+        repo.Setup(r => r.AddSupportRequestAsync(It.IsAny<SupportRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.GetAssignedVolunteerUserIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<string>());
+
+        var peerSupport = new Mock<IPeerSupportNotifier>();
+        peerSupport.Setup(n => n.NotifyChangedAsync(
+                It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("hub unavailable"));
+
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var service = CreateService(repo, Student("student-42"), unitOfWork, peerSupport: peerSupport);
+
+        // The request is already committed by the time the signal is sent; a transport failure
+        // must not turn a saved request into an error for the student.
+        var act = async () => await service.CreateSupportRequestAsync(
+            new CreateSupportRequestDto(SupportRequestCategory.GeneralSupport, "Help please.", null),
+            CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     // ---------- helpers ----------
 
     private static CreateVolunteerProfileDto Profile(string fullName = "Volunteer A")
@@ -259,12 +323,14 @@ public sealed class VolunteerSupportServiceTests
         Mock<ICurrentUserService> currentUser,
         Mock<IUnitOfWork>? unitOfWork = null,
         Mock<IAuditLogService>? audit = null,
-        Mock<INotificationService>? notifications = null)
+        Mock<INotificationService>? notifications = null,
+        Mock<IPeerSupportNotifier>? peerSupport = null)
         => new(
             repo.Object,
             currentUser.Object,
             (unitOfWork ?? new Mock<IUnitOfWork>()).Object,
             (audit ?? new Mock<IAuditLogService>()).Object,
             (notifications ?? new Mock<INotificationService>()).Object,
+            (peerSupport ?? new Mock<IPeerSupportNotifier>()).Object,
             NullLogger<VolunteerSupportService>.Instance);
 }

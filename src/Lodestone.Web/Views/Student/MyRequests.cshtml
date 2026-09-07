@@ -11,7 +11,9 @@
     <link rel="stylesheet" href="~/css/peer-support.css" asp-append-version="true" />
 }
 
-<div class="container my-5">
+<div class="container my-5" data-peer-support-live>
+    <span class="visually-hidden-status" role="status" aria-live="polite" data-peer-support-status></span>
+
     <div class="row mb-4">
         <div class="col-12">
             <a href="@Url.Action("Index", "Student")" class="btn btn-outline-secondary btn-sm mb-3">← Back to Dashboard</a>
@@ -212,3 +214,8 @@
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.0/dist/browser/signalr.min.js" crossorigin="anonymous"></script>
+    <script src="~/js/peer-support.js" asp-append-version="true"></script>
+}

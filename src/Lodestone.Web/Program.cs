@@ -73,6 +73,7 @@ builder.Services.AddApplication();
 // Override Application's transport-neutral no-op with Web's authorized SignalR refresh signal.
 builder.Services.AddScoped<IRiskQueueNotifier, SignalRRiskQueueNotifier>();
 builder.Services.AddScoped<IAdminNotificationNotifier, SignalRAdminNotifier>();
+builder.Services.AddScoped<IPeerSupportNotifier, SignalRPeerSupportNotifier>();
 
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
 if (builder.Environment.IsDevelopment())
@@ -163,9 +164,11 @@ app.MapHealthChecks("/health/ml", new Microsoft.AspNetCore.Diagnostics.HealthChe
     ResponseWriter = WriteHealthResponseAsync
 });
 app.MapHub<CounselorQueueHub>(CounselorQueueHub.Route);
-// Peer chat has no server-owned room membership or moderation model yet. It is not
-// mapped until those privacy and authorization requirements are implemented.
 app.MapHub<AdminNotificationHub>(AdminNotificationHub.Route);
+// PeerSupportHub only tells a named user that something they can already see has changed, so it
+// needs no room membership. PeerChatHub would carry message content to a room and stays unmapped
+// until server-owned membership and a moderation model exist.
+app.MapHub<PeerSupportHub>(PeerSupportHub.Route);
 if (useHangfire)
 {
     app.MapHangfireDashboard()

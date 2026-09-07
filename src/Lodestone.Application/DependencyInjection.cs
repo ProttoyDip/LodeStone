@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IRiskQueueNotifier, NullRiskQueueNotifier>();
         services.TryAddSingleton<IAdminNotificationNotifier, NullAdminNotificationNotifier>();
+        services.TryAddSingleton<IPeerSupportNotifier, NullPeerSupportNotifier>();
         return services;
     }
 }
