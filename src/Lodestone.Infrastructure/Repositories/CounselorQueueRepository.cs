@@ -41,17 +41,20 @@ public sealed class CounselorQueueRepository : ICounselorQueueRepository
                 ScoredAtUtc = entry.RiskScore != null ? entry.RiskScore.ScoredAtUtc : default,
                 RowVersion = entry.RowVersion,
                 ActiveDayRate = entry.RiskScore != null && entry.RiskScore.RiskFeatureSnapshot != null
-                    ? entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV2
+                    ? (entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV2
+                            || entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV3)
                         ? entry.RiskScore.RiskFeatureSnapshot.RecentActiveDayRate ?? 0
                         : entry.RiskScore.RiskFeatureSnapshot.ActiveDayRate
                     : 0,
                 DaysSinceLastAccess = entry.RiskScore != null && entry.RiskScore.RiskFeatureSnapshot != null
-                    ? entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV2
+                    ? (entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV2
+                            || entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV3)
                         ? entry.RiskScore.RiskFeatureSnapshot.InactivityStreakDays ?? 0
                         : entry.RiskScore.RiskFeatureSnapshot.DaysSinceLastAccess
                     : 0,
                 LateOrMissingAssignmentCount = entry.RiskScore != null && entry.RiskScore.RiskFeatureSnapshot != null
-                    ? entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV2
+                    ? (entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV2
+                            || entry.RiskScore.RiskFeatureSnapshot.FeatureSchemaVersion == RiskFeatureSchema.Withdrawal28DayV3)
                         ? entry.RiskScore.RiskFeatureSnapshot.AssessmentLateOrMissingRate ?? 0
                         : entry.RiskScore.RiskFeatureSnapshot.LateOrMissingAssignmentCount
                     : 0
