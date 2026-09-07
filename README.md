@@ -16,7 +16,7 @@ Lodestone is not a diagnostic or clinical system. ML predictions are support-rou
 - The seventeen-feature `withdrawal-28d-v3` experiment passed its gates and published a runtime artifact to `src/Lodestone.Web/App_Data/ml`.
 - Tracked config keeps `MachineLearning:Enabled=false`. Enabling it is a product decision that has not been taken; see the operating-point note below.
 - Predictions are explainable on demand, and the model has been audited for subgroup performance. See [AI Governance](docs/AI-GOVERNANCE.md).
-- Full tests pass: 131 Unit, 64 Integration, 81 ML, 276 total.
+- Full tests pass: 153 Unit, 64 Integration, 81 ML, 298 total.
 
 **Known operating-point finding.** The configured `MachineLearning:QueueThreshold` of `0.83` was chosen for precision (about 1 flagged student in 6.5 is genuinely at risk). The fairness audit measured its recall: **4.5%**. At that threshold the queue is accurate and nearly empty, missing roughly 21 of every 22 at-risk student-weeks. At the artifact's own threshold recall is 69.3%, but a third of all student-weeks are flagged. This is a counselor-capacity trade-off and needs a deliberate decision before scoring is enabled.
 
@@ -244,6 +244,28 @@ Measured on the v3 model, gaps are moderate at the artifact threshold and consid
 
 **The limitation this accepts on purpose:** a deployment that records no protected attributes cannot measure its own bias. Subgroup performance is only measurable offline, against the research dataset. That trade-off is stated rather than hidden, because the absence of bad news is not good news.
 
+## Forum Moderation Triage
+
+Moderation used to begin when somebody reported a post. That covers content people object to, and misses the case this product exists for: a student writes something quietly worrying, nobody replies, nobody reports it, and it ages off the front page unread. Reactive flagging cannot reach such a post precisely because nobody engaged with it.
+
+`ForumTriageRanker` orders posts by how soon a human should read them, using facts about each post's history: unreviewed community reports, no replies after 24 hours, a first-time or infrequent author, a post far longer than that author's own norm, and how long it has gone unattended. Length is compared against the author's own median rather than the forum's, so a habitually terse person writing at length stands out instead of being buried under chattier users.
+
+**It is not a content classifier and assigns no category.** There is no labelled data in this project to train a distress or self-harm classifier, and none to measure one — and the costly error is the false negative, which is exactly the number that could not be measured. A post shown to a moderator without a concern label would also read as cleared, so an unmeasurable classifier would make quiet cases *less* visible than none at all. Every reason shown is something a moderator could have observed unaided; the ranker only notices them all at once, on every post, every day. A test fails the build if any reason contains distress, crisis, self-harm, risk, concern, mental or suicide.
+
+Posts that a community member reported form their own tier ahead of everything the ranker inferred. That ordering is structural rather than a consequence of weights, so a future tuning change cannot quietly let a derived signal outvote a human explicitly asking for review.
+
+Triage surfaces and never decides: nothing here changes a post's status, hides it, or notifies its author.
+
+## Volunteer Matching
+
+`VolunteerMatcher` ranks approved, active volunteers for a support request on three signals: overlap between the request and the volunteer's declared skills, department and bio; overlap in stated availability; and how many students the volunteer already carries. Capacity is weighted deliberately small — spreading work stops one willing volunteer absorbing every request, but it must never outrank actually being able to help.
+
+Every match carries the reasons that produced it, because a ranking an administrator cannot audit is an instruction with a number attached. Assignment stays a human decision; the matcher only puts plausible options at the top of the list.
+
+The student's message is read to find matching skills and is never reproduced in a match reason. An administrator choosing between volunteers needs to know what the volunteer offers, not to have the student's account of their situation quoted back in a ranking widget; a test enforces this.
+
+Everything is local, deterministic and inspectable — word overlap, declared availability and current workload. No model, no embedding service, nothing leaves the process.
+
 ## Background Jobs And Real-Time Updates
 
 `WeeklyRiskScoringJob` is implemented and registered only when the validated model status is available. Without a valid model, the recurring risk job is removed.
@@ -301,10 +323,10 @@ dotnet test Lodestone.sln
 
 Latest verified counts:
 
-- Unit: 131
+- Unit: 153
 - Integration: 64
 - ML: 81
-- Total: 276
+- Total: 298
 
 Additional verification performed:
 

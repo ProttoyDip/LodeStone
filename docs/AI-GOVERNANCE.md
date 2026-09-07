@@ -167,13 +167,51 @@ re-run the audit and read the recall at the new threshold before deploying it.
 - **No self-harm classifier.** There is no labelled data for it, so its false-negative rate could
   not be measured — and the false negative is the catastrophic error. A category named "self-harm
   concern" would also imply a clinical judgement the system is not competent to make, and its
-  absence would be read as reassurance.
+  absence would be read as reassurance. `ForumTriageRanker` closes the same gap without the claim:
+  see section 12.
 - **No generative student-facing chat.** The crisis path is the worst possible place for a
   confident wrong answer.
 - **No third-party inference on student text.** Journal notes are encrypted at rest precisely so
   they are not casually readable; sending them to an external endpoint would undo that decision.
 
-## 11. Where the rules live
+## 11. Forum moderation triage
+
+`ForumTriageRanker` orders posts by how soon a moderator should read them. It exists because
+reactive flagging cannot reach the post nobody engaged with — written, unanswered, unreported,
+ageing away.
+
+Signals are structural only: unreviewed community reports, no replies after 24 hours, a first-time
+or infrequent author, a post far longer than that author's own median, and time unattended. Each is
+a fact about a post's history that a moderator could have observed unaided.
+
+Three properties are enforced rather than intended:
+
+- **No category is ever assigned.** A test fails the build if any reason contains distress, crisis,
+  self-harm, risk, concern, mental or suicide.
+- **Reported posts outrank inferred ones structurally**, by tier rather than by weight, so tuning
+  cannot let a derived signal outvote a human who explicitly asked for review.
+- **Nothing is decided.** No status change, no hiding, no message to the author.
+
+The upgrade path, should labelled and validated data ever exist, is a trained classifier reporting
+its measured recall alongside its output. Until then the honest system is the one that orders a
+queue without claiming to understand what is in it.
+
+## 12. Volunteer matching
+
+`VolunteerMatcher` ranks volunteers for a support request on skill overlap, availability overlap and
+current workload. It is local, deterministic and inspectable — word overlap and counts, no model and
+no external service.
+
+- **It recommends; it never assigns.** Matching a distressed student to a stranger is a judgement
+  about two people, and the system lacks the context to make it.
+- **Every match carries its reasons**, so an administrator can disagree with the order. A ranking
+  nobody can audit is an instruction with a number attached.
+- **The student's words are never quoted back.** The message is read to find matching skills and
+  never reproduced in a match reason; a test enforces this.
+- **Capacity is weighted small on purpose.** Spreading work protects volunteers from absorbing every
+  request, but must never outrank being able to help.
+
+## 13. Where the rules live
 
 | Rule | Enforced in |
 | --- | --- |
@@ -187,3 +225,6 @@ re-run the audit and read the recall at the new threshold before deploying it.
 | Publication gates | `ModelQualityGates`, `TrainingPipeline` |
 | Subgroup performance | `FairnessAuditor`, `FairnessMetrics` |
 | Peer chat stays unmapped | `Program.cs` endpoint section |
+| Triage assigns no clinical category | `ForumTriageRanker`, `ForumTriageRankerTests` |
+| Reported posts outrank inferred signals | `ForumTriageRanker.Rank` tier ordering |
+| Matching recommends, never assigns | `VolunteerMatcher`, `VolunteerMatcherTests` |
