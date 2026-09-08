@@ -15,9 +15,14 @@ public class BookingController : Controller
     private readonly IBookingService _bookings;
     private readonly ICurrentUserService _currentUser;
     private readonly IStudentProfileRepository _students;
+    private readonly IVolunteerSupportService _peerSupport;
 
-    public BookingController(IBookingService bookings, ICurrentUserService currentUser, IStudentProfileRepository students)
-        => (_bookings, _currentUser, _students) = (bookings, currentUser, students);
+    public BookingController(
+        IBookingService bookings,
+        ICurrentUserService currentUser,
+        IStudentProfileRepository students,
+        IVolunteerSupportService peerSupport)
+        => (_bookings, _currentUser, _students, _peerSupport) = (bookings, currentUser, students, peerSupport);
 
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
@@ -34,8 +39,31 @@ public class BookingController : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Create(int? counselorId, CancellationToken cancellationToken)
-        => View(await BuildCreateViewModelAsync(counselorId, null, cancellationToken));
+    public async Task<IActionResult> Create(int? counselorId, int? peerRequestId, CancellationToken cancellationToken)
+    {
+        CreateBookingDto? prefilled = null;
+        if (peerRequestId is > 0)
+        {
+            // Only prefill for a request this student owns and that a volunteer actually escalated.
+            try
+            {
+                var request = await _peerSupport.GetRequestForStudentAsync(peerRequestId.Value, cancellationToken);
+                if (request is { Status: SupportRequestStatus.Escalated })
+                {
+                    prefilled = new CreateBookingDto(
+                        0,
+                        $"Following up on my peer-support request \"{request.Title}\" (#{request.Id}), which my volunteer escalated on {request.EscalatedAtUtc:MMM d}.");
+                    ViewData["PeerRequestTitle"] = request.Title;
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Not a student session; ignore the hint rather than fail the page.
+            }
+        }
+
+        return View(await BuildCreateViewModelAsync(counselorId, prefilled, cancellationToken));
+    }
 
     [HttpPost]
     [ValidateAntiForgeryToken]

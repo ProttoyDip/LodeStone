@@ -25,3 +25,18 @@ public sealed record RiskScoringRunDto(
     int QueueCreatedCount,
     int QueueEscalatedCount,
     string? FailureSummary);
+
+/// <summary>One scored snapshot inside a run, for audit export. Student identified by verified number only.</summary>
+public sealed record RiskScoringRunRowDto(
+    int RiskScoreId,
+    string StudentReference,
+    string CourseKey,
+    DateTime WindowEndUtc,
+    double Probability,
+    RiskLevel Level,
+    DateTime ScoredAtUtc,
+    bool QueuedOrEscalated);
+
+public sealed record RiskScoringRunExportDto(
+    RiskScoringRunDto Run,
+    IReadOnlyList<RiskScoringRunRowDto> Rows);

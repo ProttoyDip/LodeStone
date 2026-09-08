@@ -147,7 +147,9 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             return new SupportRequestRoutingDto(Array.Empty<SupportRequestRoutingItemDto>(), volunteers.Count);
 
         var workload = await _repository.GetActiveAssignmentCountsAsync(cancellationToken);
+        var nowUtc = DateTime.UtcNow;
         var candidates = volunteers
+            .Where(volunteer => !volunteer.IsAwayAt(nowUtc))
             .Select(volunteer => new VolunteerMatchCandidate(
                 volunteer.Id,
                 FirstNonEmpty(volunteer.User?.FullName, volunteer.User?.Email, "Volunteer"),
@@ -445,7 +447,13 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         if (requestId <= 0) return null;
 
         var request = await _repository.GetRequestForStudentAsync(requestId, userId, cancellationToken);
-        return request is null ? null : MapRequest(request);
+        if (request is null) return null;
+
+        // Opening the conversation is what "reading" means here.
+        var nowUtc = DateTime.UtcNow;
+        await _repository.MarkConversationReadAsync(request.Id, asVolunteer: false, nowUtc, cancellationToken);
+        request.StudentLastReadAtUtc = nowUtc;
+        return MapRequest(request);
     }
 
     public async Task<IReadOnlyList<AssignedVolunteerDto>> GetAssignedVolunteersForStudentAsync(
@@ -462,7 +470,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         var openRequests = (await _repository.GetRequestsForStudentAsync(userId, cancellationToken))
             .Where(request => request.Status == SupportRequestStatus.Accepted && request.VolunteerProfileId.HasValue)
             .GroupBy(request => request.VolunteerProfileId!.Value)
-            .ToDictionary(group => group.Key, group => group.OrderByDescending(request => request.CreatedAtUtc).First().Id);
+            .ToDictionary(group => group.Key, group => MapRequest(group.OrderByDescending(request => request.CreatedAtUtc).First()));
 
         return assignments
             .Where(assignment => assignment.VolunteerProfile is not null)
@@ -471,6 +479,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             {
                 var assignment = group.OrderByDescending(item => item.CreatedAtUtc).First();
                 var volunteer = assignment.VolunteerProfile!;
+                openRequests.TryGetValue(volunteer.Id, out var open);
                 return new AssignedVolunteerDto(
                     volunteer.Id,
                     FirstNonEmpty(volunteer.User?.FullName, volunteer.User?.Email, "Volunteer"),
@@ -479,7 +488,10 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
                     volunteer.Skills,
                     volunteer.Availability,
                     volunteer.Bio,
-                    openRequests.TryGetValue(volunteer.Id, out var requestId) ? requestId : null);
+                    open?.Id,
+                    open?.UnreadForStudent ?? 0,
+                    volunteer.IsAwayAt(DateTime.UtcNow) ? volunteer.AwayUntilUtc : null,
+                    volunteer.IsAwayAt(DateTime.UtcNow) ? volunteer.AwayMessage : null);
             })
             .ToList()
             .AsReadOnly();
@@ -594,6 +606,38 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
                 .AsReadOnly());
     }
 
+    public async Task<bool> SetAvailabilityAsync(
+        SetVolunteerAvailabilityDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        var (_, volunteer) = await RequireActiveVolunteerAsync(cancellationToken);
+        var nowUtc = DateTime.UtcNow;
+
+        if (dto.IsAway)
+        {
+            var until = dto.AwayUntilUtc ?? nowUtc.AddDays(7);
+            if (until <= nowUtc || until > nowUtc.AddDays(90))
+                throw new ArgumentException("Choose a return date within the next 90 days.", nameof(dto.AwayUntilUtc));
+            volunteer.AwayUntilUtc = until;
+            volunteer.AwayMessage = NormalizeOptional(dto.AwayMessage, 200, nameof(dto.AwayMessage));
+        }
+        else
+        {
+            volunteer.AwayUntilUtc = null;
+            volunteer.AwayMessage = null;
+        }
+
+        volunteer.ModifiedAtUtc = nowUtc;
+        _auditLog.Record(
+            dto.IsAway ? "VolunteerProfile.Away" : "VolunteerProfile.Available",
+            nameof(VolunteerProfile),
+            volunteer.Id.ToString(),
+            dto.IsAway ? $"Volunteer paused new requests until {volunteer.AwayUntilUtc:u}." : "Volunteer resumed taking requests.");
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyRosterChangedAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<SupportRequestDto?> GetRequestForVolunteerAsync(
         int requestId,
         CancellationToken cancellationToken = default)
@@ -602,7 +646,15 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         if (requestId <= 0) return null;
 
         var request = await _repository.GetRequestForVolunteerAsync(requestId, userId, cancellationToken);
-        return request is null ? null : MapRequest(request);
+        if (request is null) return null;
+
+        if (request.Status == SupportRequestStatus.Accepted)
+        {
+            var nowUtc = DateTime.UtcNow;
+            await _repository.MarkConversationReadAsync(request.Id, asVolunteer: true, nowUtc, cancellationToken);
+            request.VolunteerLastReadAtUtc = nowUtc;
+        }
+        return MapRequest(request);
     }
 
     public async Task<bool> AcceptRequestAsync(
@@ -693,6 +745,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
 
         await _repository.AddInteractionAsync(interaction, cancellationToken);
         request.ModifiedAtUtc = interaction.CreatedAtUtc;
+        request.VolunteerLastReadAtUtc = interaction.CreatedAtUtc;
         _auditLog.Record(
             "SupportInteraction.Create",
             nameof(SupportInteraction),
@@ -767,6 +820,60 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await NotifyCounselorsOfEscalationAsync(request.Id, cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<PeerEscalationDto>> GetOpenEscalationsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        RequireAnyRole(RoleConstants.Counselor, RoleConstants.Admin);
+        var requests = await _repository.GetUnhandledEscalationsAsync(cancellationToken);
+        return requests.Select(MapEscalation).ToList().AsReadOnly();
+    }
+
+    public async Task<bool> AcknowledgeEscalationAsync(
+        int requestId,
+        string? note,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = RequireAnyRole(RoleConstants.Counselor, RoleConstants.Admin);
+        if (requestId <= 0) return false;
+
+        var request = await _repository.GetRequestByIdAsync(requestId, cancellationToken);
+        if (request is null || request.Status != SupportRequestStatus.Escalated || request.EscalationHandledAtUtc.HasValue)
+            return false;
+
+        var nowUtc = DateTime.UtcNow;
+        request.EscalationHandledAtUtc = nowUtc;
+        request.EscalationHandledByUserId = userId;
+        request.EscalationHandledNote = NormalizeOptional(note, 500, nameof(note));
+        request.ModifiedAtUtc = nowUtc;
+
+        _auditLog.Record(
+            "SupportRequest.EscalationHandled",
+            nameof(SupportRequest),
+            request.Id.ToString(),
+            "A counselor acknowledged a peer-support escalation.");
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(request.StudentProfile?.UserId))
+        {
+            try
+            {
+                await _notificationService.CreateAsync(
+                    request.StudentProfile.UserId,
+                    NotificationType.System,
+                    "A counselor is following up",
+                    "A counselor has picked up the peer-support request your volunteer escalated. You can also book a session directly from that request.",
+                    cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Could not notify the student that an escalation was acknowledged.");
+            }
+        }
+
         await NotifyParticipantsAsync(request, cancellationToken);
         return true;
     }
@@ -927,6 +1034,39 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         return _currentUser.UserId;
     }
 
+    private string RequireAnyRole(params string[] roles)
+    {
+        if (!_currentUser.IsAuthenticated ||
+            string.IsNullOrWhiteSpace(_currentUser.UserId) ||
+            !roles.Any(_currentUser.IsInRole))
+            throw new UnauthorizedAccessException("The current user is not authorized for this volunteer-support operation.");
+
+        return _currentUser.UserId;
+    }
+
+    private static PeerEscalationDto MapEscalation(SupportRequest request)
+    {
+        var escalation = request.Interactions
+            .Where(interaction => interaction.Type == SupportInteractionType.Escalated && !string.IsNullOrWhiteSpace(interaction.VolunteerUserId))
+            .OrderByDescending(interaction => interaction.CreatedAtUtc)
+            .FirstOrDefault();
+
+        return new PeerEscalationDto(
+            request.Id,
+            request.StudentProfileId,
+            StudentDisplayName(request.StudentProfile),
+            request.StudentProfile?.StudentNumber,
+            request.Category,
+            request.Title,
+            request.VolunteerProfile is null
+                ? "Volunteer"
+                : FirstNonEmpty(request.VolunteerProfile.User?.FullName, request.VolunteerProfile.User?.Email, "Volunteer"),
+            escalation?.Message ?? "A peer volunteer requested counselor follow-up.",
+            request.EscalatedAtUtc ?? escalation?.CreatedAtUtc ?? request.ModifiedAtUtc ?? request.CreatedAtUtc,
+            request.EscalationHandledAtUtc,
+            request.EscalationHandledNote);
+    }
+
     private static bool IsOwnedActiveRequest(SupportRequest? request, int volunteerProfileId)
         => request is not null &&
            request.VolunteerProfileId == volunteerProfileId &&
@@ -953,7 +1093,9 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             volunteer.Availability,
             volunteer.IsApproved,
             volunteer.IsActive,
-            volunteer.Bio);
+            volunteer.Bio,
+            volunteer.AwayUntilUtc,
+            volunteer.AwayMessage);
 
     private static AdminVolunteerDto MapAdminVolunteer(VolunteerProfile volunteer)
         => new(
@@ -964,7 +1106,8 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             volunteer.Availability,
             GetApprovalState(volunteer),
             volunteer.VolunteerAssignments.Count(assignment => assignment.IsActive),
-            GetPendingRequestsForVolunteer(volunteer).Select(request => request.Id).Distinct().Count());
+            GetPendingRequestsForVolunteer(volunteer).Select(request => request.Id).Distinct().Count(),
+            volunteer.IsAwayAt(DateTime.UtcNow) ? volunteer.AwayUntilUtc : null);
 
     private static IEnumerable<SupportRequest> GetPendingRequestsForVolunteer(VolunteerProfile volunteer)
         => volunteer.VolunteerAssignments
@@ -1007,6 +1150,13 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             .ToList()
             .AsReadOnly();
 
+        var unreadForStudent = interactions.Count(interaction =>
+            interaction.IsFromVolunteer &&
+            (request.StudentLastReadAtUtc is null || interaction.CreatedAtUtc > request.StudentLastReadAtUtc));
+        var unreadForVolunteer = interactions.Count(interaction =>
+            !interaction.IsFromVolunteer &&
+            (request.VolunteerLastReadAtUtc is null || interaction.CreatedAtUtc > request.VolunteerLastReadAtUtc));
+
         return new SupportRequestDto(
             request.Id,
             request.Category,
@@ -1021,7 +1171,11 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             request.CreatedAtUtc,
             request.CompletedAtUtc,
             request.EscalatedAtUtc,
-            interactions);
+            interactions,
+            unreadForStudent,
+            unreadForVolunteer,
+            interactions.Count > 0 ? interactions[^1].CreatedAtUtc : null,
+            request.EscalationHandledAtUtc);
     }
 
     private static SupportInteractionDto MapInteraction(SupportInteraction interaction)

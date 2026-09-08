@@ -10,29 +10,48 @@ Lodestone is not a diagnostic or clinical system. ML predictions are support-rou
 
 ## Current Status
 
-**State D: A published v3 model, explained and audited, with runtime scoring enabled per environment.**
+**State E: A published, explained, audited and drift-monitored v3 model; peer support, counselor and admin workflows complete.**
 
-- Runtime ML is implemented as a first-class application feature through the Application-owned `IRiskModelPredictor` boundary.
-- The seventeen-feature `withdrawal-28d-v3` experiment passed its gates and published a runtime artifact to `src/Lodestone.Web/App_Data/ml`.
-- Tracked config keeps `MachineLearning:Enabled=false` because the artifacts are git-ignored; each environment that holds them enables scoring explicitly (user-secrets, `MachineLearning__Enabled`, or `LODESTONE_ML_ENABLED` in Docker). The decision and its reasoning are recorded in [AI Governance §9a](docs/AI-GOVERNANCE.md).
-- Predictions are explainable on demand from the counselor queue ("Why this score"), and the model has been audited for subgroup performance at both the artifact and deployed thresholds.
-- Full tests pass: 192 Unit, 65 Integration, 81 ML, 338 total.
+- Runtime ML is a first-class application feature behind the Application-owned `IRiskModelPredictor` boundary; ML.NET never leaves the outer `Lodestone.ML` project.
+- The seventeen-feature `withdrawal-28d-v3` model passed its fixed gates and is published to `src/Lodestone.Web/App_Data/ml`. The artifact was retrained on 2026-09-08 with identical metrics (deterministic seed) so that it now records **permutation feature importance** and a **validation score distribution** used for runtime drift checks.
+- Every prediction is explainable on demand (ablation), every case shows the model's own feature ranking beside the per-student breakdown, and every scoring run is compared with its reference distribution (PSI) on the admin operations page.
+- Tracked config keeps `MachineLearning:Enabled=false` because artifacts are git-ignored; each environment enables scoring explicitly. Reasoning in [AI Governance §9a](docs/AI-GOVERNANCE.md).
+- Full tests pass: **212 Unit, 65 Integration, 83 ML, 360 total.** Release build: 0 errors.
 
 **Known operating-point finding.** The configured `MachineLearning:QueueThreshold` of `0.83` was chosen for precision (about 1 flagged student in 6.5 is genuinely at risk). The fairness audit measured its recall: **4.5%**. At that threshold the queue is accurate and nearly empty, missing roughly 21 of every 22 at-risk student-weeks. At the artifact's own threshold recall is 69.3%, but a third of all student-weeks are flagged. Scoring was enabled with this known; the queue is a capacity-bounded triage aid, not a safety net, and the threshold should be revisited once real counselor capacity is measured.
 
+## What Changed In The Final Iteration (2026-09-08 → 09)
+
+| Area | Change |
+| --- | --- |
+| Peer support | Students see their assigned volunteers on the dashboard and can **start a private conversation directly** (no request/accept round trip). Unread-message badges for students and volunteers (`StudentLastReadAtUtc` / `VolunteerLastReadAtUtc`). |
+| Volunteers | **Away status** (`AwayUntilUtc`, note): away volunteers are excluded from routing suggestions and shown as away to students and admins. History rows show *Awaiting counselor* / *Counselor following up*. |
+| Escalation handoff | Counselor queue gains a **Peer-support handoffs** panel: volunteer escalations with the volunteer's note; "I'll follow up" stamps the case and notifies the student. The student's escalated request offers **Book a counselor session** with a prefilled note. |
+| Counselor prompts | Manual nudges are linked to the appointment they were sent from; the Appointments page shows each prompt's outcome (acknowledged / snoozed / dismissed / awaiting / expired). |
+| Risk cases | Resolution requires a **reason** (`Contacted`, `NoConcern`, `Referred`, `StudentDeclined`, `Unreachable`) plus optional note; the PDF report gains median time-to-resolve and a resolution breakdown. |
+| Student transparency | **"What monitoring holds about you"** panel: snapshots, courses, period, imports, summaries scored, last run, whether a counselor check-in was suggested — counts and dates only, never a score. |
+| Admin ML operations | **Export results (CSV)** per scoring run (audited); **Drift check** (PSI vs. training distribution or prior runs) with severity badge and histogram. |
+| Explainability | Training records **permutation importance**; *Why this score* shows a **model-wide rank** column and a "what the model relies on in general" panel, with a population-ablation fallback for older artifacts. |
+| Jobs | New **CounselorDigestJob** (Mondays 08:00): count-only weekly email of open cases, waiting escalations and prompt outcomes; skips quiet weeks. |
+| Fixes | Peer-chat action buttons no longer lose their value on submit; jQuery/validation scripts served from CDN instead of missing local files. |
+| Schema | Three migrations: `PeerChatReadMarkersVolunteerAwayNudgeBooking`, `RiskCaseResolutionReasons`, `PeerEscalationHandoff`. |
+
 ## Implemented Product Areas
 
-- Student registration/login, role redirects, dashboard, private mood journal, crisis resources, peer forum, and counselor booking.
-- Explicit monitoring consent at registration and from the Student Privacy area.
+- Student registration/login, role redirects, dashboard, private mood journal (encrypted notes, one entry per day), crisis resources with BM25 search, peer forum, and counselor booking with 24-hour reminders.
+- Peer support: admin-assigned volunteers, student-initiated requests or direct conversations, private SignalR chat, unread markers, volunteer availability, escalation to counselors with acknowledgement handoff.
+- Explicit monitoring consent at registration and from the Student Privacy area, with a transparency panel showing exactly what monitoring holds.
 - Admin-reviewed LMS/student-number claims with approve, reject, reset, duplicate checks, and row-version protection.
-- Admin import of versioned weekly behavioral snapshots for consented and verified students.
-- Runtime risk scoring, auditable scoring runs, idempotent score persistence, one open counselor case per student, and concurrency-safe counselor resolution.
-- Admin and Counselor operational views that show real ML availability, model/schema identity, latest scoring status, skipped/failed counts, and queue state.
-- Manual counselor nudges from eligible counselor/student interactions, kept independent from ML risk monitoring and requiring separate student opt-in.
+- Admin import of versioned weekly behavioral snapshots for consented and verified students; CSV template download.
+- Runtime risk scoring, auditable scoring runs, idempotent score persistence, one open counselor case per student, concurrency-safe resolution with recorded reasons, per-run CSV export, and drift monitoring.
+- Counselor workspace: live support queue, on-demand explanations with model-wide importance, peer-escalation handoffs, appointments with outcome recording and template-drafted session notes, optional neutral prompts with outcome tracking, weekly digest email.
+- Admin and Counselor operational views that show real ML availability, model/schema identity, latest scoring status, skipped/failed counts, queue state, and score drift.
+- Manual counselor nudges kept independent from ML risk monitoring and requiring separate student opt-in.
 - Fail-closed ML loading with model hash, metadata hash, schema, feature order, version, window, stride, manifest, publication eligibility, and loadability validation.
+- PDF reports (QuestPDF): risk summary with case-flow and resolution breakdown, student engagement, counselor session.
 - Local Docker/CI hardening, public-link validation for account email links, sanitized account/setup logging, and persistent Data Protection key configuration.
 
-Deferred areas are deliberately not advertised as complete: PDF report generation, generic analytics templates, Admin notification real-time badge wiring, and automatic risk-based nudges.
+Deliberately not built: automatic risk-based nudges, any self-harm or distress classifier, generative or LLM-backed chat, third-party text inference.
 
 ## Technology
 
@@ -45,6 +64,7 @@ Deferred areas are deliberately not advertised as complete: PDF report generatio
 | ML | ML.NET FastTree and LightGBM training/evaluation |
 | Jobs | Hangfire with SQL Server storage |
 | Real-time | SignalR |
+| Reports | QuestPDF |
 | Frontend | Hand-written CSS, vanilla JavaScript |
 | Tests | xUnit, Moq, FluentAssertions, EF Core InMemory, WebApplicationFactory |
 
@@ -57,11 +77,11 @@ Lodestone follows Clean Architecture. Domain and Application do not depend on EF
 | `Lodestone.Domain` | Entities, enums, constants, and core state |
 | `Lodestone.Application` | Use cases, DTOs, validation, and framework-neutral interfaces |
 | `Lodestone.Infrastructure` | EF Core repositories, SQL Server persistence, Identity, email, security |
-| `Lodestone.ML` | OULAD loading, feature engineering, training, artifact validation, prediction |
-| `Lodestone.Jobs` | Hangfire jobs and startup scheduling |
-| `Lodestone.Reporting` | Reporting scaffold; generators are deferred |
+| `Lodestone.ML` | OULAD loading, feature engineering, training, permutation importance, fairness audit, artifact validation, prediction, ablation explanation |
+| `Lodestone.Jobs` | Hangfire jobs (weekly scoring, reminders, forum triage, crisis escalation, counselor digest) and startup scheduling |
+| `Lodestone.Reporting` | QuestPDF report generators (risk summary, student engagement, counselor session) |
 | `Lodestone.Web` | MVC, Razor UI, health endpoints, SignalR hubs, composition root |
-| `tools/Lodestone.ModelTrainer` | OULAD download and model-training CLI |
+| `tools/Lodestone.ModelTrainer` | OULAD download, training experiments, threshold analysis and fairness-audit CLI |
 
 Runtime scoring depends on `IRiskModelPredictor` in Application. ML.NET stays in the outer ML project.
 
@@ -77,11 +97,17 @@ Prerequisites:
 ```bash
 dotnet restore Lodestone.sln
 dotnet build Lodestone.sln
-dotnet ef database update --project src/Lodestone.Infrastructure --startup-project src/Lodestone.Web
 dotnet run --project src/Lodestone.Web
 ```
 
-The local app binds to `http://localhost:5000` and `https://localhost:5001`.
+Migrations are applied automatically at startup (`DbInitializer`); `dotnet ef database update` is only needed when running with `Startup__InitializeDatabase=false`. The local app binds to `http://localhost:5000` and `https://localhost:5001`.
+
+To run with the risk model active for a demo:
+
+```powershell
+$env:MachineLearning__Enabled = "true"
+dotnet run --project src/Lodestone.Web
+```
 
 For a database-independent startup smoke:
 
@@ -102,11 +128,18 @@ Tracked defaults keep ML disabled:
   "MachineLearning": {
     "Enabled": false,
     "ModelPath": "App_Data/ml/risk-model.zip",
-    "MetadataPath": "App_Data/ml/risk-model.metadata.json"
+    "MetadataPath": "App_Data/ml/risk-model.metadata.json",
+    "QueueThreshold": 0.83
   },
   "RiskScoring": {
     "Cron": "0 2 * * 1",
     "TimeZoneId": "UTC"
+  },
+  "MaintenanceJobs": {
+    "BookingReminders": { "Enabled": true, "Cron": "0 7 * * *" },
+    "ForumModeration":  { "Enabled": true, "Cron": "0 8 * * *" },
+    "CrisisEscalation": { "Enabled": true, "Cron": "0 */6 * * *" },
+    "CounselorDigest":  { "Enabled": true, "Cron": "0 8 * * 1" }
   }
 }
 ```
@@ -128,7 +161,7 @@ Monitoring eligibility requires both:
 1. explicit student opt-in; and
 2. an Admin-verified LMS/student-number mapping.
 
-Registration stores the student number as a pending claim. Admins approve/reject/reset claims from `/Admin/RiskMonitoring`. Students see only their consent and verification state; they never see risk probabilities, queue status, hidden monitoring data, or model decisions.
+Registration stores the student number as a pending claim. Admins approve/reject/reset claims from `/Admin/RiskMonitoring`. Students see only their consent and verification state plus a transparency panel of **counts and dates** (snapshots stored, period covered, summaries scored, whether a counselor check-in was suggested); they never see risk probabilities, bands, queue detail, or model decisions.
 
 Consent withdrawal removes the student's `ActivityLogs`, `RiskFeatureSnapshots`, `RiskScores`, and `RiskQueueEntries`. Consent history and privacy audit records remain.
 
@@ -157,15 +190,17 @@ Audit a published model for subgroup performance:
 dotnet run --project tools/Lodestone.ModelTrainer -- audit-fairness --queue-threshold 0.83
 ```
 
-The v2 pipeline:
+The training pipeline:
 
-- uses deterministic student-grouped 70/15/15 train/validation/test split;
-- tunes FastTree and LightGBM candidates using grouped cross-validation inside training only;
+- uses a deterministic student-grouped 70/15/15 train/validation/test split (seed `20260901`);
+- fits cohort calibration and feature normalisation on training rows only;
+- tunes eight bounded FastTree and LightGBM candidates with grouped 3-fold cross-validation inside training only;
 - uses anchor-time behavioral features only;
-- selects algorithm, hyperparameters, and operating threshold on validation only;
-- requires validation AUC >= 0.70, recall >= 0.70, and precision >= 0.30;
-- evaluates the locked test partition exactly once only if validation passes;
-- publishes runtime artifacts only if both validation and locked-test gates pass.
+- selects algorithm, hyperparameters, and operating threshold on validation only (maximise F1 subject to recall ≥ 0.65 + 0.03 margin and precision ≥ 0.05);
+- requires validation AUC ≥ 0.70, recall ≥ 0.65, and precision ≥ 0.05 (`ModelQualityGates`);
+- evaluates the locked test partition exactly once, only if validation passes;
+- records permutation feature importance and the validation score distribution (validation rows only);
+- publishes model, metadata, manifest and report atomically, SHA-256-bound, only if both gates pass.
 
 Excluded from ML features: demographics, grades, assessment scores, final outcomes, journal text, peer-chat/forum text, counseling/session text, crisis-case text, and future activity.
 
@@ -173,7 +208,7 @@ Excluded from ML features: demographics, grades, assessment scores, final outcom
 
 Admins import pre-aggregated weekly behavioral snapshots from `/Admin/RiskMonitoring`. The application does not import raw OULAD rows into student accounts.
 
-The model schema controls the required snapshot header. `withdrawal-28d-v1` keeps the original six-feature contract. `withdrawal-28d-v2` adds behavior-only trend, inactivity, assessment timing, course-progress, and cohort-relative activity fields. Runtime scoring requires the imported snapshot schema to match the loaded model schema exactly.
+The model schema controls the required snapshot header. `withdrawal-28d-v1` keeps the original six-feature contract; `withdrawal-28d-v2` adds behavior-only trend, inactivity, assessment timing, course-progress, and cohort-relative activity fields; `withdrawal-28d-v3` adds activity acceleration, click volatility, forum-engagement share, inactive-week rate and an assessment-miss streak. Runtime scoring requires the imported snapshot schema to match the loaded model schema exactly.
 
 Imports accept only active consent plus verified student-number matches. They validate duplicate headers, source provenance, schema, feature ranges, UTC timestamps, duplicate snapshots, and maximum snapshot age.
 
@@ -204,11 +239,13 @@ The gate itself was the error, not the training run. At a 2.5% base rate, precis
 
 The seventeen-feature schema adds activity acceleration, click volatility, forum-engagement share, weekly inactivity coverage, and an assessment-miss streak. Still clickstream and assessment timing only; no demographic or registration data.
 
-- Model version: `withdrawal-28d-v3-20260905T175232755Z`
-- Algorithm: LightGbm, seed `20260901`
+- Model version: `withdrawal-28d-v3-20260908T202849801Z` (retrained from the 2026-09-05 artifact with the same seed; metrics identical)
+- Algorithm: LightGbm (400 iterations, 63 leaves, 20 min examples/leaf, learning rate 0.05), seed `20260901`
 - Split: 17,339 / 3,714 / 3,718 students (504,023 / 107,501 / 108,238 student-weeks)
-- Locked test: ROC AUC `0.753`, PR AUC `0.078`, recall `0.693`, precision `0.053` at the artifact threshold `0.4629`
+- Validation: ROC AUC `0.732`, recall `0.680`, precision `0.0505`, Brier `0.174`
+- Locked test: ROC AUC `0.753`, PR AUC `0.078`, recall `0.693`, precision `0.053`, Brier `0.170`, mean lead time 14.7 days, at the artifact threshold `0.4629`
 - Base rate in the locked test partition: 2.55%
+- Permutation importance (validation, share of AUC loss): CohortActivityPercentile 30.7%, CourseProgressRatio 18.3%, AssessmentLateOrMissingRate 12.0%, RecentActiveDayRate 11.6%, ActiveDayRateTrend 4.3%, RecentCourseClickRate 4.1%, InactivityStreakDays 3.3%, ClickVolatility 2.9%; the remaining nine each under 3%.
 
 Precision near `0.05` at 69% recall is roughly twice the base rate. That is a real signal and a weak one: most flagged student-weeks are not withdrawals. It routes attention; it does not make a determination about anyone.
 
@@ -225,6 +262,12 @@ Three constraints are enforced rather than documented:
 - **No causal claims.** The model learned association from observational data. Where the system describes what would move a student across the threshold, it is phrased as a property of the model's decision boundary and says so in the same sentence.
 
 Explanation is offered only when a validated model is loaded; otherwise a null explainer keeps the queue rendering the score alone.
+
+**Model-wide importance.** Beside the per-student breakdown, *Why this score* shows what the model relies on across everyone: the permutation importance measured at training time (shuffle one feature across the validation rows three times, average the ROC-AUC drop, normalise to shares). A factor that moved this student's score *and* ranks highly is one the model trusts broadly; one that moved the score but ranks low is an unusual case worth a second look. For artifacts trained before this field existed, the service estimates the same ranking as the mean ablation effect across up to 150 consenting students and labels the source.
+
+## Drift Monitoring
+
+After each scoring run the admin operations page compares the run's score histogram (ten fixed bins) with a reference: the artifact's own validation-set distribution when the model version matches, otherwise the same model's most recent prior scores. The **population stability index** is classified as stable (< 0.10), moderate (0.10–0.25) or significant (≥ 0.25), and shown with a side-by-side histogram, the mean shift, and the share of scores at or above the queue threshold. A shift is a prompt to inspect the incoming snapshots and the model; it never changes any student's case.
 
 ## Fairness Audit
 
@@ -266,13 +309,27 @@ The student's message is read to find matching skills and is never reproduced in
 
 Everything is local, deterministic and inspectable — word overlap, declared availability and current workload. No model, no embedding service, nothing leaves the process.
 
+## Peer Support And Escalation Handoff
+
+Administrators assign approved volunteers to students (individually or by cohort); `VolunteerMatcher` suggests candidates but a person assigns. A student can file a categorised support request, which only their assigned volunteers see, or **start a conversation directly** with an assigned volunteer from the dashboard. Either way the conversation is a `SupportRequest` carrying `SupportInteraction` messages over `PeerChatHub`; membership is pinned server-side to one student and one volunteer, and unread markers are per participant.
+
+Volunteers can mark themselves **away** (with a return date and optional note). Away volunteers stay in existing conversations but are excluded from routing suggestions and shown as away to students and administrators.
+
+When a volunteer escalates, the request appears in the counselor queue's **Peer-support handoffs** panel with the volunteer's escalation note — never the private conversation. A counselor acknowledges it ("I'll follow up", with a counselors-only note); the student is notified and their request page offers a one-click **Book a counselor session** with a prefilled note. Volunteers see *Awaiting counselor* or *Counselor following up* on their history.
+
 ## Background Jobs And Real-Time Updates
 
-`WeeklyRiskScoringJob` is implemented and registered only when the validated model status is available. Without a valid model, the recurring risk job is removed.
+| Job | Default schedule | Behaviour |
+| --- | --- | --- |
+| `weekly-risk-scoring` | Mon 02:00 UTC | Same idempotent batch as the admin "Run scoring now" button; registered only when the validated model is available. |
+| `booking-reminders` | daily 07:00 | Emails students about their own confirmed sessions in the next 24 h; stamps before sending to avoid duplicates. |
+| `forum-moderation` | daily 08:00 | Notifies moderators of the triage backlog count. |
+| `crisis-escalation` | every 6 h | Notifies staff of high/critical cases unreviewed for over 24 h (counts only). |
+| `counselor-digest` | Mon 08:00 | Emails each counselor a **count-only** weekly summary: open cases (urgent/stale), waiting peer escalations, and their own prompt outcomes. Skips quiet weeks. Never names a student. |
 
-Unfinished automatic jobs are not scheduled. Risk scoring never automatically creates a crisis case, contacts external services, or sends risk-based student nudges.
+Unfinished automatic jobs are not scheduled; `nudge-dispatch` is removed unconditionally. Risk scoring never automatically creates a crisis case, contacts external services, or sends risk-based student nudges.
 
-When scoring creates or escalates a support case, Web broadcasts a payload-free `QueueUpdated` SignalR event through `CounselorQueueHub`. Clients reload authorized queue details through the server.
+When scoring creates or escalates a support case, Web broadcasts a payload-free `QueueUpdated` SignalR event through `CounselorQueueHub`. Peer-support pages refresh through `PeerSupportHub`, live chat runs over `PeerChatHub`, and administrators receive roster and notification events. Clients reload authorized details through the server.
 
 ## Health Endpoints
 
@@ -291,15 +348,24 @@ dotnet ef migrations add <MigrationName> --project src/Lodestone.Infrastructure 
 dotnet ef database update --project src/Lodestone.Infrastructure --startup-project src/Lodestone.Web
 ```
 
-Latest source migration:
+Migrations are applied automatically at startup. Twelve migrations, in order:
 
 ```text
+20260705193405_InitialCreate
+20260710205724_EnforceDailyJournalEntries
+20260828103626_CompleteStudentExperience
+20260829032603_ConsentGatedRiskMonitoring
 20260831094114_RuntimeMlV2AndManualNudges
+20260901092551_BookingReminderTracking
+20260904044852_VolunteerPeerSupport
+20260905171216_RuntimeMlV3Snapshots
+20260908110143_ForumTriageReviewMarker
+20260908190027_PeerChatReadMarkersVolunteerAwayNudgeBooking
+20260908191643_RiskCaseResolutionReasons
+20260908193114_PeerEscalationHandoff
 ```
 
-This migration adds v2 snapshot columns, manual-nudge fields and preferences, and journal note protection versioning. EF currently reports no pending model changes. Apply the migration to the configured local/demo database before running the full app against persistent SQL data.
-
-The prior `20260829032603_ConsentGatedRiskMonitoring` migration used a privacy-first upgrade policy that deletes pre-consent monitoring data, converts valid legacy student numbers into pending claims, and clears untrusted verified mappings.
+EF reports no pending model changes. The `ConsentGatedRiskMonitoring` migration used a privacy-first upgrade policy that deletes pre-consent monitoring data, converts valid legacy student numbers into pending claims, and clears untrusted verified mappings.
 
 ## Local Docker
 
@@ -321,20 +387,20 @@ Run all tests:
 dotnet test Lodestone.sln
 ```
 
-Latest verified counts:
+Latest verified counts (2026-09-09):
 
-- Unit: 153
-- Integration: 64
-- ML: 81
-- Total: 298
+- Unit: 212
+- Integration: 65
+- ML: 83
+- Total: 360
 
 Additional verification performed:
 
-- Release solution build: 0 warnings, 0 errors.
-- All 13 shipped JavaScript files pass `node --check`.
-- Docker Compose config validates with `.env.example`; local Docker config access warning is environment-specific.
+- Release solution build: 0 errors.
+- Retraining with the recorded seed reproduced the published metrics exactly (test AUC 0.753, recall 0.693, precision 0.053).
+- `/health/ml` reports `Healthy` with the retrained artifact; the fail-closed loader accepted the new `featureImportance` and `validationScoreDistribution` fields.
+- Docker Compose config validates with `.env.example`.
 - EF reports no pending model changes after the latest migration.
-- `git diff --check` reports no whitespace errors, only expected LF-to-CRLF warnings.
 
 ## Privacy And Security
 
@@ -344,6 +410,10 @@ Additional verification performed:
 - ML uses only aggregate behavioral features available at prediction time.
 - Protected attributes are never collected, never trained on, and never stored; the fairness audit reads them offline from OULAD only.
 - Prediction explanations are computed on demand and never persisted.
+- Students see counts and dates about monitoring, never scores or bands.
+- Per-run score exports and PDF reports identify students by verified number only and every export is audited.
+- Counselor digest emails carry counts only; no student is named in email.
+- Peer-chat content is visible only to its two participants; escalations pass the volunteer's note, not the conversation.
 - Journal notes are protected with ASP.NET Data Protection.
 - Account reset/setup links use a configured public base URL, not request host headers.
 - Account/setup failure logs are sanitized and do not include reset tokens, setup URLs, or recipient addresses.
@@ -358,7 +428,15 @@ Additional verification performed:
 | Weekly risk job is absent | The model is not available. Check `/health/ml`. |
 | Snapshot import rejects rows | Check consent, Admin-approved student number, exact schema header, UTC window end, 28 observed days, feature ranges, source hash, duplicates, and age. |
 | Training exits with code `3` | The validation or locked-test gate failed. Failed reports stay outside `App_Data/ml`. |
+| Drift check says "needs at least 30 scored rows" | The latest run scored fewer than 30 snapshots, or no reference distribution exists yet (older artifact with no prior runs). |
+| Build fails with locked DLLs | A previous `Lodestone.Web` process is still running; stop it before rebuilding. |
 | Docker app loses encrypted notes after reset | The Data Protection key volume was removed or changed. Restore the old key ring backup. |
+
+## Documentation
+
+- [docs/AI-GOVERNANCE.md](docs/AI-GOVERNANCE.md) — the governance principles the code enforces.
+- [docs/final-report/PROJECT-REPORT-CONTEXT.md](docs/final-report/PROJECT-REPORT-CONTEXT.md) — verified, chapter-structured project report source with full ML system walkthrough.
+- [docs/ml-report](docs/ml-report/README.md), [docs/architecture](docs/architecture/README.md), [docs/er-diagram](docs/er-diagram/README.md), [docs/proposal](docs/proposal/README.md).
 
 ## License And Academic Use
 

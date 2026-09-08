@@ -147,6 +147,10 @@
                                                 break;
                                             case VolunteerApprovalState.Approved:
                                                 <span class="ls-admin-badge ls-admin-badge--success">Active</span>
+                                                @if (volunteer.AwayUntilUtc is DateTime awayUntil)
+                                                {
+                                                    <span class="ls-admin-badge ls-admin-badge--warning" title="Not suggested for new requests">Away until @awayUntil.ToString("MMM d")</span>
+                                                }
                                                 break;
                                             case VolunteerApprovalState.Rejected:
                                                 <span class="ls-admin-badge ls-admin-badge--error">Rejected</span>

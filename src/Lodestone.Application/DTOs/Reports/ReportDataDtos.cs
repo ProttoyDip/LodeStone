@@ -16,7 +16,16 @@ public record RiskSummaryReportData(
     int CasesStillOpen,
     double? AverageProbability,
     string? ModelVersion,
-    IReadOnlyList<RiskSummaryRowDto> HighestRisk);
+    IReadOnlyList<RiskSummaryRowDto> HighestRisk)
+{
+    /// <summary>How resolved cases in the period were closed. Empty for reports over legacy data.</summary>
+    public IReadOnlyList<RiskResolutionCountDto> ResolutionBreakdown { get; init; } = Array.Empty<RiskResolutionCountDto>();
+
+    /// <summary>Median hours from a case opening to its resolution, for cases resolved in the period.</summary>
+    public double? MedianHoursToResolve { get; init; }
+}
+
+public record RiskResolutionCountDto(string Resolution, int Count);
 
 public record RiskLevelCountDto(string Level, int Count);
 

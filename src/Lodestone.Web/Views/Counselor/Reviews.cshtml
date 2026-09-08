@@ -1,4 +1,4 @@
-@using Lodestone.Domain.Enums
+﻿@using Lodestone.Domain.Enums
 @model Lodestone.Web.ViewModels.Counselor.CounselorAppointmentsViewModel
 @{
     ViewData["Title"] = "Counselor Appointments";
@@ -109,7 +109,7 @@
                                         <p>@appointment.RequestNotes</p>
                                     </div>
                                 }
-                                @await Html.PartialAsync("_ManualNudgeForm", appointment)
+                                @await Html.PartialAsync("_ManualNudgeForm", appointment, new ViewDataDictionary(ViewData) { ["NudgeOutcomes"] = Model.NudgeOutcomes })
                             </div>
 
                             <form asp-action="RecordAppointmentOutcome"
@@ -186,7 +186,7 @@
                             {
                                 <p class="counselor-appointment__compact-note">@appointment.RequestNotes</p>
                             }
-                            @await Html.PartialAsync("_ManualNudgeForm", appointment)
+                            @await Html.PartialAsync("_ManualNudgeForm", appointment, new ViewDataDictionary(ViewData) { ["NudgeOutcomes"] = Model.NudgeOutcomes })
                         </article>
                     }
                 </div>
@@ -220,7 +220,7 @@
                             }
                             @if (appointment.Status == BookingStatus.Completed)
                             {
-                                @await Html.PartialAsync("_ManualNudgeForm", appointment)
+                                @await Html.PartialAsync("_ManualNudgeForm", appointment, new ViewDataDictionary(ViewData) { ["NudgeOutcomes"] = Model.NudgeOutcomes })
                             }
                         </div>
                     }

@@ -77,6 +77,60 @@ public sealed class RiskScoreRepository : IRiskScoringRepository
             .ThenByDescending(run => run.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
+    public Task<RiskScoringRun?> GetRunByKeyAsync(Guid runKey, CancellationToken cancellationToken = default)
+        => _context.RiskScoringRuns
+            .AsNoTracking()
+            .FirstOrDefaultAsync(run => run.RunKey == runKey, cancellationToken);
+
+    public async Task<IReadOnlyList<double>> GetRunProbabilitiesAsync(int runId, CancellationToken cancellationToken = default)
+        => await _context.RiskScores
+            .AsNoTracking()
+            .Where(score => score.RiskScoringRunId == runId)
+            .Select(score => score.Probability)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<double>> GetPriorProbabilitiesAsync(string modelVersion, int beforeRunId, int limit, CancellationToken cancellationToken = default)
+        => await _context.RiskScores
+            .AsNoTracking()
+            .Where(score => score.ModelVersion == modelVersion && score.RiskScoringRunId != null && score.RiskScoringRunId < beforeRunId)
+            .OrderByDescending(score => score.ScoredAtUtc)
+            .Take(limit)
+            .Select(score => score.Probability)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<RiskScoringRunRowDto>> GetRunRowsAsync(int runId, string actorUserId, CancellationToken cancellationToken = default)
+    {
+        var rows = await _context.RiskScores
+            .AsNoTracking()
+            .Where(score => score.RiskScoringRunId == runId)
+            .OrderByDescending(score => score.Probability)
+            .Select(score => new RiskScoringRunRowDto(
+                score.Id,
+                score.StudentProfile != null && score.StudentProfile.StudentNumber != null && score.StudentProfile.StudentNumber != ""
+                    ? score.StudentProfile.StudentNumber
+                    : "Student #" + score.StudentProfileId,
+                score.CourseKey,
+                score.WindowEndUtc,
+                score.Probability,
+                score.Level,
+                score.ScoredAtUtc,
+                _context.RiskQueueEntries.Any(entry => entry.RiskScoreId == score.Id || entry.TriggerRiskScoreId == score.Id)))
+            .ToListAsync(cancellationToken);
+
+        // Exports contain per-student scores, so record who pulled them and how many rows left the system.
+        _context.AuditLogs.Add(new AuditLog
+        {
+            UserId = actorUserId,
+            Action = "RiskScoringRun.Exported",
+            EntityName = nameof(RiskScoringRun),
+            EntityId = runId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Details = $"Exported {rows.Count} scored rows as CSV.",
+            TimestampUtc = _timeProvider.GetUtcNow().UtcDateTime
+        });
+        await _context.SaveChangesAsync(cancellationToken);
+        return rows;
+    }
+
     public async Task<RiskScorePersistenceResult> PersistAsync(
         RiskFeatureSnapshot snapshot,
         RiskModelDescriptor descriptor,

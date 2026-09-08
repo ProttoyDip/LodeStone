@@ -227,6 +227,8 @@
     font-size: .69rem;
 }
 
+.risk-ops-run-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+
 .risk-ops-badge {
     display: inline-flex;
     min-height: 1.55rem;
@@ -434,6 +436,37 @@
     gap: .75rem;
     margin: 0;
 }
+
+/* Drift check inside the audit trail */
+.risk-ops-muted { margin: 0; color: var(--admin-muted, #7a7168); font-size: .84rem; }
+.risk-ops-drift {
+    display: grid;
+    gap: .8rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--admin-line, #e4dccf);
+    border-left-width: 4px;
+    border-radius: 10px;
+    background: var(--admin-card, #fffdf9);
+}
+.risk-ops-drift--positive { border-left-color: var(--admin-positive); }
+.risk-ops-drift--warning { border-left-color: var(--admin-warning); }
+.risk-ops-drift--critical { border-left-color: var(--admin-critical); }
+.risk-ops-drift > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: .75rem; }
+.risk-ops-drift > header h3 { margin: .15rem 0 0; font-size: 1.05rem; }
+.risk-ops-drift > p { margin: 0; font-size: .88rem; line-height: 1.55; }
+.risk-ops-drift__bins { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: .35rem; height: 7.5rem; align-items: end; }
+.risk-ops-drift__bin { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; align-items: end; height: 100%; padding-bottom: 1.1rem; }
+.risk-ops-drift__bar { display: block; min-height: 2px; border-radius: 3px 3px 0 0; }
+.risk-ops-drift__bar--reference { background: #c9bfae; }
+.risk-ops-drift__bar--current { background: var(--admin-accent, #b8543a); }
+.risk-ops-drift__bin small { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; font-family: var(--font-mono, monospace); font-size: .62rem; color: var(--admin-muted, #7a7168); }
+.risk-ops-drift__facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .6rem 1rem; margin: 0; }
+.risk-ops-drift__facts dt { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--admin-muted, #7a7168); }
+.risk-ops-drift__facts dd { margin: .15rem 0 0; font-size: .92rem; }
+.risk-ops-drift__legend { margin: 0; font-size: .76rem; color: var(--admin-muted, #7a7168); }
+.risk-ops-drift__swatch { display: inline-block; width: .8rem; height: .8rem; margin: 0 .25rem 0 .5rem; border-radius: 2px; vertical-align: -1px; }
+.risk-ops-drift__swatch--reference { background: #c9bfae; }
+.risk-ops-drift__swatch--current { background: var(--admin-accent, #b8543a); }
 
 @media (max-width: 1080px) {
     .risk-ops-model { grid-template-columns: auto minmax(0, 1fr); }

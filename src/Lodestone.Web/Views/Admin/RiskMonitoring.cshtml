@@ -30,6 +30,14 @@
         RiskScoringRunStatus.PartiallyCompleted => "Partially completed",
         _ => runStatus.ToString()
     };
+
+    var drift = status?.Drift;
+    static (string Label, string Tone, string Advice) DescribeDrift(Lodestone.Application.DTOs.Risk.RiskDriftSeverity severity) => severity switch
+    {
+        Lodestone.Application.DTOs.Risk.RiskDriftSeverity.Stable => ("Stable", "positive", "The score distribution matches the reference. No action needed."),
+        Lodestone.Application.DTOs.Risk.RiskDriftSeverity.Moderate => ("Moderate shift", "warning", "Scores are drifting. Check the imported snapshots for changes in how activity was measured before the next run."),
+        _ => ("Significant shift", "critical", "Scores look different from the reference. Treat this run's queue additions with extra care and review the model before relying on further runs.")
+    };
 }
 
 @section Styles {
@@ -513,7 +521,18 @@
             </div>
             @if (latestRun is not null)
             {
-                <span class="risk-ops-badge risk-ops-badge--@RunTone(latestRun.Status)">@FriendlyRunStatus(latestRun.Status)</span>
+                <div class="risk-ops-run-actions">
+                    <span class="risk-ops-badge risk-ops-badge--@RunTone(latestRun.Status)">@FriendlyRunStatus(latestRun.Status)</span>
+                    @if (latestRun.ScoredCount > 0)
+                    {
+                        <a class="ls-admin-btn ls-admin-btn--secondary"
+                           asp-action="ExportRiskScoringRun"
+                           asp-route-runKey="@latestRun.RunKey"
+                           title="Per-snapshot results for this run. Contains student numbers; the download is audited.">
+                            <i class="bi bi-download" aria-hidden="true"></i> Export results (CSV)
+                        </a>
+                    }
+                </div>
             }
         </header>
         <div class="ls-admin-panel__body">
@@ -547,6 +566,44 @@
                             <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
                             <span>@latestRun.FailureSummary</span>
                         </div>
+                    }
+
+                    @if (drift is not null)
+                    {
+                        var described = DescribeDrift(drift.Severity);
+                        <section class="risk-ops-drift risk-ops-drift--@described.Tone" aria-labelledby="drift-title">
+                            <header>
+                                <div>
+                                    <p class="ls-admin-panel__eyebrow">Drift check</p>
+                                    <h3 id="drift-title">Score distribution vs. @drift.BaselineSource</h3>
+                                </div>
+                                <span class="risk-ops-badge risk-ops-badge--@described.Tone">@described.Label &middot; PSI @drift.PopulationStabilityIndex.ToString("0.000")</span>
+                            </header>
+                            <p>@described.Advice</p>
+                            <div class="risk-ops-drift__bins" role="img" aria-label="Ten score bins comparing reference and this run">
+                                @for (var bin = 0; bin < Lodestone.Application.DTOs.Risk.RiskScoreDistribution.BinCount; bin++)
+                                {
+                                    var reference = drift.Baseline.BinFractions[bin];
+                                    var current = drift.Current.BinFractions[bin];
+                                    var scale = Math.Max(0.02, Math.Max(drift.Baseline.BinFractions.Max(), drift.Current.BinFractions.Max()));
+                                    <div class="risk-ops-drift__bin" title="@((bin / 10.0).ToString("0.0"))–@(((bin + 1) / 10.0).ToString("0.0")): reference @((reference * 100).ToString("0.#"))%, this run @((current * 100).ToString("0.#"))%">
+                                        <span class="risk-ops-drift__bar risk-ops-drift__bar--reference" style="height:@(Math.Round(100 * reference / scale))%"></span>
+                                        <span class="risk-ops-drift__bar risk-ops-drift__bar--current" style="height:@(Math.Round(100 * current / scale))%"></span>
+                                        <small>@((bin / 10.0).ToString("0.0"))</small>
+                                    </div>
+                                }
+                            </div>
+                            <dl class="risk-ops-drift__facts">
+                                <div><dt>Mean score</dt><dd>@drift.Baseline.Mean.ToString("0.000") &rarr; <strong>@drift.Current.Mean.ToString("0.000")</strong></dd></div>
+                                <div><dt>Share at or above queue threshold</dt><dd>@((drift.BaselineShareAboveThreshold * 100).ToString("0.#"))% &rarr; <strong>@((drift.CurrentShareAboveThreshold * 100).ToString("0.#"))%</strong></dd></div>
+                                <div><dt>Rows compared</dt><dd>@drift.Baseline.RowCount.ToString("N0") reference &middot; @drift.Current.RowCount.ToString("N0") this run</dd></div>
+                            </dl>
+                            <p class="risk-ops-drift__legend"><span class="risk-ops-drift__swatch risk-ops-drift__swatch--reference"></span> Reference <span class="risk-ops-drift__swatch risk-ops-drift__swatch--current"></span> This run &middot; PSI under 0.10 is stable, 0.10–0.25 moderate, above 0.25 significant.</p>
+                        </section>
+                    }
+                    else if (latestRun.ScoredCount > 0)
+                    {
+                        <p class="risk-ops-muted">Drift check needs at least @Lodestone.Application.Services.RiskSnapshotAdministrationService.MinimumDriftSample scored rows in this run and a reference distribution (training metadata or an earlier run of the same model).</p>
                     }
                 </div>
             }

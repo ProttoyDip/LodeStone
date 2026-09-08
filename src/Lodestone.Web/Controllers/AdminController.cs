@@ -263,6 +263,48 @@ public class AdminController : Controller
     }
 
     [HttpGet]
+    public async Task<IActionResult> ExportRiskScoringRun(Guid runKey, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId)) return Challenge();
+        if (runKey == Guid.Empty) return NotFound();
+
+        var export = await _riskSnapshotAdministrationService.GetRunExportAsync(runKey, _currentUserService.UserId, cancellationToken);
+        if (export is null) return NotFound();
+
+        var builder = new StringBuilder();
+        builder.Append("RunKey,ModelVersion,FeatureSchemaVersion,RiskScoreId,StudentReference,CourseKey,WindowEndUtc,Probability,Level,ScoredAtUtc,QueuedOrEscalated\r\n");
+        foreach (var row in export.Rows)
+        {
+            builder
+                .Append(export.Run.RunKey.ToString("N")).Append(',')
+                .Append(Csv(export.Run.ModelVersion)).Append(',')
+                .Append(Csv(export.Run.FeatureSchemaVersion)).Append(',')
+                .Append(row.RiskScoreId).Append(',')
+                .Append(Csv(row.StudentReference)).Append(',')
+                .Append(Csv(row.CourseKey)).Append(',')
+                .Append(row.WindowEndUtc.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)).Append(',')
+                .Append(row.Probability.ToString("F4", CultureInfo.InvariantCulture)).Append(',')
+                .Append(row.Level).Append(',')
+                .Append(row.ScoredAtUtc.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)).Append(',')
+                .Append(row.QueuedOrEscalated ? "true" : "false")
+                .Append("\r\n");
+        }
+
+        return File(
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetBytes(builder.ToString()),
+            "text/csv; charset=utf-8",
+            $"risk-scoring-run-{export.Run.RunKey:N}.csv");
+
+        static string Csv(string? value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            return value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) >= 0
+                ? "\"" + value.Replace("\"", "\"\"") + "\""
+                : value;
+        }
+    }
+
+    [HttpGet]
     public IActionResult DownloadRiskSnapshotTemplate(string? featureSchemaVersion)
     {
         var requestedSchema = string.IsNullOrWhiteSpace(featureSchemaVersion)

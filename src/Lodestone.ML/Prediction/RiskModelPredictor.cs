@@ -112,7 +112,15 @@ internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposabl
                     queueThreshold)
                 {
                     FeatureNames = metadata.FeatureNames.AsReadOnly(),
-                    PublicationId = manifest.PublicationId
+                    PublicationId = manifest.PublicationId,
+                    FeatureImportance = (metadata.FeatureImportance ?? new List<FeatureImportanceEntry>())
+                        .Where(entry => metadata.FeatureNames.Contains(entry.FeatureName, StringComparer.Ordinal))
+                        .OrderBy(entry => entry.Rank)
+                        .Select(entry => new RiskFeatureImportance(entry.FeatureName, entry.Rank, entry.MeanAucDrop, entry.Share))
+                        .ToArray(),
+                    TrainingScoreDistribution = metadata.ValidationScoreDistribution is { BinFractions.Count: RiskScoreDistribution.BinCount } summary
+                        ? new RiskScoreDistribution(summary.RowCount, summary.Mean, summary.BinFractions.AsReadOnly())
+                        : null
                 };
                 var predictor = new LoadedRiskModelPredictor(engine, descriptor);
                 return new RiskModelLoadResult(

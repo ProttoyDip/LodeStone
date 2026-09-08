@@ -35,10 +35,19 @@ public interface IVolunteerSupportService
     Task<int> StartConversationWithVolunteerAsync(int volunteerProfileId, CancellationToken cancellationToken = default);
 
     Task<VolunteerDashboardDto> GetVolunteerDashboardAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Lets a volunteer pause or resume taking new requests. Existing conversations stay open.</summary>
+    Task<bool> SetAvailabilityAsync(SetVolunteerAvailabilityDto dto, CancellationToken cancellationToken = default);
     Task<SupportRequestDto?> GetRequestForVolunteerAsync(int requestId, CancellationToken cancellationToken = default);
     Task<bool> AcceptRequestAsync(int requestId, CancellationToken cancellationToken = default);
     Task<bool> RejectRequestAsync(int requestId, CancellationToken cancellationToken = default);
     Task<SupportInteractionDto?> AddInteractionAsync(int requestId, string message, CancellationToken cancellationToken = default);
     Task<bool> CompleteRequestAsync(int requestId, CancellationToken cancellationToken = default);
     Task<bool> EscalateRequestAsync(int requestId, string? message, CancellationToken cancellationToken = default);
+
+    /// <summary>Escalations waiting for a counselor. Counselor or admin only.</summary>
+    Task<IReadOnlyList<PeerEscalationDto>> GetOpenEscalationsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>A counselor records that they have taken an escalation; the student and volunteer are told.</summary>
+    Task<bool> AcknowledgeEscalationAsync(int requestId, string? note, CancellationToken cancellationToken = default);
 }

@@ -13,4 +13,7 @@ public interface IRiskSnapshotAdministrationService
     Task<RiskScoringRunDto> RunNowAsync(
         string actorUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Per-snapshot results for one run, for audit. Null if the run key is unknown.</summary>
+    Task<RiskScoringRunExportDto?> GetRunExportAsync(Guid runKey, string actorUserId, CancellationToken cancellationToken = default);
 }

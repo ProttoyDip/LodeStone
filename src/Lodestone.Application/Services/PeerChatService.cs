@@ -90,6 +90,8 @@ public sealed class PeerChatService : IPeerChatService
 
         await _repository.AddInteractionAsync(interaction, cancellationToken);
         request.ModifiedAtUtc = nowUtc;
+        if (role == Participant.Volunteer) request.VolunteerLastReadAtUtc = nowUtc;
+        else request.StudentLastReadAtUtc = nowUtc;
         _auditLog.Record(
             "SupportInteraction.Create",
             nameof(SupportInteraction),

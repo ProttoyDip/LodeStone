@@ -296,7 +296,15 @@
                     <article class="student-volunteer" role="listitem">
                         <div class="student-volunteer__copy">
                             <span class="student-badge student-badge--green">@volunteer.Role</span>
+                            @if (volunteer.AwayUntilUtc is DateTime awayUntil)
+                            {
+                                <span class="student-badge student-badge--soft">Away until @awayUntil.ToLocalTime().ToString("MMM d")</span>
+                            }
                             <h3>@volunteer.DisplayName</h3>
+                            @if (!string.IsNullOrWhiteSpace(volunteer.AwayMessage))
+                            {
+                                <p><em>@volunteer.AwayMessage</em></p>
+                            }
                             @if (!string.IsNullOrWhiteSpace(volunteer.Bio))
                             {
                                 <p>@volunteer.Bio</p>
@@ -322,6 +330,10 @@
                                 <a class="student-volunteer__button student-volunteer__button--primary"
                                    asp-controller="StudentSupport" asp-action="ViewRequest" asp-route-requestId="@openRequestId">
                                     Continue conversation
+                                    @if (volunteer.UnreadMessages > 0)
+                                    {
+                                        <span class="student-volunteer__unread" aria-label="@volunteer.UnreadMessages unread messages">@volunteer.UnreadMessages</span>
+                                    }
                                 </a>
                             }
                             else
@@ -595,6 +607,88 @@
                         </small>
                     }
                 </form>
+
+                @if (Model.MonitoringSummary is { } summary)
+                {
+                    <section class="privacy-transparency" aria-labelledby="monitoring-transparency-title">
+                        <div class="privacy-transparency__heading">
+                            <h3 id="monitoring-transparency-title">What monitoring holds about you</h3>
+                            <p>
+                                Everything below is the complete list. Numbers and dates only: Lodestone does not show you a
+                                score because a score is not a diagnosis and could be misread.
+                            </p>
+                        </div>
+
+                        @if (!Model.IsRiskMonitoringEnabled && summary.SnapshotCount == 0)
+                        {
+                            <p class="privacy-transparency__empty">Monitoring is off and nothing is stored. Turning it on only allows future imports; nothing is backfilled.</p>
+                        }
+                        else
+                        {
+                            <dl class="privacy-transparency__facts">
+                                <div>
+                                    <dt>Activity summaries stored</dt>
+                                    <dd>
+                                        <strong>@summary.SnapshotCount</strong>
+                                        @if (summary.SnapshotCount > 0)
+                                        {
+                                            <span>across @summary.DistinctCourseCount course@(summary.DistinctCourseCount == 1 ? "" : "s"), from @summary.ImportCount import@(summary.ImportCount == 1 ? "" : "s")</span>
+                                        }
+                                        else
+                                        {
+                                            <span>none imported yet</span>
+                                        }
+                                    </dd>
+                                </div>
+                                @if (summary.EarliestWindowEndUtc is DateTime earliest && summary.LatestWindowEndUtc is DateTime latest)
+                                {
+                                    <div>
+                                        <dt>Period covered</dt>
+                                        <dd><strong>@earliest.ToString("dd MMM yyyy") &ndash; @latest.ToString("dd MMM yyyy")</strong><span>28-day windows ending on these dates</span></dd>
+                                    </div>
+                                }
+                                <div>
+                                    <dt>Summaries reviewed by the model</dt>
+                                    <dd>
+                                        <strong>@summary.ScoredSnapshotCount</strong>
+                                        <span>
+                                            @if (summary.LastScoredAtUtc is DateTime scored)
+                                            {
+                                                <text>last run <time datetime="@scored.ToString("O")" data-local-datetime>@scored.ToString("dd MMM yyyy, HH:mm") UTC</time></text>
+                                            }
+                                            else
+                                            {
+                                                <text>no scoring run has included your data</text>
+                                            }
+                                        </span>
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Counselor check-in suggested</dt>
+                                    <dd>
+                                        @if (summary.CounselorCheckInSuggested)
+                                        {
+                                            <strong>@(summary.CounselorCheckInResolved ? "Yes, reviewed" : "Yes, open")</strong>
+                                            <span>
+                                                A counselor was asked to consider reaching out
+                                                @if (summary.CounselorCheckInLastSignaledAtUtc is DateTime signaled)
+                                                {
+                                                    <text>(<time datetime="@signaled.ToString("O")" data-local-datetime>@signaled.ToString("dd MMM yyyy")</time>)</text>
+                                                }. This is a prompt to a person, not a decision about you.
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <strong>No</strong>
+                                            <span>nothing has been flagged for counselor follow-up</span>
+                                        }
+                                    </dd>
+                                </div>
+                            </dl>
+                        }
+                        <p class="privacy-transparency__footnote">Turning monitoring off deletes all of the above immediately.</p>
+                    </section>
+                }
             </div>
             <div class="privacy-list student-reveal">
                 <article>

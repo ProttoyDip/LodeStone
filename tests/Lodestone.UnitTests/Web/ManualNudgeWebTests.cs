@@ -139,6 +139,7 @@ public sealed class ManualNudgeWebTests
             Mock.Of<IStudentNumberVerificationService>(),
             current.Object,
             nudges,
+            Mock.Of<IVolunteerSupportService>(),
             NullLogger<StudentController>.Instance));
     }
 
@@ -155,6 +156,7 @@ public sealed class ManualNudgeWebTests
             Mock.Of<IRiskSnapshotAdministrationService>(),
             Mock.Of<IRiskModelStatusProvider>(),
             Mock.Of<IAdminDashboardService>(),
+            Mock.Of<IVolunteerSupportService>(),
             NullLogger<CounselorController>.Instance));
     }
 

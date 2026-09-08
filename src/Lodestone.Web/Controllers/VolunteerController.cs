@@ -112,6 +112,38 @@ public sealed class VolunteerController : Controller
         }
     }
 
+    [HttpPost("Availability")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetAvailability(
+        bool isAway,
+        DateTime? awayUntil,
+        string? awayMessage,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            DateTime? untilUtc = awayUntil.HasValue
+                ? DateTime.SpecifyKind(awayUntil.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc)
+                : null;
+            await _supportService.SetAvailabilityAsync(
+                new SetVolunteerAvailabilityDto(isAway, untilUtc, awayMessage),
+                cancellationToken);
+            TempData["SupportSuccess"] = isAway
+                ? "You are marked as away. Students you support can still message you, but you won't be suggested for new requests."
+                : "You are available for new requests again.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (ArgumentException exception)
+        {
+            TempData["SupportError"] = exception.Message;
+        }
+
+        return RedirectToAction(nameof(Dashboard));
+    }
+
     [HttpGet("Requests/{requestId:int}")]
     public async Task<IActionResult> ViewRequest(int requestId, CancellationToken cancellationToken)
     {

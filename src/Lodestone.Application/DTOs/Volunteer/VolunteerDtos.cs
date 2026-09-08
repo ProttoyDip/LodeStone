@@ -36,7 +36,12 @@ public record VolunteerProfileDto(
     string? Availability,
     bool IsApproved,
     bool IsActive,
-    string? Bio);
+    string? Bio,
+    DateTime? AwayUntilUtc = null,
+    string? AwayMessage = null)
+{
+    public bool IsAway => AwayUntilUtc.HasValue && AwayUntilUtc.Value > DateTime.UtcNow;
+}
 
 public record AdminVolunteerDto(
     int Id,
@@ -46,7 +51,8 @@ public record AdminVolunteerDto(
     string? Availability,
     VolunteerApprovalState Status,
     int ActiveAssignments,
-    int PendingRequests);
+    int PendingRequests,
+    DateTime? AwayUntilUtc = null);
 
 public record AdminVolunteerOverviewDto(
     int TotalVolunteers,
@@ -116,7 +122,29 @@ public record AssignedVolunteerDto(
     string? Skills,
     string? Availability,
     string? Bio,
-    int? OpenConversationRequestId);
+    int? OpenConversationRequestId,
+    int UnreadMessages = 0,
+    DateTime? AwayUntilUtc = null,
+    string? AwayMessage = null);
+
+public record SetVolunteerAvailabilityDto(bool IsAway, DateTime? AwayUntilUtc, string? AwayMessage);
+
+/// <summary>
+/// A peer-support request a volunteer handed to counselors. Carries the volunteer's escalation note
+/// and who is involved, never the private conversation between student and volunteer.
+/// </summary>
+public record PeerEscalationDto(
+    int RequestId,
+    int StudentProfileId,
+    string StudentDisplayName,
+    string? StudentNumber,
+    SupportRequestCategory Category,
+    string Title,
+    string VolunteerDisplayName,
+    string EscalationMessage,
+    DateTime EscalatedAtUtc,
+    DateTime? HandledAtUtc,
+    string? HandledNote);
 
 public record SupportRequestDto(
     int Id,
@@ -130,7 +158,11 @@ public record SupportRequestDto(
     DateTime CreatedAtUtc,
     DateTime? CompletedAtUtc,
     DateTime? EscalatedAtUtc,
-    IReadOnlyList<SupportInteractionDto> Interactions);
+    IReadOnlyList<SupportInteractionDto> Interactions,
+    int UnreadForStudent = 0,
+    int UnreadForVolunteer = 0,
+    DateTime? LastMessageAtUtc = null,
+    DateTime? EscalationHandledAtUtc = null);
 
 public record SupportInteractionDto(
     int Id,

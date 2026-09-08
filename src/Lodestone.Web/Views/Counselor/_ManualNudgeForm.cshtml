@@ -1,10 +1,41 @@
 @using Lodestone.Application.DTOs.Booking
 @using Lodestone.Application.DTOs.Nudges
+@using Lodestone.Domain.Enums
 @model CounselorAppointmentDto
+@{
+    var outcomes = ViewData["NudgeOutcomes"] as IReadOnlyDictionary<int, IReadOnlyList<ManualNudgeOutcomeDto>>;
+    var sent = outcomes is not null && outcomes.TryGetValue(Model.BookingId, out var list) ? list : Array.Empty<ManualNudgeOutcomeDto>();
 
-<details class="manual-nudge">
-    <summary>Send optional prompt</summary>
+    static (string Label, string Tone) Describe(ManualNudgeOutcomeDto outcome) => outcome.Status switch
+    {
+        NudgeStatus.Acknowledged => ("Acknowledged", "success"),
+        NudgeStatus.Dismissed => ("Dismissed", "neutral"),
+        NudgeStatus.Snoozed => ("Snoozed", "warning"),
+        NudgeStatus.Expired => ("Expired, no response", "neutral"),
+        NudgeStatus.Pending => ("Queued for delivery", "neutral"),
+        _ => outcome.ExpiresAtUtc < DateTime.UtcNow ? ("Expired, no response", "neutral") : ("Delivered, awaiting response", "warning")
+    };
+}
+
+<details class="manual-nudge" @(sent.Count > 0 ? "open" : null)>
+    <summary>Send optional prompt@(sent.Count > 0 ? $" ({sent.Count} sent)" : "")</summary>
     <div class="manual-nudge__content">
+        @if (sent.Count > 0)
+        {
+            <ul class="manual-nudge__outcomes" aria-label="Prompts already sent from this appointment">
+                @foreach (var outcome in sent)
+                {
+                    var (label, tone) = Describe(outcome);
+                    <li>
+                        <span class="manual-nudge__outcome-badge manual-nudge__outcome-badge--@tone">@label</span>
+                        <span class="manual-nudge__outcome-text">@outcome.Message</span>
+                        <small>
+                            Sent @outcome.SentAtUtc.ToString("MMM d")@(outcome.RespondedAtUtc is DateTime responded ? $" · responded {responded:MMM d}" : "")
+                        </small>
+                    </li>
+                }
+            </ul>
+        }
         <p>Choose a neutral template only. This is independent of risk monitoring and does not create a crisis case or outside contact.</p>
         <form asp-action="CreateManualNudge" method="post" data-manual-nudge-form>
             <input type="hidden" name="bookingId" value="@Model.BookingId" />

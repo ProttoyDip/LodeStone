@@ -31,4 +31,15 @@ public interface IRiskExplanationService
 public sealed record RiskQueueExplanationDto(
     RiskQueueItemDto QueueItem,
     RiskExplanation? Explanation,
-    string? UnavailableReason);
+    string? UnavailableReason)
+{
+    /// <summary>
+    /// What the model leans on across everyone, not just this student. Lets a counselor see whether
+    /// a factor that moved this score is one the model generally trusts or an outlier. Empty when
+    /// neither training metadata nor a large enough population can supply it.
+    /// </summary>
+    public IReadOnlyList<RiskFeatureImportance> ModelImportance { get; init; } = Array.Empty<RiskFeatureImportance>();
+
+    /// <summary>Where <see cref="ModelImportance"/> came from, in counselor-readable words.</summary>
+    public string? ModelImportanceSource { get; init; }
+}

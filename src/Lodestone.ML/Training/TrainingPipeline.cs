@@ -181,6 +181,15 @@ public sealed class TrainingPipeline
             VerifyReloadParity(selected.Model, stagedModel, validationData);
             var modelSha256 = FileHash.ComputeSha256(stagedModel);
             var publicationId = Guid.NewGuid().ToString("N");
+
+            // Both measured on validation rows only: the locked test partition stays single-use.
+            var featureImportance = new PermutationImportanceCalculator(_mlContext, _evaluator)
+                .Compute(selected.Model, split.Validation, schema.FeatureNames, options.Seed);
+            var validationScores = _evaluator.Score(selected.Model, validationData)
+                .Select(row => (double)row.Probability)
+                .ToArray();
+            var validationDistribution = RiskScoreDistribution.From(validationScores);
+
             var metadata = new RiskModelMetadata
             {
                 MetadataSchemaVersion = RiskModelMetadata.CurrentMetadataSchemaVersion,
@@ -207,7 +216,14 @@ public sealed class TrainingPipeline
                 SourceUrl = options.SourceUrl,
                 SourceSha256 = NormalizeHash(options.SourceSha256),
                 ValidationMetrics = selected.ValidationMetrics,
-                TestMetrics = testMetrics
+                TestMetrics = testMetrics,
+                FeatureImportance = featureImportance.ToList(),
+                ValidationScoreDistribution = new ScoreDistributionSummary
+                {
+                    RowCount = validationDistribution.RowCount,
+                    Mean = Math.Round(validationDistribution.Mean, 6),
+                    BinFractions = validationDistribution.BinFractions.Select(value => Math.Round(value, 6)).ToList()
+                }
             };
             WriteJson(stagedMetadata, metadata);
             var metadataSha256 = FileHash.ComputeSha256(stagedMetadata);

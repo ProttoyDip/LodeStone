@@ -13,6 +13,7 @@ public sealed class VolunteerProfileConfiguration : IEntityTypeConfiguration<Vol
         builder.Property(profile => profile.Skills).HasMaxLength(500);
         builder.Property(profile => profile.Availability).HasMaxLength(500);
         builder.Property(profile => profile.Bio).HasMaxLength(2000);
+        builder.Property(profile => profile.AwayMessage).HasMaxLength(200);
 
         builder.HasIndex(profile => profile.UserId).IsUnique();
         builder.HasIndex(profile => new { profile.IsApproved, profile.IsActive });

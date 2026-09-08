@@ -28,6 +28,11 @@ public sealed class RiskMonitoringConsentService : IRiskMonitoringConsentService
             cancellationToken);
     }
 
+    public Task<StudentMonitoringSummaryDto?> GetSummaryAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+        => _repository.GetSummaryByUserIdAsync(RequiredUserId(userId), cancellationToken);
+
     private static string RequiredUserId(string userId)
         => string.IsNullOrWhiteSpace(userId)
             ? throw new ArgumentException("A user identifier is required.", nameof(userId))

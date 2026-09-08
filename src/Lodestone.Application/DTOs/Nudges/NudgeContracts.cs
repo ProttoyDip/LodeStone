@@ -39,3 +39,13 @@ public sealed record StudentNudgeDto(
 public sealed record StudentNudgeStateDto(
     bool IsInAppNudgesEnabled,
     IReadOnlyList<StudentNudgeDto> ActiveNudges);
+
+/// <summary>What a counselor may see about a prompt they sent: the template, when, and the student's response state.</summary>
+public sealed record ManualNudgeOutcomeDto(
+    int NudgeId,
+    int BookingId,
+    string Message,
+    NudgeStatus Status,
+    DateTime SentAtUtc,
+    DateTime? RespondedAtUtc,
+    DateTime ExpiresAtUtc);

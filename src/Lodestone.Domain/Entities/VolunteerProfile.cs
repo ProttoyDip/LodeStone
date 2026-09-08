@@ -14,6 +14,12 @@ public class VolunteerProfile : AuditableEntity
     public bool IsApproved { get; set; }
     public bool IsActive { get; set; } = true;
 
+    /// <summary>Self-declared pause. Null or past means the volunteer is taking requests.</summary>
+    public DateTime? AwayUntilUtc { get; set; }
+    public string? AwayMessage { get; set; }
+
+    public bool IsAwayAt(DateTime nowUtc) => AwayUntilUtc.HasValue && AwayUntilUtc.Value > nowUtc;
+
     public ICollection<VolunteerAssignment> VolunteerAssignments { get; set; } = new List<VolunteerAssignment>();
     public ICollection<SupportRequest> SupportRequests { get; set; } = new List<SupportRequest>();
 }

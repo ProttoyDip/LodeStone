@@ -10,4 +10,7 @@ public interface IRiskMonitoringConsentRepository
         bool isConsented,
         string? actorUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Student-safe summary of stored monitoring data for one student; null if no profile.</summary>
+    Task<StudentMonitoringSummaryDto?> GetSummaryByUserIdAsync(string userId, CancellationToken cancellationToken = default);
 }

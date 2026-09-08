@@ -11,6 +11,8 @@ public sealed class SupportRequestConfiguration : IEntityTypeConfiguration<Suppo
         builder.Property(request => request.Title).IsRequired().HasMaxLength(200);
         builder.Property(request => request.Message).IsRequired().HasMaxLength(2000);
         builder.Property(request => request.Availability).HasMaxLength(500);
+        builder.Property(request => request.EscalationHandledByUserId).HasMaxLength(450);
+        builder.Property(request => request.EscalationHandledNote).HasMaxLength(500);
         builder.Property(request => request.RowVersion).IsRowVersion();
 
         builder.HasIndex(request => new { request.StudentProfileId, request.CreatedAtUtc });

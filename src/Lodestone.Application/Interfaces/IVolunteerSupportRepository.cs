@@ -33,7 +33,13 @@ public interface IVolunteerSupportRepository
     Task<bool> HasVolunteerDeclinedRequestAsync(int requestId, string volunteerUserId, CancellationToken cancellationToken = default);
     Task AddSupportRequestAsync(SupportRequest request, CancellationToken cancellationToken = default);
     Task AddInteractionAsync(SupportInteraction interaction, CancellationToken cancellationToken = default);
+
+    /// <summary>Stamps the viewer's last-read marker on a request without loading the conversation.</summary>
+    Task MarkConversationReadAsync(int requestId, bool asVolunteer, DateTime readAtUtc, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SupportRequest>> GetRequestsForStudentAsync(string studentUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>Escalated requests no counselor has taken yet, oldest first, with participants loaded.</summary>
+    Task<IReadOnlyList<SupportRequest>> GetUnhandledEscalationsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Pending, unclaimed requests whose student has no active assignment to an approved, active

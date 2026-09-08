@@ -111,6 +111,51 @@
             </section>
         }
 
+        @if (!string.IsNullOrWhiteSpace(Model.PeerEscalationsError))
+        {
+            <div class="queue-alert queue-alert--warning" role="alert">
+                <span aria-hidden="true">!</span>
+                <p>@Model.PeerEscalationsError</p>
+            </div>
+        }
+        else if (Model.PeerEscalations.Count > 0)
+        {
+            <section class="queue-panel queue-escalations" aria-labelledby="queue-escalations-title">
+                <header class="queue-panel__header">
+                    <div>
+                        <p class="queue-eyebrow">Peer-support handoffs</p>
+                        <h2 id="queue-escalations-title">@Model.PeerEscalations.Count escalation@(Model.PeerEscalations.Count == 1 ? "" : "s") waiting for a counselor</h2>
+                        <p>A trained peer volunteer decided a conversation needed professional follow-up. Their note is below; the conversation itself stays private between the student and the volunteer.</p>
+                    </div>
+                </header>
+                <ul class="queue-escalation-list">
+                    @foreach (var escalation in Model.PeerEscalations)
+                    {
+                        <li class="queue-escalation">
+                            <div class="queue-escalation__who">
+                                <strong>@escalation.StudentDisplayName</strong>
+                                @if (!string.IsNullOrWhiteSpace(escalation.StudentNumber))
+                                {
+                                    <code>@escalation.StudentNumber</code>
+                                }
+                                <span class="queue-escalation__meta">
+                                    @escalation.Title &middot; escalated by @escalation.VolunteerDisplayName
+                                    <time datetime="@escalation.EscalatedAtUtc.ToString("O")" data-local-datetime>@escalation.EscalatedAtUtc.ToString("dd MMM yyyy, HH:mm") UTC</time>
+                                </span>
+                            </div>
+                            <blockquote class="queue-escalation__note">@escalation.EscalationMessage</blockquote>
+                            <form asp-action="AcknowledgeEscalation" method="post" class="queue-escalation__form">
+                                <input type="hidden" name="requestId" value="@escalation.RequestId" />
+                                <label for="escalation-note-@escalation.RequestId">Your note <span>(optional, counselors only)</span></label>
+                                <input id="escalation-note-@escalation.RequestId" name="note" type="text" maxlength="500" autocomplete="off" placeholder="e.g. Emailed to offer an appointment" />
+                                <button class="queue-btn queue-btn--resolve" type="submit">I'll follow up</button>
+                            </form>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
         @if (Model.LoadFailed)
         {
             <section class="queue-state queue-state--error" aria-labelledby="queue-error-title">
@@ -211,13 +256,27 @@
                                            title="Which measured behaviours moved this score, compared with a typical consenting student.">
                                             Why this score
                                         </a>
-                                        <form asp-action="Resolve" method="post" data-resolve-form data-queue-confirm="Mark this case as resolved? This removes it from the open queue.">
-                                            <input type="hidden" name="queueEntryId" value="@item.QueueEntryId" />
-                                            <input type="hidden" name="rowVersionToken" value="@item.RowVersionToken" />
-                                            <button class="queue-btn queue-btn--resolve" type="submit" data-resolve-button>
-                                                Mark resolved
-                                            </button>
-                                        </form>
+                                        <details class="queue-resolve">
+                                            <summary class="queue-btn queue-btn--resolve">Resolve case</summary>
+                                            <form asp-action="Resolve" method="post" class="queue-resolve__form" data-resolve-form data-queue-confirm="Close this case with the chosen outcome? It leaves the open queue.">
+                                                <input type="hidden" name="queueEntryId" value="@item.QueueEntryId" />
+                                                <input type="hidden" name="rowVersionToken" value="@item.RowVersionToken" />
+                                                <label for="resolution-@item.QueueEntryId">Outcome</label>
+                                                <select id="resolution-@item.QueueEntryId" name="resolution" required>
+                                                    <option value="">Choose an outcome…</option>
+                                                    <option value="@RiskCaseResolution.Contacted">Contacted the student</option>
+                                                    <option value="@RiskCaseResolution.NoConcern">Reviewed, no concern</option>
+                                                    <option value="@RiskCaseResolution.Referred">Referred elsewhere</option>
+                                                    <option value="@RiskCaseResolution.StudentDeclined">Student declined support</option>
+                                                    <option value="@RiskCaseResolution.Unreachable">Could not reach student</option>
+                                                </select>
+                                                <label for="resolution-note-@item.QueueEntryId">Note <span>(optional, no conversation content)</span></label>
+                                                <input id="resolution-note-@item.QueueEntryId" name="resolutionNote" type="text" maxlength="300" autocomplete="off" />
+                                                <button class="queue-btn queue-btn--resolve" type="submit" data-resolve-button>
+                                                    Mark resolved
+                                                </button>
+                                            </form>
+                                        </details>
                                     </div>
                                 </td>
                             </tr>

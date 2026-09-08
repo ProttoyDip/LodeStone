@@ -58,13 +58,91 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
                 : exception.Message;
         }
 
-        return await _snapshots.GetStatusAsync(
+        var status = await _snapshots.GetStatusAsync(
             descriptor,
             modelUnavailableReason,
             _timeProvider.GetUtcNow().UtcDateTime,
             RiskScoringPolicy.MaximumSnapshotAgeDays,
             latestRun is null ? null : RiskScoringService.ToRunDto(latestRun),
             cancellationToken);
+
+        var drift = latestRun is null || descriptor is null
+            ? null
+            : await ComputeDriftAsync(latestRun, descriptor, cancellationToken);
+        return status with { Drift = drift };
+    }
+
+    /// <summary>Scores this run produced need at least this many rows before a histogram means anything.</summary>
+    public const int MinimumDriftSample = 30;
+
+    /// <summary>Upper bound on prior scores pulled for the rolling baseline.</summary>
+    public const int MaximumBaselineSample = 5_000;
+
+    /// <summary>
+    /// Prefers the training-time validation distribution recorded in the artifact; falls back to the
+    /// model version's own earlier runs when the artifact predates that field. Both are labelled so
+    /// an administrator knows which comparison they are looking at.
+    /// </summary>
+    private async Task<RiskScoreDriftDto?> ComputeDriftAsync(
+        Domain.Entities.RiskScoringRun run,
+        RiskModelDescriptor descriptor,
+        CancellationToken cancellationToken)
+    {
+        var currentScores = await _scoringRepository.GetRunProbabilitiesAsync(run.Id, cancellationToken);
+        if (currentScores.Count < MinimumDriftSample) return null;
+        var current = RiskScoreDistribution.From(currentScores);
+
+        RiskScoreDistribution baseline;
+        string source;
+        double baselineShareAbove;
+        if (descriptor.TrainingScoreDistribution is { RowCount: > 0 } training
+            && string.Equals(run.ModelVersion, descriptor.ModelVersion, StringComparison.Ordinal))
+        {
+            baseline = training;
+            source = $"validation students at training time ({training.RowCount:N0} rows)";
+            // The histogram has fixed bins, so the share above the threshold is the mass in bins at or past it.
+            baselineShareAbove = ShareAbove(training, descriptor.QueueThreshold);
+        }
+        else
+        {
+            var prior = await _scoringRepository.GetPriorProbabilitiesAsync(run.ModelVersion, run.Id, MaximumBaselineSample, cancellationToken);
+            if (prior.Count < MinimumDriftSample) return null;
+            baseline = RiskScoreDistribution.From(prior);
+            source = $"this model's earlier runs ({prior.Count:N0} most recent scores)";
+            baselineShareAbove = prior.Count(probability => probability >= descriptor.QueueThreshold) / (double)prior.Count;
+        }
+
+        var psi = baseline.PopulationStabilityIndexTo(current);
+        return new RiskScoreDriftDto(
+            source,
+            baseline,
+            current,
+            Math.Round(psi, 4),
+            RiskScoreDriftDto.Classify(psi),
+            Math.Round(baselineShareAbove, 4),
+            Math.Round(currentScores.Count(probability => probability >= descriptor.QueueThreshold) / (double)currentScores.Count, 4));
+
+        static double ShareAbove(RiskScoreDistribution distribution, double threshold)
+        {
+            var firstBin = Math.Min(RiskScoreDistribution.BinCount - 1, (int)Math.Floor(Math.Clamp(threshold, 0d, 1d) * RiskScoreDistribution.BinCount));
+            return distribution.BinFractions.Skip(firstBin).Sum();
+        }
+    }
+
+    public async Task<RiskScoringRunExportDto?> GetRunExportAsync(
+        Guid runKey,
+        string actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (runKey == Guid.Empty) return null;
+        if (string.IsNullOrWhiteSpace(actorUserId))
+            throw new ArgumentException("An actor is required to export scoring results.", nameof(actorUserId));
+
+        var run = await _scoringRepository.GetRunByKeyAsync(runKey, cancellationToken);
+        if (run is null) return null;
+
+        var rows = await _scoringRepository.GetRunRowsAsync(run.Id, actorUserId.Trim(), cancellationToken);
+        return new RiskScoringRunExportDto(RiskScoringService.ToRunDto(run), rows);
     }
 
     public async Task<RiskSnapshotImportResultDto> ImportCsvAsync(

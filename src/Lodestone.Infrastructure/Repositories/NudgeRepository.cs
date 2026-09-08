@@ -60,6 +60,19 @@ public sealed class NudgeRepository : INudgeRepository
                      && nudge.CreatedAtUtc >= sinceUtc,
             cancellationToken);
 
+    public async Task<IReadOnlyList<Nudge>> GetManualByCounselorAsync(
+        string counselorUserId,
+        DateTime sinceUtc,
+        CancellationToken cancellationToken = default)
+        => await _context.Nudges
+            .AsNoTracking()
+            .Where(nudge => nudge.IsManualCounselorNudge
+                            && nudge.CounselorBookingId != null
+                            && nudge.CreatedBy == counselorUserId
+                            && nudge.CreatedAtUtc >= sinceUtc)
+            .OrderByDescending(nudge => nudge.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
     public Task<CounselorBooking?> GetOwnedBookingAsync(
         int counselorProfileId,
         int bookingId,

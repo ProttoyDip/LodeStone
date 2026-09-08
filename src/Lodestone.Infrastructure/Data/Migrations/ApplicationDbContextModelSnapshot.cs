@@ -694,6 +694,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<DateTime>("AvailableAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("CounselorBookingId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -985,6 +988,13 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Resolution")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<DateTime?>("ResolvedAtUtc")
                         .HasColumnType("datetime2");
@@ -1414,6 +1424,17 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("EscalatedAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("EscalationHandledAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EscalationHandledByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("EscalationHandledNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<bool>("IsVisibleToVolunteers")
                         .HasColumnType("bit");
 
@@ -1437,6 +1458,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("StudentLastReadAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("StudentProfileId")
                         .HasColumnType("int");
 
@@ -1444,6 +1468,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("VolunteerLastReadAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<int?>("VolunteerProfileId")
                         .HasColumnType("int");
@@ -1524,6 +1551,13 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<string>("Availability")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("AwayMessage")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("AwayUntilUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Bio")
                         .HasMaxLength(2000)
