@@ -123,4 +123,37 @@ public sealed record RiskSnapshotStatusDto(
     DateTime? LatestWindowEndUtc,
     RiskModelDescriptor? Model,
     string? ModelUnavailableReason,
-    RiskScoringRunDto? LatestRun);
+    RiskScoringRunDto? LatestRun)
+{
+    /// <summary>How the latest run's scores compare with the reference distribution. Null when there is nothing to compare.</summary>
+    public RiskScoreDriftDto? Drift { get; init; }
+}
+
+public enum RiskDriftSeverity
+{
+    Stable = 0,
+    Moderate = 1,
+    Significant = 2
+}
+
+/// <summary>
+/// Population stability of the latest run's score distribution against a reference. A shift is a
+/// prompt to look at the incoming data and the model, never a reason to change any student's case.
+/// </summary>
+public sealed record RiskScoreDriftDto(
+    string BaselineSource,
+    RiskScoreDistribution Baseline,
+    RiskScoreDistribution Current,
+    double PopulationStabilityIndex,
+    RiskDriftSeverity Severity,
+    double BaselineShareAboveThreshold,
+    double CurrentShareAboveThreshold)
+{
+    /// <summary>Conventional PSI cut-offs: under 0.10 stable, 0.10–0.25 moderate, above 0.25 significant.</summary>
+    public static RiskDriftSeverity Classify(double psi) => psi switch
+    {
+        < 0.10 => RiskDriftSeverity.Stable,
+        < 0.25 => RiskDriftSeverity.Moderate,
+        _ => RiskDriftSeverity.Significant
+    };
+}

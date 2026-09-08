@@ -31,6 +31,29 @@ public sealed class RiskModelMetadata
     public string? SourceSha256 { get; set; }
     public ModelMetrics ValidationMetrics { get; set; } = new();
     public ModelMetrics TestMetrics { get; set; } = new();
+
+    /// <summary>Permutation importance on the validation partition. Absent in older artifacts.</summary>
+    public List<FeatureImportanceEntry>? FeatureImportance { get; set; }
+
+    /// <summary>Validation-set score histogram over ten fixed bins; the drift baseline. Absent in older artifacts.</summary>
+    public ScoreDistributionSummary? ValidationScoreDistribution { get; set; }
+}
+
+public sealed class FeatureImportanceEntry
+{
+    public string FeatureName { get; set; } = string.Empty;
+    public int Rank { get; set; }
+    public double MeanAucDrop { get; set; }
+    public double Share { get; set; }
+    public int PermutationCount { get; set; }
+}
+
+public sealed class ScoreDistributionSummary
+{
+    public int RowCount { get; set; }
+    public double Mean { get; set; }
+    /// <summary>Fractions for bins [0,0.1), [0.1,0.2) ... [0.9,1]; sums to one.</summary>
+    public List<double> BinFractions { get; set; } = new();
 }
 
 public sealed class TrainingReport

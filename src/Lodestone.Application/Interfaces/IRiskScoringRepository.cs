@@ -30,6 +30,12 @@ public interface IRiskScoringRepository
 
     /// <summary>Every score a run produced, with whether it opened or escalated a counselor case. Audited per export.</summary>
     Task<IReadOnlyList<RiskScoringRunRowDto>> GetRunRowsAsync(int runId, string actorUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>Probabilities produced by one run.</summary>
+    Task<IReadOnlyList<double>> GetRunProbabilitiesAsync(int runId, CancellationToken cancellationToken = default);
+
+    /// <summary>Probabilities from earlier runs of the same model version, newest first, capped. The rolling drift baseline.</summary>
+    Task<IReadOnlyList<double>> GetPriorProbabilitiesAsync(string modelVersion, int beforeRunId, int limit, CancellationToken cancellationToken = default);
     Task<RiskScorePersistenceResult> PersistAsync(
         RiskFeatureSnapshot snapshot,
         RiskModelDescriptor descriptor,

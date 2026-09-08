@@ -82,6 +82,22 @@ public sealed class RiskScoreRepository : IRiskScoringRepository
             .AsNoTracking()
             .FirstOrDefaultAsync(run => run.RunKey == runKey, cancellationToken);
 
+    public async Task<IReadOnlyList<double>> GetRunProbabilitiesAsync(int runId, CancellationToken cancellationToken = default)
+        => await _context.RiskScores
+            .AsNoTracking()
+            .Where(score => score.RiskScoringRunId == runId)
+            .Select(score => score.Probability)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<double>> GetPriorProbabilitiesAsync(string modelVersion, int beforeRunId, int limit, CancellationToken cancellationToken = default)
+        => await _context.RiskScores
+            .AsNoTracking()
+            .Where(score => score.ModelVersion == modelVersion && score.RiskScoringRunId != null && score.RiskScoringRunId < beforeRunId)
+            .OrderByDescending(score => score.ScoredAtUtc)
+            .Take(limit)
+            .Select(score => score.Probability)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<RiskScoringRunRowDto>> GetRunRowsAsync(int runId, string actorUserId, CancellationToken cancellationToken = default)
     {
         var rows = await _context.RiskScores

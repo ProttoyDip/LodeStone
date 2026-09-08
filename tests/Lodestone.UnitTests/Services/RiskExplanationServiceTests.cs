@@ -151,5 +151,11 @@ public sealed class RiskExplanationServiceTests
         };
 
     private static RiskExplanationService Service(Mock<ICounselorQueueRepository> queue, Mock<IRiskModelExplainer> explainer)
-        => new(queue.Object, explainer.Object, new FixedTimeProvider(new DateTimeOffset(Now)));
+    {
+        // A predictor whose descriptor carries no training-time importance, so the service falls back to population ablation.
+        var predictor = new Mock<IRiskModelPredictor>();
+        predictor.SetupGet(p => p.Descriptor)
+            .Returns(new RiskModelDescriptor("test-model", RiskFeatureSchema.Withdrawal28DayV3, 28, 0.83));
+        return new(queue.Object, explainer.Object, predictor.Object, new FixedTimeProvider(new DateTimeOffset(Now)));
+    }
 }

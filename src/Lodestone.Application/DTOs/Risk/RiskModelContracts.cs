@@ -145,4 +145,67 @@ public sealed record RiskModelDescriptor(
 
     /// <summary>Immutable publication identifier supplied by the validated artifact manifest.</summary>
     public string? PublicationId { get; init; }
+
+    /// <summary>
+    /// Model-wide feature importance measured offline at training time (permutation importance on
+    /// the validation partition). Empty for artifacts trained before it was recorded.
+    /// </summary>
+    public IReadOnlyList<RiskFeatureImportance> FeatureImportance { get; init; } = Array.Empty<RiskFeatureImportance>();
+
+    /// <summary>Distribution of validation-set scores at training time, the reference for drift checks.</summary>
+    public RiskScoreDistribution? TrainingScoreDistribution { get; init; }
+}
+
+/// <summary>
+/// How much the model leans on one input, model-wide. <see cref="MeanAucDrop"/> is the average fall
+/// in ROC AUC when that input is shuffled across rows; <see cref="Share"/> normalises the drops to
+/// sum to one so the list reads as "what fraction of the model's discriminating power this carries".
+/// </summary>
+public sealed record RiskFeatureImportance(
+    string FeatureName,
+    int Rank,
+    double MeanAucDrop,
+    double Share);
+
+/// <summary>
+/// A histogram of predicted probabilities over ten fixed bins [0,0.1), [0.1,0.2) ... [0.9,1].
+/// Fixed edges keep two distributions comparable regardless of when they were measured.
+/// </summary>
+public sealed record RiskScoreDistribution(
+    int RowCount,
+    double Mean,
+    IReadOnlyList<double> BinFractions)
+{
+    public const int BinCount = 10;
+
+    public static RiskScoreDistribution From(IReadOnlyCollection<double> probabilities)
+    {
+        ArgumentNullException.ThrowIfNull(probabilities);
+        var bins = new double[BinCount];
+        if (probabilities.Count == 0) return new RiskScoreDistribution(0, 0d, bins);
+
+        foreach (var probability in probabilities)
+        {
+            var clamped = Math.Clamp(probability, 0d, 1d);
+            var index = Math.Min(BinCount - 1, (int)Math.Floor(clamped * BinCount));
+            bins[index]++;
+        }
+        for (var index = 0; index < bins.Length; index++) bins[index] /= probabilities.Count;
+        return new RiskScoreDistribution(probabilities.Count, probabilities.Average(), bins);
+    }
+
+    /// <summary>Population stability index of <paramref name="current"/> against this baseline.</summary>
+    public double PopulationStabilityIndexTo(RiskScoreDistribution current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        const double epsilon = 1e-4;
+        var total = 0d;
+        for (var index = 0; index < BinCount; index++)
+        {
+            var expected = Math.Max(epsilon, BinFractions[index]);
+            var actual = Math.Max(epsilon, current.BinFractions[index]);
+            total += (actual - expected) * Math.Log(actual / expected);
+        }
+        return total;
+    }
 }

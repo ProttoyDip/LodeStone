@@ -10,6 +10,9 @@
     var explanation = Model.Explanation;
     var factors = explanation?.Factors.OrderByDescending(factor => factor.Magnitude).ToArray() ?? Array.Empty<RiskFactor>();
     var largest = factors.Length == 0 ? 1d : Math.Max(factors[0].Magnitude, 1e-6);
+    var importance = Model.ModelImportance;
+    var importanceByFeature = importance.ToDictionary(entry => entry.FeatureName, entry => entry, StringComparer.Ordinal);
+    var largestShare = importance.Count == 0 ? 1d : Math.Max(importance.Max(entry => entry.Share), 1e-6);
 
     static string Percent(double value) => (value * 100).ToString("+0.0;-0.0;0.0") + " pts";
 }
@@ -105,6 +108,10 @@
                                 <th scope="col">Comparison</th>
                                 <th scope="col">Effect on score</th>
                                 <th scope="col"><span class="queue-sr-only">Direction</span></th>
+                                @if (importance.Count > 0)
+                                {
+                                    <th scope="col" title="How much the model relies on this measure across all students">Model-wide rank</th>
+                                }
                             </tr>
                         </thead>
                         <tbody>
@@ -130,6 +137,19 @@
                                             @(raising ? "Raised" : "Lowered")
                                         </span>
                                     </td>
+                                    @if (importance.Count > 0)
+                                    {
+                                        <td class="is-numeric">
+                                            @if (importanceByFeature.TryGetValue(factor.FeatureName, out var entry))
+                                            {
+                                                <span class="explain-rank @(entry.Rank <= 3 ? "explain-rank--top" : null)" title="@((entry.Share * 100).ToString("0.#"))% of the model's discriminating power">#@entry.Rank</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="explain-rank">&mdash;</span>
+                                            }
+                                        </td>
+                                    }
                                 </tr>
                             }
                         </tbody>
@@ -143,5 +163,38 @@
                 </p>
             }
         </section>
+
+        @if (importance.Count > 0)
+        {
+            <section class="queue-panel" aria-labelledby="explain-importance-title">
+                <header class="queue-panel__header">
+                    <div>
+                        <p class="queue-eyebrow">Model-wide</p>
+                        <h2 id="explain-importance-title">What the model relies on in general</h2>
+                    </div>
+                    <p>@Model.ModelImportanceSource</p>
+                </header>
+                <ol class="explain-importance">
+                    @foreach (var entry in importance.Take(10))
+                    {
+                        var width = Math.Round(100 * entry.Share / largestShare, 1);
+                        <li>
+                            <span class="explain-importance__rank">#@entry.Rank</span>
+                            <span class="explain-importance__name">
+                                @RiskFeatureVocabulary.Describe(entry.FeatureName)
+                                <span class="queue-student-id">@entry.FeatureName</span>
+                            </span>
+                            <span class="explain-importance__bar" aria-hidden="true"><span style="width:@(width)%"></span></span>
+                            <span class="explain-importance__share">@((entry.Share * 100).ToString("0.#"))%</span>
+                        </li>
+                    }
+                </ol>
+                <p class="explain-caveat">
+                    Reading the two panels together: a measure that moved this student's score <em>and</em> ranks highly here is
+                    one the model trusts broadly; one that moved the score but ranks low is an unusual case worth a second look.
+                    Neither panel says anything about cause.
+                </p>
+            </section>
+        }
     </div>
 </div>
