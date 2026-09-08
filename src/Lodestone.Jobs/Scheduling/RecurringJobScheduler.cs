@@ -42,6 +42,7 @@ public static class RecurringJobScheduler
         Apply<BookingReminderJob>(recurringJobs, "booking-reminders", maintenance.BookingReminders, maintenanceTimeZone);
         Apply<ForumModerationJob>(recurringJobs, "forum-moderation", maintenance.ForumModeration, maintenanceTimeZone);
         Apply<CrisisResourceEscalationJob>(recurringJobs, "crisis-escalation", maintenance.CrisisEscalation, maintenanceTimeZone);
+        Apply<CounselorDigestJob>(recurringJobs, "counselor-digest", maintenance.CounselorDigest, maintenanceTimeZone);
     }
 
     /// <summary>

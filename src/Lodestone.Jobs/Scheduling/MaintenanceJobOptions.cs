@@ -20,6 +20,9 @@ public sealed class MaintenanceJobOptions
     /// <summary>Alerts staff that high or critical cases have gone unreviewed for over a day.</summary>
     public JobSchedule CrisisEscalation { get; set; } = new() { Cron = "0 */6 * * *" };
 
+    /// <summary>Emails each counselor a count-only weekly summary of open cases, escalations, and prompt outcomes.</summary>
+    public JobSchedule CounselorDigest { get; set; } = new() { Cron = "0 8 * * 1" };
+
     public sealed class JobSchedule
     {
         public bool Enabled { get; set; }

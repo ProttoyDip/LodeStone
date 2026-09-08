@@ -14,7 +14,8 @@ public sealed class RecurringJobSchedulerTests
         "nudge-dispatch",
         "booking-reminders",
         "forum-moderation",
-        "crisis-escalation"
+        "crisis-escalation",
+        "counselor-digest"
     ];
 
     [Fact]

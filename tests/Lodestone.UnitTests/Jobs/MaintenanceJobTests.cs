@@ -253,6 +253,83 @@ public sealed class MaintenanceJobTests
     private static ForumPostDto FlaggedPost(int id)
         => new(id, 1, "author", "Post", "Body", ForumPostStatus.Flagged, NowUtc.AddDays(-1));
 
+    // ---------- Counselor digest ----------
+
+    [Fact]
+    public async Task CounselorDigest_emails_counts_only_and_never_a_student_name()
+    {
+        var bookings = new Mock<IBookingRepository>();
+        bookings.Setup(repo => repo.GetAllCounselorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { Counselor(1, "c-1", "osei@university.test") });
+        var queue = new Mock<ICounselorQueueService>();
+        queue.Setup(service => service.GetQueueAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { QueueItem(1, RiskLevel.High, NowUtc.AddDays(-2)), QueueItem(2, RiskLevel.Low, NowUtc) });
+        var peerSupport = new Mock<IVolunteerSupportRepository>();
+        peerSupport.Setup(repo => repo.GetUnhandledEscalationsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new SupportRequest
+                {
+                    Id = 9,
+                    Status = SupportRequestStatus.Escalated,
+                    EscalatedAtUtc = NowUtc.AddDays(-3),
+                    StudentProfile = new StudentProfile { User = new ApplicationUser { FullName = "Priya Secret" } }
+                }
+            });
+        var nudges = new Mock<INudgeRepository>();
+        nudges.Setup(repo => repo.GetManualByCounselorAsync("c-1", It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new Nudge { Status = NudgeStatus.Acknowledged, ExpiresAtUtc = NowUtc.AddDays(5) },
+                new Nudge { Status = NudgeStatus.Sent, ExpiresAtUtc = NowUtc.AddDays(5) }
+            });
+        string? body = null;
+        var email = new Mock<IEmailService>();
+        email.Setup(service => service.SendAsync("osei@university.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, CancellationToken>((_, _, html, _) => body = html)
+            .Returns(Task.CompletedTask);
+
+        await new CounselorDigestJob(
+                bookings.Object, queue.Object, peerSupport.Object, nudges.Object, email.Object, Clock(),
+                NullLogger<CounselorDigestJob>.Instance)
+            .ExecuteAsync();
+
+        body.Should().NotBeNull();
+        body.Should().Contain("<strong>2</strong> learning-risk cases are open");
+        body.Should().Contain("<strong>1</strong> at high or critical level");
+        body.Should().Contain("<strong>1</strong> peer-support escalation");
+        body.Should().Contain("1 acknowledged");
+        body.Should().Contain("1 still awaiting");
+        body.Should().NotContain("Priya", "the digest must never name a student");
+        body.Should().NotContain("Student", "not even the placeholder display name");
+    }
+
+    [Fact]
+    public async Task CounselorDigest_skips_a_counselor_with_a_quiet_week()
+    {
+        var bookings = new Mock<IBookingRepository>();
+        bookings.Setup(repo => repo.GetAllCounselorsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { Counselor(1, "c-1", "osei@university.test") });
+        var queue = new Mock<ICounselorQueueService>();
+        queue.Setup(service => service.GetQueueAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<RiskQueueItemDto>());
+        var peerSupport = new Mock<IVolunteerSupportRepository>();
+        peerSupport.Setup(repo => repo.GetUnhandledEscalationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<SupportRequest>());
+        var nudges = new Mock<INudgeRepository>();
+        nudges.Setup(repo => repo.GetManualByCounselorAsync(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Nudge>());
+        var email = new Mock<IEmailService>(MockBehavior.Strict);
+
+        await new CounselorDigestJob(
+                bookings.Object, queue.Object, peerSupport.Object, nudges.Object, email.Object, Clock(),
+                NullLogger<CounselorDigestJob>.Instance)
+            .ExecuteAsync();
+
+        email.VerifyNoOtherCalls();
+    }
+
+    private static CounselorProfile Counselor(int id, string userId, string email)
+        => new() { Id = id, UserId = userId, User = new ApplicationUser { Id = userId, Email = email, FullName = "Dr Osei", IsActive = true } };
+
     private static ForumModerationQueueDto Queue(params ForumPostDto[] reported)
         => new(
             reported.Select(post => new ForumModerationQueueItemDto(

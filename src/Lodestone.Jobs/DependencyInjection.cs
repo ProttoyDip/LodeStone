@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddScoped<BookingReminderJob>();
         services.AddScoped<ForumModerationJob>();
         services.AddScoped<CrisisResourceEscalationJob>();
+        services.AddScoped<CounselorDigestJob>();
 
         return services;
     }
