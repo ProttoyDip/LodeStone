@@ -251,6 +251,12 @@
 .forum-text-link { display: inline-flex; gap: .45rem; margin-top: 1rem; color: var(--forest); font-family: var(--font-mono); font-size: .71rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .forum-text-link:hover { color: var(--clay-deep); }
 
+.forum-triage-tier { display: inline-flex; align-items: center; padding: .15rem .55rem; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: .66rem; letter-spacing: .06em; }
+.forum-triage-tier--reported { border-color: var(--clay-deep); color: var(--clay-deep); }
+.forum-triage-tier--surfaced { border-color: var(--forest); color: var(--forest); }
+.forum-triage-reasons { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .85rem; padding: 0; list-style: none; }
+.forum-triage-reasons li { padding: .3rem .65rem; border-radius: var(--r-sm, 6px); background: var(--surface-2, rgba(0,0,0,.04)); color: var(--ink-soft); font-size: .82rem; line-height: 1.4; }
+
 .forum-compose,
 .forum-reply-compose {
     padding: 1.5rem;

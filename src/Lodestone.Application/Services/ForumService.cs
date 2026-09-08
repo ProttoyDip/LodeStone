@@ -7,21 +7,34 @@ namespace Lodestone.Application.Services;
 
 public class ForumService : IForumService
 {
+    /// <summary>How far back triage looks for unreported posts. Older posts have left the front page.</summary>
+    public static readonly TimeSpan TriageLookback = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// Minimum ranker priority for an unreported post to enter the queue. Set at the weight of the
+    /// "no replies after 24 hours" signal, which is the case the ranker exists to catch; a first
+    /// post that was answered does not on its own need a moderator.
+    /// </summary>
+    public const double SurfacingThreshold = 0.25;
+
     private readonly IForumRepository _forumRepository;
     private readonly ICurrentUserService _currentUser;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLog;
+    private readonly TimeProvider _clock;
 
     public ForumService(
         IForumRepository forumRepository,
         ICurrentUserService currentUser,
         IUnitOfWork unitOfWork,
-        IAuditLogService auditLog)
+        IAuditLogService auditLog,
+        TimeProvider clock)
     {
         _forumRepository = forumRepository;
         _currentUser     = currentUser;
         _unitOfWork      = unitOfWork;
         _auditLog        = auditLog;
+        _clock           = clock;
     }
 
     public async Task<IReadOnlyList<ForumCategoryDto>> GetCategoriesAsync(
@@ -128,6 +141,45 @@ public class ForumService : IForumService
             .ToList()
             .AsReadOnly();
 
+    public async Task<ForumModerationQueueDto> GetModerationQueueAsync(CancellationToken cancellationToken = default)
+    {
+        var nowUtc = _clock.GetUtcNow().UtcDateTime;
+        var candidates = await _forumRepository.GetTriageCandidatesAsync(nowUtc - TriageLookback, cancellationToken);
+        var byId = candidates.ToDictionary(candidate => candidate.PostId);
+
+        var ranked = ForumTriageRanker.Rank(
+            candidates.Select(candidate => new ForumTriageInput(
+                candidate.PostId,
+                candidate.Title,
+                candidate.CreatedAtUtc,
+                candidate.Body.Length,
+                candidate.AuthorPostCount,
+                candidate.CommentCount,
+                candidate.UnreviewedFlagCount,
+                candidate.AuthorMedianBodyLength)).ToArray(),
+            nowUtc);
+
+        var items = ranked
+            .Where(result => result.WasReported
+                          || (result.SurfacedWithoutAFlag && result.Priority >= SurfacingThreshold))
+            .Select(result =>
+            {
+                var candidate = byId[result.PostId];
+                var post = new ForumPostDto(
+                    candidate.PostId, candidate.CategoryId, candidate.AuthorUserId,
+                    candidate.Title, candidate.Body, candidate.Status, candidate.CreatedAtUtc);
+                return new ForumModerationQueueItemDto(
+                    post, result.Priority, result.Reasons, result.WasReported, result.SurfacedWithoutAFlag);
+            })
+            .ToList()
+            .AsReadOnly();
+
+        return new ForumModerationQueueDto(
+            items,
+            items.Count(item => item.WasReported),
+            items.Count(item => item.SurfacedWithoutAFlag));
+    }
+
     public async Task<bool> ReviewPostAsync(int postId, bool publish, CancellationToken cancellationToken = default)
     {
         var post = await _forumRepository.GetPostByIdAsync(postId, cancellationToken);
@@ -136,9 +188,10 @@ public class ForumService : IForumService
             return false;
         }
 
-        var reviewedAtUtc = DateTime.UtcNow;
+        var reviewedAtUtc = _clock.GetUtcNow().UtcDateTime;
         post.Status = publish ? ForumPostStatus.Published : ForumPostStatus.Removed;
         post.ModifiedAtUtc = reviewedAtUtc;
+        post.LastModeratorReviewAtUtc = reviewedAtUtc;
 
         foreach (var flag in post.Flags.Where(flag => !flag.IsReviewed))
         {

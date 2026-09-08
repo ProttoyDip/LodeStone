@@ -1,0 +1,147 @@
+@model Lodestone.Application.Interfaces.RiskQueueExplanationDto
+@using Lodestone.Application.DTOs.Risk
+@{
+    ViewData["Title"] = "Why this score";
+    Layout = ViewData["AdminShell"] is not null
+        ? "~/Views/Shared/_AdminLayout.cshtml"
+        : "~/Views/Shared/_Layout.cshtml";
+
+    var item = Model.QueueItem;
+    var explanation = Model.Explanation;
+    var factors = explanation?.Factors.OrderByDescending(factor => factor.Magnitude).ToArray() ?? Array.Empty<RiskFactor>();
+    var largest = factors.Length == 0 ? 1d : Math.Max(factors[0].Magnitude, 1e-6);
+
+    static string Percent(double value) => (value * 100).ToString("+0.0;-0.0;0.0") + " pts";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/counselor-queue.css" asp-append-version="true" />
+}
+
+<div class="queue-page">
+    <div class="queue-shell">
+        <header class="queue-header">
+            <div>
+                <p class="queue-eyebrow">Counselor workspace</p>
+                <h1>Why this score</h1>
+                <p>
+                    What the model actually does when each measured behaviour is swapped for a typical value.
+                    This describes the model's arithmetic, not the student, and is computed now and not stored.
+                </p>
+            </div>
+            <div class="queue-header__meta">
+                <a class="queue-btn" asp-action="Queue">Back to queue</a>
+            </div>
+        </header>
+
+        <section class="queue-panel" aria-labelledby="explain-case-title">
+            <header class="queue-panel__header">
+                <div>
+                    <p class="queue-eyebrow">Open case</p>
+                    <h2 id="explain-case-title">@item.StudentName</h2>
+                </div>
+                <p>@(string.IsNullOrWhiteSpace(item.StudentNumber) ? "Student number unavailable" : $"Student {item.StudentNumber}") · @(string.IsNullOrWhiteSpace(item.CourseKey) ? "Course not provided" : item.CourseKey)</p>
+            </header>
+
+            <dl class="explain-summary">
+                <div>
+                    <dt>Risk score</dt>
+                    <dd title="Relative ranking score, not a probability of withdrawal.">@item.Probability.ToString("F2")</dd>
+                </div>
+                <div>
+                    <dt>Peak level</dt>
+                    <dd>@item.Level</dd>
+                </div>
+                <div>
+                    <dt>Scored</dt>
+                    <dd>@(item.ScoredAtUtc == default ? "Unknown" : item.ScoredAtUtc.ToString("dd MMM yyyy, HH:mm") + " UTC")</dd>
+                </div>
+                @if (explanation is not null)
+                {
+                    <div>
+                        <dt>Explained by model</dt>
+                        <dd>@explanation.ModelVersion</dd>
+                    </div>
+                }
+            </dl>
+
+            @if (explanation is null)
+            {
+                <p class="explain-note" role="status">
+                    <strong>No breakdown is available.</strong> @Model.UnavailableReason
+                </p>
+            }
+            else
+            {
+                <p class="explain-note">
+                    Each row shows how much the score moved when that one measurement was replaced by
+                    <strong>@explanation.BaselineDescription</strong>, with everything else held still.
+                    Movements are in score points (score × 100).
+                    @if (Math.Abs(explanation.Probability - item.Probability) > 0.005)
+                    {
+                        <text>The loaded model scores this snapshot at @explanation.Probability.ToString("F2"); the queued score of @item.Probability.ToString("F2") came from the run that opened the case.</text>
+                    }
+                </p>
+
+                @if (!string.IsNullOrWhiteSpace(explanation.BoundaryNote))
+                {
+                    <p class="explain-note explain-note--boundary">
+                        <strong>Where the review threshold sits.</strong> @explanation.BoundaryNote
+                    </p>
+                }
+
+                @if (factors.Length == 0)
+                {
+                    <p class="explain-note">Every measurement for this student already matches the comparison value, so no single feature moved the score.</p>
+                }
+                else
+                {
+                    <table class="explain-factors">
+                        <caption class="queue-sr-only">Measured influence of each feature on this score</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Measured behaviour</th>
+                                <th scope="col">This student</th>
+                                <th scope="col">Comparison</th>
+                                <th scope="col">Effect on score</th>
+                                <th scope="col"><span class="queue-sr-only">Direction</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var factor in factors)
+                            {
+                                var raising = factor.Direction == RiskFactorDirection.Raising;
+                                var width = Math.Round(50 * factor.Magnitude / largest, 1);
+                                <tr>
+                                    <th scope="row">
+                                        @factor.DisplayName
+                                        <span class="queue-student-id">@factor.FeatureName</span>
+                                    </th>
+                                    <td class="is-numeric">@factor.Value.ToString("0.###")</td>
+                                    <td class="is-numeric">@factor.BaselineValue.ToString("0.###")</td>
+                                    <td class="is-numeric">
+                                        <span class="explain-bar @(raising ? "explain-bar--raising" : "explain-bar--protective")" aria-hidden="true">
+                                            <span style="width:@(width)%"></span>
+                                        </span>
+                                        @Percent(factor.Contribution)
+                                    </td>
+                                    <td>
+                                        <span class="explain-direction @(raising ? "explain-direction--raising" : "explain-direction--protective")">
+                                            @(raising ? "Raised" : "Lowered")
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+
+                <p class="explain-caveat">
+                    These are associations the model learned from past behaviour, not causes. A measurement that raised
+                    the score is not a lever: changing it would change the model's output, not what is happening in this
+                    student's life. Effects are measured one at a time and need not add up to the score.
+                </p>
+            }
+        </section>
+    </div>
+</div>

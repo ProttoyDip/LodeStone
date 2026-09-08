@@ -28,6 +28,26 @@
     </section>
 
     <main class="crisis-shell crisis-content">
+        <section class="crisis-find" aria-labelledby="find-title">
+            <div class="crisis-section__head">
+                <span class="crisis-section__index">00</span>
+                <div>
+                    <h2 id="find-title">Find a resource</h2>
+                    <p>Describe what you are looking for in your own words. This searches the resources on this page and nothing else: it does not judge or interpret what you write, and your words are not saved.</p>
+                </div>
+            </div>
+            <form method="post" asp-controller="CrisisResource" asp-action="Index" asp-fragment="matches" class="crisis-find__form" role="search">
+                @Html.AntiForgeryToken()
+                <label class="crisis-find__label" for="crisis-query">What would help right now?</label>
+                <div class="crisis-find__row">
+                    <input class="crisis-find__input" id="crisis-query" name="q" type="text" maxlength="500"
+                           autocomplete="off" value="@Model.Query"
+                           placeholder="e.g. someone to text late at night, help with drinking, book a counselor" />
+                    <button class="resource-action resource-action--primary" type="submit">Find</button>
+                </div>
+            </form>
+        </section>
+
         @if (Model.EmergencyResources.Count > 0)
         {
             <section class="crisis-section" aria-labelledby="urgent-support-title">
@@ -69,6 +89,61 @@
                         </article>
                     }
                 </div>
+            </section>
+        }
+
+        @if (Model.Searched)
+        {
+            <section class="crisis-section" aria-labelledby="matches-title" id="matches">
+                <div class="crisis-section__head">
+                    <span class="crisis-section__index">01b</span>
+                    <div>
+                        <h2 id="matches-title" tabindex="-1" autofocus>Closest matches</h2>
+                        <p>Resources whose own description overlaps with what you wrote. The urgent resources above are always shown, whatever you search for.</p>
+                    </div>
+                </div>
+
+                @if (Model.Matches.Count == 0)
+                {
+                    <div class="crisis-empty" role="status">
+                        <h3>Nothing on this page uses those words.</h3>
+                        <p>That only means the search vocabulary fell short. Every resource is still listed below, and the urgent ones are above.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="crisis-grid" role="list">
+                        @foreach (var match in Model.Matches)
+                        {
+                            var resource = match.Resource;
+                            var telephone = resource.PhoneNumber?.Replace(" ", "").Replace("-", "").Replace("(", "").Replace(")", "");
+                            <article class="resource-card @(resource.IsEmergency ? "resource-card--urgent" : null)" role="listitem">
+                                <span class="resource-card__tag @(resource.IsEmergency ? null : "resource-card__tag--support")">@(resource.IsEmergency ? "Urgent" : "Support")</span>
+                                <h3>@resource.Title</h3>
+                                @if (!string.IsNullOrWhiteSpace(resource.Description))
+                                {
+                                    <p>@resource.Description</p>
+                                }
+                                <p class="resource-card__why">Matched on: @string.Join(", ", match.MatchedTerms)</p>
+                                <div class="resource-card__actions">
+                                    @if (!string.IsNullOrWhiteSpace(resource.PhoneNumber))
+                                    {
+                                        <a class="resource-action resource-action--primary" href="tel:@telephone">Call @resource.PhoneNumber</a>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(resource.Url))
+                                    {
+                                        <a class="resource-action resource-action--secondary" href="@resource.Url"
+                                           target="@(resource.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? "_blank" : null)"
+                                           rel="@(resource.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? "noopener noreferrer" : null)">
+                                            @(resource.Url.StartsWith("/", StringComparison.Ordinal) ? "Open in Lodestone" : "Visit website")
+                                            <span aria-hidden="true">&rarr;</span>
+                                        </a>
+                                    }
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
             </section>
         }
 

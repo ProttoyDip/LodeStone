@@ -256,7 +256,7 @@ public sealed class RiskScoringService : IRiskScoringService
     }
 
     private static RiskModelInput ToModelInput(RiskFeatureSnapshot snapshot)
-        => new(snapshot.FeatureSchemaVersion, SnapshotFeatureValues(snapshot));
+        => RiskSnapshotModelInput.From(snapshot);
 
     private static void ValidateInput(RiskModelInput input, int observedDays)
     {
@@ -264,15 +264,18 @@ public sealed class RiskScoringService : IRiskScoringService
         if (values.Any(value => !float.IsFinite(value)))
             throw new InvalidOperationException("Risk model features must be finite.");
 
-        if (string.Equals(input.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal))
+        // Trend features are signed; everything else is non-negative.
+        var signed = input.FeatureSchemaVersion switch
         {
-            // V2 contains signed trend fields; all other values remain non-negative.
-            if (values.Where((_, index) => index is not 2 and not 5).Any(value => value < 0) ||
-                values.Where((_, index) => index is 2 or 5).Any(value => value is < -1 or > 1))
-                throw new InvalidOperationException("Risk model features contain invalid values.");
-        }
-        else if (values.Any(value => value < 0))
+            RiskFeatureSchema.Withdrawal28DayV2 => new[] { 2, 5 },
+            RiskFeatureSchema.Withdrawal28DayV3 => new[] { 2, 5, 12 },
+            _ => Array.Empty<int>()
+        };
+        if (values.Where((_, index) => !signed.Contains(index)).Any(value => value < 0))
             throw new InvalidOperationException("Risk model features must be non-negative.");
+        if (values.Where((_, index) => index is 2 or 5 && signed.Contains(index)).Any(value => value is < -1 or > 1) ||
+            values.Where((_, index) => index == 12 && signed.Contains(index)).Any(value => value is < -2 or > 2))
+            throw new InvalidOperationException("Risk model features contain invalid values.");
 
         if (string.Equals(input.FeatureSchemaVersion, RiskFeatureSchema.Withdrawal28DayV1, StringComparison.Ordinal))
         {
@@ -293,39 +296,6 @@ public sealed class RiskScoringService : IRiskScoringService
             throw new InvalidOperationException("Versioned risk-model feature values are outside their valid range.");
         }
     }
-
-    private static IReadOnlyList<float> SnapshotFeatureValues(RiskFeatureSnapshot snapshot)
-        => snapshot.FeatureSchemaVersion switch
-        {
-            RiskFeatureSchema.Withdrawal28DayV1 =>
-            [
-                snapshot.ActiveDayRate,
-                snapshot.ActivitySpanDays,
-                snapshot.DaysSinceLastAccess,
-                snapshot.ForumInteractionCount,
-                snapshot.CourseInteractionCount,
-                snapshot.LateOrMissingAssignmentCount
-            ],
-            RiskFeatureSchema.Withdrawal28DayV2 =>
-            [
-                Required(snapshot.RecentActiveDayRate, nameof(snapshot.RecentActiveDayRate)),
-                Required(snapshot.PriorActiveDayRate, nameof(snapshot.PriorActiveDayRate)),
-                Required(snapshot.ActiveDayRateTrend, nameof(snapshot.ActiveDayRateTrend)),
-                Required(snapshot.RecentCourseClickRate, nameof(snapshot.RecentCourseClickRate)),
-                Required(snapshot.PriorCourseClickRate, nameof(snapshot.PriorCourseClickRate)),
-                Required(snapshot.CourseClickRateTrend, nameof(snapshot.CourseClickRateTrend)),
-                Required(snapshot.InactivityStreakDays, nameof(snapshot.InactivityStreakDays)),
-                Required(snapshot.AssessmentDueRate, nameof(snapshot.AssessmentDueRate)),
-                Required(snapshot.AssessmentOnTimeRate, nameof(snapshot.AssessmentOnTimeRate)),
-                Required(snapshot.AssessmentLateOrMissingRate, nameof(snapshot.AssessmentLateOrMissingRate)),
-                Required(snapshot.CourseProgressRatio, nameof(snapshot.CourseProgressRatio)),
-                Required(snapshot.CohortActivityPercentile, nameof(snapshot.CohortActivityPercentile))
-            ],
-            _ => throw new InvalidOperationException("The snapshot has an unsupported feature schema.")
-        };
-
-    private static float Required(float? value, string name)
-        => value ?? throw new InvalidOperationException($"The snapshot is missing required feature '{name}'.");
 
     private static RiskLevel ToRiskLevel(double probability)
         => probability switch

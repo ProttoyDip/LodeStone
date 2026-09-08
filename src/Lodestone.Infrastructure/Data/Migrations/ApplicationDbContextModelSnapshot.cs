@@ -557,6 +557,9 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<DateTime?>("LastModeratorReviewAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("ModifiedAtUtc")
                         .HasColumnType("datetime2");
 

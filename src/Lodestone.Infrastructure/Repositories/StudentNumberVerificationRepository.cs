@@ -112,11 +112,13 @@ public sealed class StudentNumberVerificationRepository : IStudentNumberVerifica
                     .OrderByDescending(claim => claim.ReviewedAtUtc)
                     .Select(claim => claim.ReviewedAtUtc)
                     .FirstOrDefault()))
-            .OrderBy(item => item.StudentName)
-            .ThenBy(item => item.StudentNumber)
             .ToListAsync(cancellationToken);
 
-        return rows;
+        // Ordering on members of a projected record does not translate to SQL; sort in memory.
+        return rows
+            .OrderBy(item => item.StudentName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.StudentNumber, StringComparer.Ordinal)
+            .ToArray();
     }
 
     public async Task<StudentNumberClaimResultDto> SubmitAsync(

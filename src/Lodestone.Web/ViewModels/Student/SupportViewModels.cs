@@ -17,6 +17,8 @@ public class RequestSupportViewModel
 
 public sealed class StudentSupportRequestsViewModel
 {
+    public IReadOnlyList<Application.DTOs.Volunteer.AssignedVolunteerDto> AssignedVolunteers { get; init; }
+        = Array.Empty<Application.DTOs.Volunteer.AssignedVolunteerDto>();
     public IReadOnlyList<Application.DTOs.Volunteer.SupportRequestDto> Pending { get; init; }
         = Array.Empty<Application.DTOs.Volunteer.SupportRequestDto>();
     public IReadOnlyList<Application.DTOs.Volunteer.SupportRequestDto> Active { get; init; }

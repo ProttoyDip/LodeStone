@@ -17,6 +17,7 @@ public class StudentController : Controller
     private readonly IStudentNumberVerificationService _studentNumberVerificationService;
     private readonly ICurrentUserService _currentUserService;
     private readonly INudgeService _nudgeService;
+    private readonly IVolunteerSupportService _volunteerSupportService;
     private readonly ILogger<StudentController> _logger;
 
     public StudentController(
@@ -25,9 +26,10 @@ public class StudentController : Controller
         IStudentNumberVerificationService studentNumberVerificationService,
         ICurrentUserService currentUserService,
         INudgeService nudgeService,
+        IVolunteerSupportService volunteerSupportService,
         ILogger<StudentController> logger)
-        => (_dashboardService, _consentService, _studentNumberVerificationService, _currentUserService, _nudgeService, _logger)
-            = (dashboardService, consentService, studentNumberVerificationService, currentUserService, nudgeService, logger);
+        => (_dashboardService, _consentService, _studentNumberVerificationService, _currentUserService, _nudgeService, _volunteerSupportService, _logger)
+            = (dashboardService, consentService, studentNumberVerificationService, currentUserService, nudgeService, volunteerSupportService, logger);
 
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
@@ -52,10 +54,21 @@ public class StudentController : Controller
             nudgeLoadError = "Optional support prompts could not be loaded. Your prompt preference was not changed.";
         }
 
+        IReadOnlyList<Application.DTOs.Volunteer.AssignedVolunteerDto> volunteers = Array.Empty<Application.DTOs.Volunteer.AssignedVolunteerDto>();
+        try
+        {
+            volunteers = await _volunteerSupportService.GetAssignedVolunteersForStudentAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not load assigned peer volunteers.");
+        }
+
         return View(new StudentHomeViewModel(dashboard, consent, verification)
         {
             NudgeState = nudges,
-            NudgeLoadError = nudgeLoadError
+            NudgeLoadError = nudgeLoadError,
+            AssignedVolunteers = volunteers
         });
     }
 

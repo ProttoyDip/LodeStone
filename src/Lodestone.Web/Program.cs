@@ -167,9 +167,12 @@ app.MapHealthChecks("/health/ml", new Microsoft.AspNetCore.Diagnostics.HealthChe
 app.MapHub<CounselorQueueHub>(CounselorQueueHub.Route);
 app.MapHub<AdminNotificationHub>(AdminNotificationHub.Route);
 // PeerSupportHub only tells a named user that something they can already see has changed, so it
-// needs no room membership. PeerChatHub would carry message content to a room and stays unmapped
-// until server-owned membership and a moderation model exist.
+// needs no room membership.
 app.MapHub<PeerSupportHub>(PeerSupportHub.Route);
+// PeerChatHub carries message content, so it is mapped only because membership is now resolved
+// server-side from the SupportRequest row (IPeerChatService) and re-checked on every send. There is
+// no automated moderation; the volunteer in the room can escalate to a counselor.
+app.MapHub<PeerChatHub>(PeerChatHub.Route);
 if (useHangfire)
 {
     app.MapHangfireDashboard()

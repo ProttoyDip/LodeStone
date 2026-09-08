@@ -120,11 +120,20 @@
                                 <label class="booking-field">
                                     <span>Session notes <small>Optional, 2,000 characters</small></span>
                                     <textarea name="sessionNotes"
-                                              rows="4"
+                                              rows="@(string.IsNullOrEmpty(appointment.SuggestedSessionNotes) ? 4 : 8)"
                                               maxlength="2000"
-                                              aria-describedby="session-notes-help-@appointment.BookingId"></textarea>
+                                              aria-describedby="session-notes-help-@appointment.BookingId">@appointment.SuggestedSessionNotes</textarea>
                                 </label>
-                                <p class="booking-muted" id="session-notes-help-@appointment.BookingId">Keep notes brief and relevant to this appointment.</p>
+                                <p class="booking-muted" id="session-notes-help-@appointment.BookingId">
+                                    @if (string.IsNullOrEmpty(appointment.SuggestedSessionNotes))
+                                    {
+                                        <text>Keep notes brief and relevant to this appointment.</text>
+                                    }
+                                    else
+                                    {
+                                        <text>The outline above is filled from the booking record only (times, session count). Replace each <code>[ ]</code> with your own account, or clear it. Nothing is saved until you submit.</text>
+                                    }
+                                </p>
                                 <div class="counselor-outcome-form__actions">
                                     <button class="booking-btn booking-btn--primary"
                                             type="submit"

@@ -115,6 +115,23 @@ public sealed class VolunteerSupportRepository : GenericRepository<SupportReques
                 : assignment.StudentProfileId.ToString())
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<VolunteerAssignment>> GetActiveAssignmentsForStudentAsync(
+        int studentProfileId,
+        CancellationToken cancellationToken = default)
+        => await Context.VolunteerAssignments
+            .Include(assignment => assignment.VolunteerProfile)
+                .ThenInclude(profile => profile!.User)
+            .AsNoTracking()
+            .Where(assignment => assignment.StudentProfileId == studentProfileId &&
+                                 assignment.IsActive &&
+                                 assignment.VolunteerProfile != null &&
+                                 assignment.VolunteerProfile.IsApproved &&
+                                 assignment.VolunteerProfile.IsActive &&
+                                 assignment.VolunteerProfile.User != null &&
+                                 assignment.VolunteerProfile.User.IsActive)
+            .OrderBy(assignment => assignment.VolunteerProfile!.User!.FullName)
+            .ToListAsync(cancellationToken);
+
     public Task<VolunteerAssignment?> GetAssignmentByIdAsync(
         int assignmentId,
         CancellationToken cancellationToken = default)
@@ -230,6 +247,35 @@ public sealed class VolunteerSupportRepository : GenericRepository<SupportReques
                               request.StudentProfile.UserId == studentUserId)
             .OrderByDescending(request => request.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<SupportRequest>> GetUnroutedPendingRequestsAsync(
+        CancellationToken cancellationToken = default)
+        => await Context.SupportRequests
+            .Include(request => request.StudentProfile)
+                .ThenInclude(profile => profile!.User)
+            .AsNoTracking()
+            .Where(request => request.Status == SupportRequestStatus.Pending &&
+                              request.IsVisibleToVolunteers &&
+                              request.VolunteerProfileId == null &&
+                              !Context.VolunteerAssignments.Any(assignment =>
+                                  assignment.StudentProfileId == request.StudentProfileId &&
+                                  assignment.IsActive &&
+                                  assignment.VolunteerProfile != null &&
+                                  assignment.VolunteerProfile.IsApproved &&
+                                  assignment.VolunteerProfile.IsActive &&
+                                  assignment.VolunteerProfile.User != null &&
+                                  assignment.VolunteerProfile.User.IsActive))
+            .OrderBy(request => request.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyDictionary<int, int>> GetActiveAssignmentCountsAsync(
+        CancellationToken cancellationToken = default)
+        => await Context.VolunteerAssignments
+            .AsNoTracking()
+            .Where(assignment => assignment.IsActive)
+            .GroupBy(assignment => assignment.VolunteerProfileId)
+            .Select(group => new { group.Key, Count = group.Count() })
+            .ToDictionaryAsync(entry => entry.Key, entry => entry.Count, cancellationToken);
 
     public async Task<IReadOnlyList<string>> GetActiveCounselorUserIdsAsync(
         CancellationToken cancellationToken = default)

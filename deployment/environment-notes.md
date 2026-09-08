@@ -39,8 +39,12 @@ The app validates model hash, metadata hash, schema, feature order, window size,
 stride, publication eligibility, and loadability before scoring. If validation fails,
 `/health/ml` and `/health/ready` report unhealthy and risk scoring is not scheduled.
 
-Current demo state is State B: runtime ML integration is complete, but the real v2
-OULAD candidate failed the fixed quality gate, so no artifact is published.
+Current demo state: a validated v3 artifact (`withdrawal-28d-v3-20260905T175232755Z`) exists
+on the demo machine and scoring is enabled there via user-secrets. The artifacts are
+git-ignored, so any other environment must copy them into `App_Data/ml` before enabling.
+Locally: `dotnet user-secrets set "MachineLearning:Enabled" true --project src/Lodestone.Web`.
+Docker: `LODESTONE_ML_ENABLED=true` in `.env`. See `docs/AI-GOVERNANCE.md` §9a for why the
+tracked default stays off and what the deployed threshold's recall is.
 
 ## Data Protection
 

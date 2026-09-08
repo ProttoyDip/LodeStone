@@ -148,6 +148,7 @@ public sealed class ManualNudgeWebTests
         current.SetupGet(service => service.UserId).Returns(userId);
         return WithTempData(new CounselorController(
             Mock.Of<ICounselorQueueService>(),
+            Mock.Of<IRiskExplanationService>(),
             Mock.Of<IBookingService>(),
             nudges,
             current.Object,

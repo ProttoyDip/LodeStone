@@ -43,3 +43,23 @@ public sealed record VolunteerMatch(
     /// <summary>True when nothing beyond availability to take work supported this match.</summary>
     public bool IsWeak => Score <= 0.2;
 }
+
+/// <summary>
+/// A pending request no volunteer can currently see, with the volunteers an administrator might
+/// assign to the student. The student's message is deliberately absent: it was read to produce
+/// the suggestions and the administrator does not need it to act on them.
+/// </summary>
+public sealed record SupportRequestRoutingItemDto(
+    int RequestId,
+    int StudentProfileId,
+    string StudentDisplayName,
+    SupportRequestCategory Category,
+    string Title,
+    string? Availability,
+    DateTime CreatedAtUtc,
+    IReadOnlyList<VolunteerMatch> Suggestions);
+
+/// <summary>Pending requests awaiting a volunteer assignment, oldest first.</summary>
+public sealed record SupportRequestRoutingDto(
+    IReadOnlyList<SupportRequestRoutingItemDto> Requests,
+    int AvailableVolunteers);

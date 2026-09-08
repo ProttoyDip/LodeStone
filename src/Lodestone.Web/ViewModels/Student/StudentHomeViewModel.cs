@@ -1,6 +1,7 @@
 using Lodestone.Application.DTOs.Risk;
 using Lodestone.Application.DTOs.Student;
 using Lodestone.Application.DTOs.Nudges;
+using Lodestone.Application.DTOs.Volunteer;
 using Lodestone.Domain.Enums;
 
 namespace Lodestone.Web.ViewModels.Student;
@@ -17,6 +18,9 @@ public sealed record StudentHomeViewModel(
     public StudentNudgeStateDto? NudgeState { get; init; }
 
     public string? NudgeLoadError { get; init; }
+
+    /// <summary>Volunteers an administrator has assigned to this student. Empty when none.</summary>
+    public IReadOnlyList<AssignedVolunteerDto> AssignedVolunteers { get; init; } = Array.Empty<AssignedVolunteerDto>();
 
     public bool IsRiskMonitoringEnabled => MonitoringConsent?.IsConsented == true;
 

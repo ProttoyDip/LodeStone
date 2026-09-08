@@ -338,6 +338,86 @@ public sealed class VolunteerSupportServiceTests
         return repo;
     }
 
+    [Fact]
+    public async Task GetRequestRoutingAsync_RanksVolunteersForEachUnroutedRequestAndNeverQuotesTheStudent()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        var studentMessage = "I keep failing my python labs and my laptop will not connect to the portal.";
+        repo.Setup(r => r.GetUnroutedPendingRequestsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new SupportRequest
+                {
+                    Id = 11,
+                    StudentProfileId = 5,
+                    StudentProfile = new StudentProfile { Id = 5, UserId = "s-5", User = new ApplicationUser { Id = "s-5", FullName = "Student Five" } },
+                    Category = SupportRequestCategory.TechnicalHelp,
+                    Title = "Technical help",
+                    Message = studentMessage,
+                    Availability = "Tuesday evenings",
+                    Status = SupportRequestStatus.Pending,
+                    IsVisibleToVolunteers = true,
+                    CreatedAtUtc = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc)
+                }
+            });
+        repo.Setup(r => r.GetAvailableVolunteersAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                Volunteer(1, "Ada", skills: "python, programming, laptops", availability: "Tuesday evenings"),
+                Volunteer(2, "Ben", skills: "essay writing, revision", availability: "Weekends"),
+                Volunteer(3, "Cal", skills: "python", availability: "Monday"),
+                Volunteer(4, "Dee", skills: null, availability: null)
+            });
+        repo.Setup(r => r.GetActiveAssignmentCountsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, int> { [1] = 1, [3] = 4 });
+
+        var routing = await CreateService(repo, InRole("admin", RoleConstants.Admin)).GetRequestRoutingAsync();
+
+        routing.AvailableVolunteers.Should().Be(4);
+        var item = routing.Requests.Should().ContainSingle().Subject;
+        item.Suggestions.Should().HaveCount(VolunteerSupportService.SuggestionsPerRequest);
+        item.Suggestions[0].FullName.Should().Be("Ada");
+        item.Suggestions.SelectMany(match => match.Reasons)
+            .Should().NotContain(reason => reason.Contains("failing", StringComparison.OrdinalIgnoreCase));
+        item.GetType().GetProperties().Select(property => property.Name).Should().NotContain("Message");
+    }
+
+    [Fact]
+    public async Task GetRequestRoutingAsync_DoesNotScoreWhenNothingIsWaiting()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetUnroutedPendingRequestsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SupportRequest>());
+        repo.Setup(r => r.GetAvailableVolunteersAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { Volunteer(1, "Ada", "python", "Tuesday") });
+
+        var routing = await CreateService(repo, InRole("admin", RoleConstants.Admin)).GetRequestRoutingAsync();
+
+        routing.Requests.Should().BeEmpty();
+        routing.AvailableVolunteers.Should().Be(1);
+        repo.Verify(r => r.GetActiveAssignmentCountsAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetRequestRoutingAsync_RefusesANonAdministrator()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        var act = async () => await CreateService(repo, Volunteer("v-1")).GetRequestRoutingAsync();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    private static VolunteerProfile Volunteer(int id, string name, string? skills, string? availability)
+        => new()
+        {
+            Id = id,
+            UserId = $"v-{id}",
+            User = new ApplicationUser { Id = $"v-{id}", FullName = name, IsActive = true },
+            Skills = skills,
+            Availability = availability,
+            IsApproved = true,
+            IsActive = true
+        };
+
     private static Mock<ICurrentUserService> Student(string userId) => InRole(userId, RoleConstants.Student);
 
     private static Mock<ICurrentUserService> Volunteer(string userId) => InRole(userId, RoleConstants.Volunteer);

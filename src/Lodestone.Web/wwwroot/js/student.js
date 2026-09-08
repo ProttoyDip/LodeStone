@@ -162,11 +162,14 @@
                     return;
                 }
 
-                form.querySelectorAll("button[type='submit']").forEach(function (button) {
-                    button.disabled = true;
-                });
                 if (submitter) submitter.textContent = "Saving...";
                 form.setAttribute("aria-busy", "true");
+                // Disable after the browser has captured the submitter's name/value.
+                window.setTimeout(function () {
+                    form.querySelectorAll("button[type='submit']").forEach(function (button) {
+                        button.disabled = true;
+                    });
+                }, 0);
             });
         });
     }

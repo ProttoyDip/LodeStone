@@ -58,7 +58,36 @@ public class BookingService : IBookingService
             counselor.Id,
             nowUtc.AddDays(-30),
             cancellationToken);
-        var appointments = bookings.Select(booking => MapToCounselorAppointment(booking, nowUtc)).ToArray();
+
+        var awaiting = bookings
+            .Where(booking => booking.Status == BookingStatus.Confirmed && booking.ScheduledForUtc <= nowUtc)
+            .ToArray();
+        var history = awaiting.Length == 0
+            ? new Dictionary<int, (int Count, DateTime? LastUtc)>()
+            : await _bookingRepository.GetCompletedSessionHistoryAsync(
+                counselor.Id,
+                awaiting.Select(booking => booking.StudentProfileId).Distinct().ToArray(),
+                cancellationToken);
+
+        var appointments = bookings
+            .Select(booking =>
+            {
+                var dto = MapToCounselorAppointment(booking, nowUtc);
+                if (!dto.CanRecordOutcome) return dto;
+
+                var past = history.TryGetValue(booking.StudentProfileId, out var found) ? found : (Count: 0, LastUtc: null);
+                return dto with
+                {
+                    SuggestedSessionNotes = SessionReportDrafter.Draft(new SessionReportDrafter.SessionFacts(
+                        dto.StartUtc,
+                        dto.EndUtc,
+                        booking.CreatedAtUtc,
+                        !string.IsNullOrWhiteSpace(booking.Notes),
+                        past.Count,
+                        past.LastUtc))
+                };
+            })
+            .ToArray();
 
         return new CounselorAppointmentsPageDto(
             string.IsNullOrWhiteSpace(counselor.User?.FullName) ? "Counselor" : counselor.User.FullName,
@@ -113,7 +142,9 @@ public class BookingService : IBookingService
         if (string.IsNullOrWhiteSpace(counselorUserId)
             || bookingId <= 0
             || outcome is not (BookingStatus.Completed or BookingStatus.NoShow)
-            || sessionNotes?.Length > MaximumSessionNotesLength)
+            || sessionNotes?.Length > MaximumSessionNotesLength
+            // An unfilled template is not a record of anything; the counselor must write or clear it.
+            || sessionNotes?.Contains(SessionReportDrafter.Placeholder, StringComparison.Ordinal) == true)
         {
             return CounselorBookingUpdateResult.InvalidRequest;
         }

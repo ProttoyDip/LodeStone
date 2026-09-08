@@ -19,6 +19,9 @@ public interface IVolunteerSupportRepository
     Task<IReadOnlyList<VolunteerProfile>> GetAvailableVolunteersAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<VolunteerProfile>> GetVolunteersForAdminAsync(string? query, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<VolunteerAssignment>> GetAssignmentsForVolunteerAsync(int volunteerProfileId, CancellationToken cancellationToken = default);
+
+    /// <summary>Active assignments to approved, active volunteers for one student, volunteer profile and user loaded.</summary>
+    Task<IReadOnlyList<VolunteerAssignment>> GetActiveAssignmentsForStudentAsync(int studentProfileId, CancellationToken cancellationToken = default);
     Task<VolunteerAssignment?> GetAssignmentByIdAsync(int assignmentId, CancellationToken cancellationToken = default);
     Task AddVolunteerAssignmentsAsync(IEnumerable<VolunteerAssignment> assignments, CancellationToken cancellationToken = default);
 
@@ -31,6 +34,16 @@ public interface IVolunteerSupportRepository
     Task AddSupportRequestAsync(SupportRequest request, CancellationToken cancellationToken = default);
     Task AddInteractionAsync(SupportInteraction interaction, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SupportRequest>> GetRequestsForStudentAsync(string studentUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pending, unclaimed requests whose student has no active assignment to an approved, active
+    /// volunteer. No volunteer can see these, so they wait until an administrator routes them.
+    /// </summary>
+    Task<IReadOnlyList<SupportRequest>> GetUnroutedPendingRequestsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Active assignment counts per approved, active volunteer, as a workload signal.</summary>
+    Task<IReadOnlyDictionary<int, int>> GetActiveAssignmentCountsAsync(CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<string>> GetActiveCounselorUserIdsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

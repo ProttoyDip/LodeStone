@@ -9,6 +9,11 @@ public sealed class AdminVolunteerIndexViewModel
     public string? Query { get; init; }
 }
 
+public sealed class AdminVolunteerRoutingViewModel
+{
+    public required SupportRequestRoutingDto Routing { get; init; }
+}
+
 public sealed class AdminVolunteerAssignmentViewModel
 {
     public required VolunteerAssignmentOptionsDto Options { get; init; }

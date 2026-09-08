@@ -204,13 +204,21 @@
                                     }
                                 </td>
                                 <td class="queue-table__action" data-label="Action">
-                                    <form asp-action="Resolve" method="post" data-resolve-form data-queue-confirm="Mark this case as resolved? This removes it from the open queue.">
-                                        <input type="hidden" name="queueEntryId" value="@item.QueueEntryId" />
-                                        <input type="hidden" name="rowVersionToken" value="@item.RowVersionToken" />
-                                        <button class="queue-btn queue-btn--resolve" type="submit" data-resolve-button>
-                                            Mark resolved
-                                        </button>
-                                    </form>
+                                    <div class="queue-actions">
+                                        <a class="queue-btn queue-btn--explain"
+                                           asp-action="Explain"
+                                           asp-route-queueEntryId="@item.QueueEntryId"
+                                           title="Which measured behaviours moved this score, compared with a typical consenting student.">
+                                            Why this score
+                                        </a>
+                                        <form asp-action="Resolve" method="post" data-resolve-form data-queue-confirm="Mark this case as resolved? This removes it from the open queue.">
+                                            <input type="hidden" name="queueEntryId" value="@item.QueueEntryId" />
+                                            <input type="hidden" name="rowVersionToken" value="@item.RowVersionToken" />
+                                            <button class="queue-btn queue-btn--resolve" type="submit" data-resolve-button>
+                                                Mark resolved
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         }

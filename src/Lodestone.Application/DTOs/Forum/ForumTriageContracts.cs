@@ -1,4 +1,42 @@
+using Lodestone.Domain.Enums;
+
 namespace Lodestone.Application.DTOs.Forum;
+
+/// <summary>
+/// A post read from storage for triage: the post itself plus the counts the ranker needs, so
+/// the service can rank without loading comment or flag rows.
+/// </summary>
+public sealed record ForumTriageCandidate(
+    int PostId,
+    int CategoryId,
+    string AuthorUserId,
+    string Title,
+    string Body,
+    ForumPostStatus Status,
+    DateTime CreatedAtUtc,
+    int CommentCount,
+    int UnreviewedFlagCount,
+    int AuthorPostCount,
+    int AuthorMedianBodyLength);
+
+/// <summary>
+/// One entry in the moderator's queue: the post, and the triage facts that placed it there.
+/// </summary>
+public sealed record ForumModerationQueueItemDto(
+    ForumPostDto Post,
+    double Priority,
+    IReadOnlyList<string> Reasons,
+    bool WasReported,
+    bool SurfacedWithoutAFlag);
+
+/// <summary>
+/// The moderator's queue, most urgent first. Reported posts always precede posts the ranker
+/// surfaced on its own.
+/// </summary>
+public sealed record ForumModerationQueueDto(
+    IReadOnlyList<ForumModerationQueueItemDto> Items,
+    int ReportedCount,
+    int SurfacedWithoutFlagCount);
 
 /// <summary>
 /// A post as the triage ranker sees it: structure and history, never an interpretation of content.

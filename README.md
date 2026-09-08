@@ -10,15 +10,15 @@ Lodestone is not a diagnostic or clinical system. ML predictions are support-rou
 
 ## Current Status
 
-**State C: A published v3 model, explained and audited, with runtime scoring still switched off.**
+**State D: A published v3 model, explained and audited, with runtime scoring enabled per environment.**
 
 - Runtime ML is implemented as a first-class application feature through the Application-owned `IRiskModelPredictor` boundary.
 - The seventeen-feature `withdrawal-28d-v3` experiment passed its gates and published a runtime artifact to `src/Lodestone.Web/App_Data/ml`.
-- Tracked config keeps `MachineLearning:Enabled=false`. Enabling it is a product decision that has not been taken; see the operating-point note below.
-- Predictions are explainable on demand, and the model has been audited for subgroup performance. See [AI Governance](docs/AI-GOVERNANCE.md).
-- Full tests pass: 153 Unit, 64 Integration, 81 ML, 298 total.
+- Tracked config keeps `MachineLearning:Enabled=false` because the artifacts are git-ignored; each environment that holds them enables scoring explicitly (user-secrets, `MachineLearning__Enabled`, or `LODESTONE_ML_ENABLED` in Docker). The decision and its reasoning are recorded in [AI Governance §9a](docs/AI-GOVERNANCE.md).
+- Predictions are explainable on demand from the counselor queue ("Why this score"), and the model has been audited for subgroup performance at both the artifact and deployed thresholds.
+- Full tests pass: 192 Unit, 65 Integration, 81 ML, 338 total.
 
-**Known operating-point finding.** The configured `MachineLearning:QueueThreshold` of `0.83` was chosen for precision (about 1 flagged student in 6.5 is genuinely at risk). The fairness audit measured its recall: **4.5%**. At that threshold the queue is accurate and nearly empty, missing roughly 21 of every 22 at-risk student-weeks. At the artifact's own threshold recall is 69.3%, but a third of all student-weeks are flagged. This is a counselor-capacity trade-off and needs a deliberate decision before scoring is enabled.
+**Known operating-point finding.** The configured `MachineLearning:QueueThreshold` of `0.83` was chosen for precision (about 1 flagged student in 6.5 is genuinely at risk). The fairness audit measured its recall: **4.5%**. At that threshold the queue is accurate and nearly empty, missing roughly 21 of every 22 at-risk student-weeks. At the artifact's own threshold recall is 69.3%, but a third of all student-weeks are flagged. Scoring was enabled with this known; the queue is a capacity-bounded triage aid, not a safety net, and the threshold should be revisited once real counselor capacity is measured.
 
 ## Implemented Product Areas
 

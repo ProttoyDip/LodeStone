@@ -133,6 +133,51 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             Volunteers: items);
     }
 
+    /// <summary>How many suggestions to show per request. Enough to choose between, few enough to read.</summary>
+    public const int SuggestionsPerRequest = 3;
+
+    public async Task<SupportRequestRoutingDto> GetRequestRoutingAsync(
+        CancellationToken cancellationToken = default)
+    {
+        RequireUser(RoleConstants.Admin);
+
+        var requests = await _repository.GetUnroutedPendingRequestsAsync(cancellationToken);
+        var volunteers = await _repository.GetAvailableVolunteersAsync(cancellationToken);
+        if (requests.Count == 0)
+            return new SupportRequestRoutingDto(Array.Empty<SupportRequestRoutingItemDto>(), volunteers.Count);
+
+        var workload = await _repository.GetActiveAssignmentCountsAsync(cancellationToken);
+        var candidates = volunteers
+            .Select(volunteer => new VolunteerMatchCandidate(
+                volunteer.Id,
+                FirstNonEmpty(volunteer.User?.FullName, volunteer.User?.Email, "Volunteer"),
+                volunteer.Skills,
+                volunteer.Department,
+                volunteer.Bio,
+                volunteer.Availability,
+                workload.TryGetValue(volunteer.Id, out var open) ? open : 0))
+            .ToArray();
+
+        var items = requests
+            .Select(request => new SupportRequestRoutingItemDto(
+                request.Id,
+                request.StudentProfileId,
+                StudentDisplayName(request.StudentProfile),
+                request.Category,
+                request.Title,
+                request.Availability,
+                request.CreatedAtUtc,
+                VolunteerMatcher.Rank(
+                        new VolunteerMatchRequest(request.Category, request.Message, request.Availability),
+                        candidates)
+                    .Take(SuggestionsPerRequest)
+                    .ToArray()))
+            .ToList()
+            .AsReadOnly();
+
+        return new SupportRequestRoutingDto(items, volunteers.Count);
+    }
+
     public async Task<VolunteerAssignmentOptionsDto?> GetAssignmentOptionsAsync(
         int volunteerProfileId,
         CancellationToken cancellationToken = default)
@@ -401,6 +446,105 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
 
         var request = await _repository.GetRequestForStudentAsync(requestId, userId, cancellationToken);
         return request is null ? null : MapRequest(request);
+    }
+
+    public async Task<IReadOnlyList<AssignedVolunteerDto>> GetAssignedVolunteersForStudentAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var userId = RequireUser(RoleConstants.Student);
+        var student = await _repository.GetStudentProfileByUserIdAsync(userId, cancellationToken);
+        if (student is null) return Array.Empty<AssignedVolunteerDto>();
+
+        var assignments = await _repository.GetActiveAssignmentsForStudentAsync(student.Id, cancellationToken);
+        if (assignments.Count == 0) return Array.Empty<AssignedVolunteerDto>();
+
+        // One open conversation per volunteer is enough; surface it so the student resumes it.
+        var openRequests = (await _repository.GetRequestsForStudentAsync(userId, cancellationToken))
+            .Where(request => request.Status == SupportRequestStatus.Accepted && request.VolunteerProfileId.HasValue)
+            .GroupBy(request => request.VolunteerProfileId!.Value)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(request => request.CreatedAtUtc).First().Id);
+
+        return assignments
+            .Where(assignment => assignment.VolunteerProfile is not null)
+            .GroupBy(assignment => assignment.VolunteerProfileId)
+            .Select(group =>
+            {
+                var assignment = group.OrderByDescending(item => item.CreatedAtUtc).First();
+                var volunteer = assignment.VolunteerProfile!;
+                return new AssignedVolunteerDto(
+                    volunteer.Id,
+                    FirstNonEmpty(volunteer.User?.FullName, volunteer.User?.Email, "Volunteer"),
+                    string.IsNullOrWhiteSpace(assignment.Role) ? "Peer volunteer" : assignment.Role,
+                    volunteer.Department,
+                    volunteer.Skills,
+                    volunteer.Availability,
+                    volunteer.Bio,
+                    openRequests.TryGetValue(volunteer.Id, out var requestId) ? requestId : null);
+            })
+            .ToList()
+            .AsReadOnly();
+    }
+
+    public async Task<int> StartConversationWithVolunteerAsync(
+        int volunteerProfileId,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = RequireUser(RoleConstants.Student);
+        ArgumentOutOfRangeException.ThrowIfLessThan(volunteerProfileId, 1);
+
+        var student = await _repository.GetStudentProfileByUserIdAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("Student profile not found.");
+
+        var assignment = (await _repository.GetActiveAssignmentsForStudentAsync(student.Id, cancellationToken))
+            .FirstOrDefault(item => item.VolunteerProfileId == volunteerProfileId)
+            ?? throw new InvalidOperationException("That volunteer is not currently assigned to you.");
+
+        var existing = (await _repository.GetRequestsForStudentAsync(userId, cancellationToken))
+            .Where(request => request.Status == SupportRequestStatus.Accepted && request.VolunteerProfileId == volunteerProfileId)
+            .OrderByDescending(request => request.CreatedAtUtc)
+            .FirstOrDefault();
+        if (existing is not null) return existing.Id;
+
+        var nowUtc = DateTime.UtcNow;
+        // Assignments are loaded untracked; attaching the navigation would make EF insert the volunteer graph again.
+        var request = new SupportRequest
+        {
+            StudentProfileId = student.Id,
+            StudentProfile = student,
+            VolunteerProfileId = volunteerProfileId,
+            Category = SupportRequestCategory.PeerDiscussion,
+            Title = "Conversation with your volunteer",
+            Message = "Started directly from the student dashboard with an assigned volunteer.",
+            Status = SupportRequestStatus.Accepted,
+            IsVisibleToVolunteers = false,
+            CreatedAtUtc = nowUtc
+        };
+
+        await _repository.AddSupportRequestAsync(request, cancellationToken);
+        _auditLog.Record(
+            "SupportRequest.StartConversation",
+            nameof(SupportRequest),
+            details: "Student opened a direct conversation with an assigned volunteer.");
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await NotifyParticipantsAsync(request, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(assignment.VolunteerProfile?.UserId))
+        {
+            try
+            {
+                await _notificationService.CreateAsync(
+                    assignment.VolunteerProfile.UserId,
+                    NotificationType.System,
+                    "A student opened a conversation",
+                    "A student you are assigned to started a private peer-support conversation with you. Open your volunteer dashboard to reply.",
+                    cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Could not notify the volunteer about a new direct conversation.");
+            }
+        }
+        return request.Id;
     }
 
     public async Task<VolunteerDashboardDto> GetVolunteerDashboardAsync(

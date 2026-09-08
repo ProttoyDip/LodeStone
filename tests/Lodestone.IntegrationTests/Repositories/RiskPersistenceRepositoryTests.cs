@@ -370,6 +370,47 @@ public sealed class RiskPersistenceRepositoryTests
     }
 
     [Fact]
+    public async Task ExplanationContext_UsesLatestSnapshotPerConsentingStudentAndHonoursConsent()
+    {
+        await using var context = CreateContext();
+        var flagged = await SeedConsentedStudentAsync(context, "STUDENT-001");
+        var peer = await SeedConsentedStudentAsync(context, "STUDENT-002");
+        var withdrawn = await SeedConsentedStudentAsync(context, "STUDENT-003");
+        withdrawn.RiskMonitoringConsent!.IsConsented = false;
+
+        var flaggedSnapshot = Snapshot(flagged.Id, "COURSE-A", Now.UtcDateTime.AddDays(-1));
+        var peerOld = Snapshot(peer.Id, "COURSE-A", Now.UtcDateTime.AddDays(-6));
+        peerOld.ActiveDayRate = 0.1f;
+        var peerNew = Snapshot(peer.Id, "COURSE-A", Now.UtcDateTime.AddDays(-1));
+        peerNew.ActiveDayRate = 0.9f;
+        var withdrawnSnapshot = Snapshot(withdrawn.Id, "COURSE-A", Now.UtcDateTime.AddDays(-1));
+        context.RiskFeatureSnapshots.AddRange(flaggedSnapshot, peerOld, peerNew, withdrawnSnapshot);
+        await context.SaveChangesAsync();
+
+        var scoring = new RiskScoreRepository(context, new FixedTimeProvider(Now));
+        await scoring.PersistAsync(flaggedSnapshot, Descriptor, 0.80, RiskLevel.Critical, Now.UtcDateTime, null);
+        var queueId = await context.RiskQueueEntries.Select(entry => entry.Id).SingleAsync();
+
+        var repository = new CounselorQueueRepository(context, new FixedTimeProvider(Now));
+        var result = await repository.GetExplanationContextAsync(
+            queueId, Now.UtcDateTime, RiskScoringPolicy.MaximumSnapshotAgeDays);
+
+        result.Should().NotBeNull();
+        result!.QueueItem.QueueEntryId.Should().Be(queueId);
+        result.Snapshot.Id.Should().Be(flaggedSnapshot.Id);
+        // One row per consenting student, and the newer of the peer's two snapshots.
+        result.Population.Select(snapshot => snapshot.StudentProfileId)
+            .Should().BeEquivalentTo(new[] { flagged.Id, peer.Id });
+        result.Population.Single(snapshot => snapshot.StudentProfileId == peer.Id).ActiveDayRate.Should().Be(0.9f);
+
+        // Withdrawing the flagged student's own consent withdraws the explanation too.
+        flagged.RiskMonitoringConsent!.IsConsented = false;
+        await context.SaveChangesAsync();
+        (await repository.GetExplanationContextAsync(queueId, Now.UtcDateTime, RiskScoringPolicy.MaximumSnapshotAgeDays))
+            .Should().BeNull();
+    }
+
+    [Fact]
     public void Model_ContainsRequiredFilteredUniqueIndexesAndConcurrencyToken()
     {
         using var context = CreateContext();

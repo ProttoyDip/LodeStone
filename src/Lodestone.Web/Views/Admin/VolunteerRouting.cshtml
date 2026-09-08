@@ -1,0 +1,134 @@
+@using Lodestone.Application.DTOs.Volunteer
+@model AdminVolunteerRoutingViewModel
+@{
+    Layout = "~/Views/Shared/_AdminLayout.cshtml";
+    ViewData["Title"] = "Route requests";
+
+    static string CategoryLabel(Lodestone.Domain.Enums.SupportRequestCategory category) => category switch
+    {
+        Lodestone.Domain.Enums.SupportRequestCategory.AcademicGuidance => "Academic guidance",
+        Lodestone.Domain.Enums.SupportRequestCategory.CampusAdjustment => "Campus adjustment",
+        Lodestone.Domain.Enums.SupportRequestCategory.PeerDiscussion => "Peer discussion",
+        Lodestone.Domain.Enums.SupportRequestCategory.TechnicalHelp => "Technical help",
+        _ => "General support"
+    };
+}
+
+<div class="ls-admin-page">
+    <header class="ls-admin-page-header">
+        <div class="ls-admin-page-header__content">
+            <p class="ls-admin-page-header__eyebrow">Community</p>
+            <h1>Route requests</h1>
+            <p>Pending requests from students who have no active volunteer. Suggestions rank volunteers by skill overlap, availability and workload; each one says why. You choose, and nothing is assigned until you submit the assignment form.</p>
+        </div>
+        <div class="ls-admin-page-actions">
+            <a class="ls-admin-btn ls-admin-btn--secondary" href="/Admin/Volunteers">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Volunteers
+            </a>
+        </div>
+    </header>
+
+    <section aria-labelledby="routing-summary-heading">
+        <h2 class="ls-admin-sr-only" id="routing-summary-heading">Routing summary</h2>
+        <div class="ls-admin-kpi-grid ls-admin-kpi-grid--compact">
+            <article class="ls-admin-kpi ls-admin-kpi--compact ls-admin-kpi--warning">
+                <span class="ls-admin-kpi__label">Requests without a volunteer</span>
+                <strong class="ls-admin-kpi__value">@Model.Routing.Requests.Count</strong>
+            </article>
+            <article class="ls-admin-kpi ls-admin-kpi--compact ls-admin-kpi--success">
+                <span class="ls-admin-kpi__label">Volunteers available</span>
+                <strong class="ls-admin-kpi__value">@Model.Routing.AvailableVolunteers</strong>
+            </article>
+        </div>
+    </section>
+
+    <section class="ls-admin-panel" aria-labelledby="routing-heading">
+        <header class="ls-admin-panel__header">
+            <div>
+                <p class="ls-admin-panel__eyebrow">Waiting</p>
+                <h2 id="routing-heading">Requests to route</h2>
+            </div>
+        </header>
+        <div class="ls-admin-panel__body ls-admin-panel__body--flush">
+            @if (Model.Routing.Requests.Count == 0)
+            {
+                <div class="ls-admin-empty">
+                    <i class="bi bi-inbox" aria-hidden="true"></i>
+                    <h3>Every pending request can be seen by a volunteer</h3>
+                    <p>There is nothing to route right now.</p>
+                </div>
+            }
+            else if (Model.Routing.AvailableVolunteers == 0)
+            {
+                <div class="ls-admin-empty">
+                    <i class="bi bi-person-x" aria-hidden="true"></i>
+                    <h3>No approved, active volunteers</h3>
+                    <p>@Model.Routing.Requests.Count @(Model.Routing.Requests.Count == 1 ? "request is" : "requests are") waiting, but there is nobody to suggest. Approve or invite volunteers first.</p>
+                </div>
+            }
+            else
+            {
+                <div class="ls-admin-table-wrap">
+                    <table class="ls-admin-table">
+                        <caption class="ls-admin-sr-only">Pending requests with suggested volunteers</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Student</th>
+                                <th scope="col">Request</th>
+                                <th scope="col">Waiting since</th>
+                                <th scope="col">Suggested volunteers</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var request in Model.Routing.Requests)
+                            {
+                                <tr>
+                                    <th scope="row" data-label="Student">
+                                        <div class="ls-admin-table__primary">@request.StudentDisplayName</div>
+                                    </th>
+                                    <td data-label="Request">
+                                        <span class="ls-admin-badge ls-admin-badge--neutral">@CategoryLabel(request.Category)</span>
+                                        @if (!string.IsNullOrWhiteSpace(request.Availability))
+                                        {
+                                            <div class="ls-admin-table__secondary">Available: @request.Availability</div>
+                                        }
+                                    </td>
+                                    <td data-label="Waiting since">
+                                        <time datetime="@request.CreatedAtUtc.ToString("O")">@request.CreatedAtUtc.ToString("dd MMM yyyy")</time>
+                                    </td>
+                                    <td data-label="Suggested volunteers">
+                                        <ol class="ls-admin-suggestions" aria-label="Suggested volunteers for @request.StudentDisplayName">
+                                            @foreach (var match in request.Suggestions)
+                                            {
+                                                <li class="ls-admin-suggestion">
+                                                    <div class="ls-admin-suggestion__head">
+                                                        <strong>@match.FullName</strong>
+                                                        @if (match.IsWeak)
+                                                        {
+                                                            <span class="ls-admin-badge ls-admin-badge--warning">Little in common</span>
+                                                        }
+                                                        <a class="ls-admin-btn ls-admin-btn--secondary ls-admin-btn--sm"
+                                                           href="/Admin/Volunteers/@match.VolunteerProfileId/assign?studentProfileId=@request.StudentProfileId">
+                                                            Review and assign
+                                                        </a>
+                                                    </div>
+                                                    <ul class="ls-admin-suggestion__reasons">
+                                                        @foreach (var reason in match.Reasons)
+                                                        {
+                                                            <li>@reason</li>
+                                                        }
+                                                    </ul>
+                                                </li>
+                                            }
+                                        </ol>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </section>
+</div>
