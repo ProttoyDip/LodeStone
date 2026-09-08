@@ -22,6 +22,9 @@ public sealed record StudentHomeViewModel(
     /// <summary>Volunteers an administrator has assigned to this student. Empty when none.</summary>
     public IReadOnlyList<AssignedVolunteerDto> AssignedVolunteers { get; init; } = Array.Empty<AssignedVolunteerDto>();
 
+    /// <summary>What monitoring holds about this student, in student-safe terms. Null if it could not be loaded.</summary>
+    public StudentMonitoringSummaryDto? MonitoringSummary { get; init; }
+
     public bool IsRiskMonitoringEnabled => MonitoringConsent?.IsConsented == true;
 
     public DateTime? ConsentChangedAtUtc => IsRiskMonitoringEnabled

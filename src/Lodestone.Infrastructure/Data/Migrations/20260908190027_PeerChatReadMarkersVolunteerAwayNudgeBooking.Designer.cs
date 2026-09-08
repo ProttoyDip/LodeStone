@@ -4,6 +4,7 @@ using Lodestone.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Lodestone.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260908190027_PeerChatReadMarkersVolunteerAwayNudgeBooking")]
+    partial class PeerChatReadMarkersVolunteerAwayNudgeBooking
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -989,13 +992,6 @@ namespace Lodestone.Infrastructure.Data.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("Resolution")
-                        .HasColumnType("int");
-
-                    b.Property<string>("ResolutionNote")
-                        .HasMaxLength(300)
-                        .HasColumnType("nvarchar(300)");
-
                     b.Property<DateTime?>("ResolvedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -1423,17 +1419,6 @@ namespace Lodestone.Infrastructure.Data.Migrations
 
                     b.Property<DateTime?>("EscalatedAtUtc")
                         .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("EscalationHandledAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("EscalationHandledByUserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("EscalationHandledNote")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
 
                     b.Property<bool>("IsVisibleToVolunteers")
                         .HasColumnType("bit");

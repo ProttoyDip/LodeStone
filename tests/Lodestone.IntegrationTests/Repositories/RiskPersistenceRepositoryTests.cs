@@ -346,11 +346,11 @@ public sealed class RiskPersistenceRepositoryTests
         {
             var repository = new CounselorQueueRepository(invalidContext, new FixedTimeProvider(Now));
             var queueId = await invalidContext.RiskQueueEntries.Select(entry => entry.Id).SingleAsync();
-            (await repository.ResolveAsync(queueId, "counselor", null)).Should()
+            (await repository.ResolveAsync(queueId, "counselor", null, RiskCaseResolution.Contacted, null)).Should()
                 .Be(RiskQueueResolutionOutcome.ConcurrencyConflict);
-            (await repository.ResolveAsync(queueId, "counselor", "not-base64")).Should()
+            (await repository.ResolveAsync(queueId, "counselor", "not-base64", RiskCaseResolution.Contacted, null)).Should()
                 .Be(RiskQueueResolutionOutcome.ConcurrencyConflict);
-            (await repository.ResolveAsync(queueId, "counselor", Convert.ToBase64String(new byte[] { 0 }))).Should()
+            (await repository.ResolveAsync(queueId, "counselor", Convert.ToBase64String(new byte[] { 0 }), RiskCaseResolution.Contacted, null)).Should()
                 .Be(RiskQueueResolutionOutcome.ConcurrencyConflict);
         }
 
@@ -361,10 +361,15 @@ public sealed class RiskPersistenceRepositoryTests
             var outcome = await repository.ResolveAsync(
                 queue.Id,
                 "counselor",
-                Convert.ToBase64String(queue.RowVersion));
+                Convert.ToBase64String(queue.RowVersion),
+                RiskCaseResolution.Contacted,
+                "Spoke on the phone");
 
             outcome.Should().Be(RiskQueueResolutionOutcome.Resolved);
-            (await validContext.RiskQueueEntries.SingleAsync()).IsResolved.Should().BeTrue();
+            var resolved = await validContext.RiskQueueEntries.SingleAsync();
+            resolved.IsResolved.Should().BeTrue();
+            resolved.Resolution.Should().Be(RiskCaseResolution.Contacted);
+            resolved.ResolutionNote.Should().Be("Spoke on the phone");
             (await validContext.AuditLogs.CountAsync(log => log.Action == "RiskQueue.Resolved")).Should().Be(1);
         }
     }

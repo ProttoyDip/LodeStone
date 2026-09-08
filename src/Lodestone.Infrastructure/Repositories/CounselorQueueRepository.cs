@@ -2,6 +2,7 @@ using System.Data;
 using Lodestone.Application.DTOs.Risk;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Entities;
+using Lodestone.Domain.Enums;
 using Lodestone.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -143,6 +144,8 @@ public sealed class CounselorQueueRepository : ICounselorQueueRepository
         int queueEntryId,
         string resolvedByUserId,
         string? rowVersionToken,
+        RiskCaseResolution resolution,
+        string? resolutionNote,
         CancellationToken cancellationToken = default)
     {
         if (queueEntryId <= 0) throw new ArgumentOutOfRangeException(nameof(queueEntryId));
@@ -190,6 +193,8 @@ public sealed class CounselorQueueRepository : ICounselorQueueRepository
             entry.IsResolved = true;
             entry.ResolvedByUserId = actor;
             entry.ResolvedAtUtc = nowUtc;
+            entry.Resolution = resolution;
+            entry.ResolutionNote = resolutionNote;
             entry.ModifiedAtUtc = nowUtc;
             entry.ModifiedBy = actor;
             await _context.SaveChangesAsync(cancellationToken);
@@ -200,7 +205,7 @@ public sealed class CounselorQueueRepository : ICounselorQueueRepository
                 Action = "RiskQueue.Resolved",
                 EntityName = nameof(RiskQueueEntry),
                 EntityId = entry.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                Details = "A counselor resolved a behavioral risk case.",
+                Details = $"A counselor resolved a behavioral risk case as {resolution}.",
                 TimestampUtc = nowUtc
             });
             await _context.SaveChangesAsync(cancellationToken);

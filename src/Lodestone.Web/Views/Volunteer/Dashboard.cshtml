@@ -46,6 +46,58 @@
     }
     else
     {
+        @if (Model.Dashboard.Profile is { } profile)
+        {
+            <div class="card mb-4 @(profile.IsAway ? "border-warning" : "")">
+                <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div>
+                        <h5 class="card-title mb-1">
+                            <i class="bi @(profile.IsAway ? "bi-moon" : "bi-check-circle")"></i>
+                            @(profile.IsAway ? "You are away" : "You are available")
+                        </h5>
+                        <p class="card-text text-muted mb-0">
+                            @if (profile.IsAway)
+                            {
+                                <text>Not suggested for new requests until <strong>@profile.AwayUntilUtc?.ToLocalTime().ToString("MMM d, yyyy")</strong>. Existing conversations stay open.</text>
+                                @if (!string.IsNullOrWhiteSpace(profile.AwayMessage))
+                                {
+                                    <br /><em>"@profile.AwayMessage"</em>
+                                }
+                            }
+                            else
+                            {
+                                <text>Administrators can route new requests to you. Mark yourself away during exams or breaks.</text>
+                            }
+                        </p>
+                    </div>
+                    @if (profile.IsAway)
+                    {
+                        <form method="post" asp-controller="Volunteer" asp-action="SetAvailability">
+                            <input type="hidden" name="isAway" value="false" />
+                            <button type="submit" class="btn btn-outline-success">I'm back</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form method="post" asp-controller="Volunteer" asp-action="SetAvailability" class="d-flex flex-wrap align-items-end gap-2">
+                            <input type="hidden" name="isAway" value="true" />
+                            <div>
+                                <label for="awayUntil" class="form-label small mb-0">Away until</label>
+                                <input type="date" id="awayUntil" name="awayUntil" class="form-control form-control-sm"
+                                       min="@DateTime.UtcNow.AddDays(1).ToString("yyyy-MM-dd")" max="@DateTime.UtcNow.AddDays(90).ToString("yyyy-MM-dd")"
+                                       value="@DateTime.UtcNow.AddDays(7).ToString("yyyy-MM-dd")" />
+                            </div>
+                            <div>
+                                <label for="awayMessage" class="form-label small mb-0">Note (optional)</label>
+                                <input type="text" id="awayMessage" name="awayMessage" maxlength="200" class="form-control form-control-sm" placeholder="e.g. Exams this week" />
+                            </div>
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">Mark me away</button>
+                        </form>
+                    }
+                </div>
+            </div>
+        }
+
         <div class="row mb-4">
             <div class="col-md-6">
                 <div class="card">
@@ -123,6 +175,10 @@
                                                 <p class="mb-1 text-muted">
                                                     <span class="badge bg-success">Accepted</span>
                                                     <span class="badge bg-secondary">@request.Category</span>
+                                                    @if (request.UnreadForVolunteer > 0)
+                                                    {
+                                                        <span class="badge bg-danger">@request.UnreadForVolunteer new</span>
+                                                    }
                                                 </p>
                                                 <small class="text-muted">Started @request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
                                             </div>
@@ -161,6 +217,17 @@
                                                 <p class="mb-1 text-muted">
                                                     <span class="badge @statusBadgeClass">@request.Status</span>
                                                     <span class="badge bg-secondary">@request.Category</span>
+                                                    @if (request.Status == SupportRequestStatus.Escalated)
+                                                    {
+                                                        if (request.EscalationHandledAtUtc is DateTime handled)
+                                                        {
+                                                            <span class="badge bg-success" title="A counselor took this on @handled.ToString("MMM d")">Counselor following up</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge bg-light text-dark border">Awaiting counselor</span>
+                                                        }
+                                                    }
                                                 </p>
                                                 <small class="text-muted">@date.ToString("MMM d, yyyy")</small>
                                             </div>

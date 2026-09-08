@@ -26,6 +26,10 @@ public interface IRiskScoringRepository
         CancellationToken cancellationToken = default);
     Task CompleteRunAsync(RiskScoringRun run, CancellationToken cancellationToken = default);
     Task<RiskScoringRun?> GetLatestRunAsync(CancellationToken cancellationToken = default);
+    Task<RiskScoringRun?> GetRunByKeyAsync(Guid runKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Every score a run produced, with whether it opened or escalated a counselor case. Audited per export.</summary>
+    Task<IReadOnlyList<RiskScoringRunRowDto>> GetRunRowsAsync(int runId, string actorUserId, CancellationToken cancellationToken = default);
     Task<RiskScorePersistenceResult> PersistAsync(
         RiskFeatureSnapshot snapshot,
         RiskModelDescriptor descriptor,

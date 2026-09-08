@@ -64,11 +64,22 @@ public class StudentController : Controller
             _logger.LogWarning(ex, "Could not load assigned peer volunteers.");
         }
 
+        Application.DTOs.Risk.StudentMonitoringSummaryDto? monitoringSummary = null;
+        try
+        {
+            monitoringSummary = await _consentService.GetSummaryAsync(_currentUserService.UserId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not load the monitoring transparency summary.");
+        }
+
         return View(new StudentHomeViewModel(dashboard, consent, verification)
         {
             NudgeState = nudges,
             NudgeLoadError = nudgeLoadError,
-            AssignedVolunteers = volunteers
+            AssignedVolunteers = volunteers,
+            MonitoringSummary = monitoringSummary
         });
     }
 

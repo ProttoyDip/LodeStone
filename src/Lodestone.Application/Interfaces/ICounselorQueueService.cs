@@ -9,5 +9,7 @@ public interface ICounselorQueueService
         int queueEntryId,
         string resolvedByUserId,
         string? rowVersionToken,
+        Lodestone.Domain.Enums.RiskCaseResolution resolution,
+        string? resolutionNote,
         CancellationToken cancellationToken = default);
 }

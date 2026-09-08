@@ -513,7 +513,18 @@
             </div>
             @if (latestRun is not null)
             {
-                <span class="risk-ops-badge risk-ops-badge--@RunTone(latestRun.Status)">@FriendlyRunStatus(latestRun.Status)</span>
+                <div class="risk-ops-run-actions">
+                    <span class="risk-ops-badge risk-ops-badge--@RunTone(latestRun.Status)">@FriendlyRunStatus(latestRun.Status)</span>
+                    @if (latestRun.ScoredCount > 0)
+                    {
+                        <a class="ls-admin-btn ls-admin-btn--secondary"
+                           asp-action="ExportRiskScoringRun"
+                           asp-route-runKey="@latestRun.RunKey"
+                           title="Per-snapshot results for this run. Contains student numbers; the download is audited.">
+                            <i class="bi bi-download" aria-hidden="true"></i> Export results (CSV)
+                        </a>
+                    }
+                </div>
             }
         </header>
         <div class="ls-admin-panel__body">

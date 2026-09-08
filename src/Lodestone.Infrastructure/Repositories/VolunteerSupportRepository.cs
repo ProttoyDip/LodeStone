@@ -239,6 +239,19 @@ public sealed class VolunteerSupportRepository : GenericRepository<SupportReques
         CancellationToken cancellationToken = default)
         => Context.SupportInteractions.AddAsync(interaction, cancellationToken).AsTask();
 
+    public Task MarkConversationReadAsync(
+        int requestId,
+        bool asVolunteer,
+        DateTime readAtUtc,
+        CancellationToken cancellationToken = default)
+        => asVolunteer
+            ? Context.SupportRequests
+                .Where(request => request.Id == requestId)
+                .ExecuteUpdateAsync(set => set.SetProperty(request => request.VolunteerLastReadAtUtc, readAtUtc), cancellationToken)
+            : Context.SupportRequests
+                .Where(request => request.Id == requestId)
+                .ExecuteUpdateAsync(set => set.SetProperty(request => request.StudentLastReadAtUtc, readAtUtc), cancellationToken);
+
     public async Task<IReadOnlyList<SupportRequest>> GetRequestsForStudentAsync(
         string studentUserId,
         CancellationToken cancellationToken = default)
@@ -246,6 +259,14 @@ public sealed class VolunteerSupportRepository : GenericRepository<SupportReques
             .Where(request => request.StudentProfile != null &&
                               request.StudentProfile.UserId == studentUserId)
             .OrderByDescending(request => request.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<SupportRequest>> GetUnhandledEscalationsAsync(
+        CancellationToken cancellationToken = default)
+        => await RequestQuery(tracking: false)
+            .Where(request => request.Status == SupportRequestStatus.Escalated &&
+                              request.EscalationHandledAtUtc == null)
+            .OrderBy(request => request.EscalatedAtUtc)
             .ToListAsync(cancellationToken);
 
     public async Task<IReadOnlyList<SupportRequest>> GetUnroutedPendingRequestsAsync(

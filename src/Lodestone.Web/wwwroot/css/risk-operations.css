@@ -227,6 +227,8 @@
     font-size: .69rem;
 }
 
+.risk-ops-run-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+
 .risk-ops-badge {
     display: inline-flex;
     min-height: 1.55rem;

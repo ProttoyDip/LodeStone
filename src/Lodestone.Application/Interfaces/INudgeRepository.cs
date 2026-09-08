@@ -9,6 +9,9 @@ public interface INudgeRepository
     Task<IReadOnlyList<Nudge>> GetActiveForStudentAsync(int studentProfileId, DateTime nowUtc, CancellationToken cancellationToken = default);
     Task<Nudge?> GetActionableAsync(int studentProfileId, int nudgeId, DateTime nowUtc, CancellationToken cancellationToken = default);
     Task<bool> HasManualNudgeSinceAsync(int studentProfileId, DateTime sinceUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>Manual prompts created by one counselor account since a date, newest first.</summary>
+    Task<IReadOnlyList<Nudge>> GetManualByCounselorAsync(string counselorUserId, DateTime sinceUtc, CancellationToken cancellationToken = default);
     Task<CounselorBooking?> GetOwnedBookingAsync(int counselorProfileId, int bookingId, CancellationToken cancellationToken = default);
     Task AddAsync(Nudge nudge, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Nudge>> GetPendingDispatchAsync(DateTime nowUtc, CancellationToken cancellationToken = default);

@@ -127,6 +127,46 @@ public class RiskSummaryTemplate : IDocument
                     "NET CHANGE",
                     (_data.CasesOpened - _data.CasesResolved).ToString("+#;-#;0"),
                     _data.CasesOpened > _data.CasesResolved ? ReportTheme.High : ReportTheme.Low);
+                row.ConstantItem(8);
+                row.RelativeItem().Metric(
+                    "MEDIAN TIME TO RESOLVE",
+                    _data.MedianHoursToResolve is double hours
+                        ? hours < 48 ? $"{hours:F0} h" : $"{hours / 24:F1} d"
+                        : "—");
+            });
+
+            if (_data.ResolutionBreakdown.Count == 0) return;
+
+            column.Item().PaddingTop(10).Text("How resolved cases were closed").FontSize(9).SemiBold();
+            column.Item().PaddingTop(4).Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn(3);
+                    columns.ConstantColumn(60);
+                    columns.RelativeColumn(4);
+                });
+
+                table.Header(header =>
+                {
+                    header.Cell().HeaderCell().Text("Outcome").FontSize(8).SemiBold();
+                    header.Cell().HeaderCell().AlignRight().Text("Cases").FontSize(8).SemiBold();
+                    header.Cell().HeaderCell().Text("Share").FontSize(8).SemiBold();
+                });
+
+                foreach (var item in _data.ResolutionBreakdown)
+                {
+                    var share = _data.CasesResolved == 0 ? 0 : item.Count / (double)_data.CasesResolved;
+                    table.Cell().BodyCell().Text(item.Resolution);
+                    table.Cell().BodyCell().AlignRight().Text(item.Count.ToString("N0"));
+                    table.Cell().BodyCell().Row(row =>
+                    {
+                        var width = (float)Math.Max(share * 160, share > 0 ? 1.5 : 0);
+                        if (width > 0) row.ConstantItem(width).Height(8).Background(ReportTheme.Low);
+                        row.RelativeItem().PaddingLeft(6).AlignMiddle()
+                            .Text(share.ToString("P1")).FontSize(8).FontColor(ReportTheme.Muted);
+                    });
+                }
             });
         });
     }

@@ -134,6 +134,62 @@ public sealed class RiskMonitoringConsentRepository : IRiskMonitoringConsentRepo
         }
     }
 
+    public async Task<StudentMonitoringSummaryDto?> GetSummaryByUserIdAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var profileId = await _context.StudentProfiles
+            .AsNoTracking()
+            .Where(profile => profile.UserId == userId)
+            .Select(profile => (int?)profile.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (profileId is null) return null;
+
+        var snapshots = _context.RiskFeatureSnapshots.AsNoTracking().Where(snapshot => snapshot.StudentProfileId == profileId);
+        var snapshotStats = await snapshots
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                Count = group.Count(),
+                Courses = group.Select(snapshot => snapshot.CourseKey).Distinct().Count(),
+                Earliest = group.Min(snapshot => (DateTime?)snapshot.WindowEndUtc),
+                Latest = group.Max(snapshot => (DateTime?)snapshot.WindowEndUtc),
+                Imports = group.Select(snapshot => snapshot.SourceFileSha256).Distinct().Count(),
+                LastImported = group.Max(snapshot => (DateTime?)snapshot.CreatedAtUtc)
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        var scores = _context.RiskScores.AsNoTracking().Where(score => score.StudentProfileId == profileId);
+        var scoreStats = await scores
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                Snapshots = group.Select(score => score.RiskFeatureSnapshotId).Distinct().Count(),
+                LastScored = group.Max(score => (DateTime?)score.ScoredAtUtc)
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        var queue = await _context.RiskQueueEntries
+            .AsNoTracking()
+            .Where(entry => entry.StudentProfileId == profileId)
+            .OrderByDescending(entry => entry.LastSignaledAtUtc)
+            .Select(entry => new { entry.LastSignaledAtUtc, entry.IsResolved })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new StudentMonitoringSummaryDto(
+            snapshotStats?.Count ?? 0,
+            snapshotStats?.Courses ?? 0,
+            snapshotStats?.Earliest,
+            snapshotStats?.Latest,
+            snapshotStats?.Imports ?? 0,
+            snapshotStats?.LastImported,
+            scoreStats?.Snapshots ?? 0,
+            scoreStats?.LastScored,
+            queue is not null,
+            queue?.LastSignaledAtUtc,
+            queue?.IsResolved ?? false);
+    }
+
     private async Task RemoveDerivedRiskDataAsync(int studentProfileId, CancellationToken cancellationToken)
     {
         var queueEntries = await _context.RiskQueueEntries

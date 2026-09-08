@@ -619,6 +619,15 @@
 .student-volunteer__button--primary { background: var(--forest); border-color: var(--forest); color: var(--paper); }
 .student-volunteer__button--primary:hover { background: #314a3b; color: var(--paper); }
 .student-volunteer__button:focus-visible { outline: 3px solid var(--clay); outline-offset: 3px; }
+.student-volunteer__unread {
+    margin-left: .5rem;
+    padding: .1rem .5rem;
+    border-radius: 99px;
+    background: var(--clay);
+    color: var(--paper);
+    font-family: var(--font-mono);
+    font-size: .68rem;
+}
 
 @media (max-width: 720px) {
     .student-volunteer { grid-template-columns: 1fr; }
@@ -928,6 +937,37 @@
     border-radius: var(--r-md);
     background: rgba(244, 238, 227, .05);
 }
+
+/* Transparency panel: what monitoring currently holds about the student. */
+.privacy-transparency {
+    margin-top: 1.25rem;
+    padding: 1.1rem;
+    border: 1px dashed var(--line-on-dark);
+    border-radius: var(--r-md);
+    background: rgba(244, 238, 227, .03);
+}
+.privacy-transparency__heading h3 { margin: 0; color: var(--paper-on-dark); font: 400 1.15rem var(--font-display); }
+.privacy-transparency__heading p,
+.privacy-transparency__empty,
+.privacy-transparency__footnote { margin: .45rem 0 0; color: var(--muted-on-dark); font-size: .85rem; line-height: 1.55; }
+.privacy-transparency__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: .9rem 1.25rem;
+    margin: 1rem 0 0;
+}
+.privacy-transparency__facts dt {
+    color: var(--muted-on-dark);
+    font-family: var(--font-mono);
+    font-size: .66rem;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
+.privacy-transparency__facts dd { margin: .25rem 0 0; display: grid; gap: .15rem; }
+.privacy-transparency__facts dd strong { color: var(--paper-on-dark); font-size: 1.05rem; }
+.privacy-transparency__facts dd span { color: var(--muted-on-dark); font-size: .8rem; line-height: 1.5; }
+.privacy-transparency__footnote { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--line-on-dark); }
 
 .privacy-monitoring__heading {
     grid-column: 1 / -1;

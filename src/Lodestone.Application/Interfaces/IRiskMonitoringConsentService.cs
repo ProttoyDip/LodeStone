@@ -9,4 +9,6 @@ public interface IRiskMonitoringConsentService
         string userId,
         bool isConsented,
         CancellationToken cancellationToken = default);
+
+    Task<StudentMonitoringSummaryDto?> GetSummaryAsync(string userId, CancellationToken cancellationToken = default);
 }

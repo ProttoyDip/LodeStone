@@ -12,6 +12,11 @@ public interface INudgeService
         int bookingId,
         ManualNudgeTemplate template,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Outcomes of prompts this counselor sent, keyed by booking. Only status, never journal or risk data.</summary>
+    Task<IReadOnlyDictionary<int, IReadOnlyList<ManualNudgeOutcomeDto>>> GetManualOutcomesForCounselorAsync(
+        string counselorUserId,
+        CancellationToken cancellationToken = default);
     Task GenerateNudgesForAtRiskStudentsAsync(CancellationToken cancellationToken = default);
     Task DispatchPendingNudgesAsync(CancellationToken cancellationToken = default);
 }

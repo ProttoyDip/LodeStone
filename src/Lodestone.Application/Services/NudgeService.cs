@@ -182,6 +182,7 @@ public sealed class NudgeService : INudgeService
             AvailableAtUtc = nowUtc,
             ExpiresAtUtc = nowUtc.AddDays(NudgeLifetimeDays),
             IsManualCounselorNudge = true,
+            CounselorBookingId = booking.Id,
             CreatedAtUtc = nowUtc,
             CreatedBy = counselorUserId.Trim()
         };
@@ -193,6 +194,35 @@ public sealed class NudgeService : INudgeService
             $"Created for a student connected to booking {bookingId}; template {template}.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return NudgeMutationResult.Updated;
+    }
+
+    public async Task<IReadOnlyDictionary<int, IReadOnlyList<ManualNudgeOutcomeDto>>> GetManualOutcomesForCounselorAsync(
+        string counselorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(counselorUserId))
+            return new Dictionary<int, IReadOnlyList<ManualNudgeOutcomeDto>>();
+
+        // Long enough to cover the prompt lifetime plus a snooze; older outcomes are not useful.
+        var sinceUtc = UtcNow.AddDays(-(NudgeLifetimeDays + 14));
+        var nudges = await _nudges.GetManualByCounselorAsync(counselorUserId.Trim(), sinceUtc, cancellationToken);
+
+        return nudges
+            .Where(nudge => nudge.CounselorBookingId.HasValue)
+            .GroupBy(nudge => nudge.CounselorBookingId!.Value)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ManualNudgeOutcomeDto>)group
+                    .Select(nudge => new ManualNudgeOutcomeDto(
+                        nudge.Id,
+                        nudge.CounselorBookingId!.Value,
+                        nudge.Message,
+                        nudge.Status,
+                        nudge.SentAtUtc ?? nudge.CreatedAtUtc,
+                        nudge.AcknowledgedAtUtc ?? nudge.DismissedAtUtc ?? (nudge.Status == NudgeStatus.Snoozed ? nudge.ModifiedAtUtc : null),
+                        nudge.ExpiresAtUtc))
+                    .ToList()
+                    .AsReadOnly());
     }
 
     /// <summary>

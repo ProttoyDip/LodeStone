@@ -21,6 +21,7 @@ public class CounselorController : Controller
     private readonly IRiskSnapshotAdministrationService _riskSnapshotAdministrationService;
     private readonly IRiskModelStatusProvider _riskModelStatusProvider;
     private readonly IAdminDashboardService _adminDashboardService;
+    private readonly IVolunteerSupportService _volunteerSupportService;
     private readonly ILogger<CounselorController> _logger;
 
     public CounselorController(
@@ -32,11 +33,12 @@ public class CounselorController : Controller
         IRiskSnapshotAdministrationService riskSnapshotAdministrationService,
         IRiskModelStatusProvider riskModelStatusProvider,
         IAdminDashboardService adminDashboardService,
+        IVolunteerSupportService volunteerSupportService,
         ILogger<CounselorController> logger)
         => (_queueService, _explanationService, _bookingService, _nudgeService, _currentUserService, _riskSnapshotAdministrationService,
-                _riskModelStatusProvider, _adminDashboardService, _logger) =
+                _riskModelStatusProvider, _adminDashboardService, _volunteerSupportService, _logger) =
             (queueService, explanationService, bookingService, nudgeService, currentUserService, riskSnapshotAdministrationService,
-                riskModelStatusProvider, adminDashboardService, logger);
+                riskModelStatusProvider, adminDashboardService, volunteerSupportService, logger);
 
     /// <summary>
     /// The support queue is reachable from both the counselor navigation and the admin sidebar.
@@ -76,11 +78,26 @@ public class CounselorController : Controller
         {
             var items = await _queueService.GetQueueAsync(cancellationToken);
             var riskRuntime = await GetRiskRuntimeStatusAsync(cancellationToken);
+
+            IReadOnlyList<Application.DTOs.Volunteer.PeerEscalationDto> escalations = Array.Empty<Application.DTOs.Volunteer.PeerEscalationDto>();
+            string? escalationsError = null;
+            try
+            {
+                escalations = await _volunteerSupportService.GetOpenEscalationsAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not load peer-support escalations for the queue.");
+                escalationsError = "Peer-support escalations could not be loaded right now.";
+            }
+
             return View(new CounselorQueueViewModel
             {
                 Items = items,
                 RefreshedAtUtc = DateTime.UtcNow,
-                RiskRuntime = riskRuntime
+                RiskRuntime = riskRuntime,
+                PeerEscalations = escalations,
+                PeerEscalationsError = escalationsError
             });
         }
         catch (Exception ex)
@@ -128,9 +145,16 @@ public class CounselorController : Controller
     public async Task<IActionResult> Resolve(
         int queueEntryId,
         string? rowVersionToken,
+        RiskCaseResolution resolution,
+        string? resolutionNote,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_currentUserService.UserId)) return Challenge();
+        if (!ModelState.IsValid || resolution == RiskCaseResolution.Unspecified)
+        {
+            TempData["QueueError"] = "Choose how the case was resolved before closing it.";
+            return RedirectToAction(nameof(Queue));
+        }
 
         try
         {
@@ -138,6 +162,8 @@ public class CounselorController : Controller
                 queueEntryId,
                 _currentUserService.UserId,
                 rowVersionToken,
+                resolution,
+                resolutionNote,
                 cancellationToken);
 
             switch (outcome)
@@ -157,10 +183,45 @@ public class CounselorController : Controller
                     break;
             }
         }
+        catch (ArgumentException ex)
+        {
+            TempData["QueueError"] = ex.Message;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Could not resolve queue entry {QueueEntryId}.", queueEntryId);
             TempData["QueueError"] = "The case could not be resolved. Please try again.";
+        }
+
+        return RedirectToAction(nameof(Queue));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AcknowledgeEscalation(int requestId, string? note, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUserService.UserId)) return Challenge();
+
+        try
+        {
+            var handled = await _volunteerSupportService.AcknowledgeEscalationAsync(requestId, note, cancellationToken);
+            if (handled)
+                TempData["QueueSuccess"] = "You have taken the peer-support escalation. The student has been told a counselor is following up.";
+            else
+                TempData["QueueConflict"] = "That escalation is no longer open. Another counselor may have taken it.";
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (ArgumentException ex)
+        {
+            TempData["QueueError"] = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not acknowledge peer-support escalation {RequestId}.", requestId);
+            TempData["QueueError"] = "The escalation could not be updated. Please try again.";
         }
 
         return RedirectToAction(nameof(Queue));
@@ -200,13 +261,25 @@ public class CounselorController : Controller
             var page = await _bookingService.GetCounselorAppointmentsAsync(
                 _currentUserService.UserId,
                 cancellationToken);
-            return page is null
-                ? Forbid()
-                : View(new CounselorAppointmentsViewModel
-                {
-                    Page = page,
-                    RefreshedAtUtc = DateTime.UtcNow
-                });
+            if (page is null) return Forbid();
+
+            IReadOnlyDictionary<int, IReadOnlyList<Application.DTOs.Nudges.ManualNudgeOutcomeDto>> outcomes
+                = new Dictionary<int, IReadOnlyList<Application.DTOs.Nudges.ManualNudgeOutcomeDto>>();
+            try
+            {
+                outcomes = await _nudgeService.GetManualOutcomesForCounselorAsync(_currentUserService.UserId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not load manual prompt outcomes; appointments still shown.");
+            }
+
+            return View(new CounselorAppointmentsViewModel
+            {
+                Page = page,
+                RefreshedAtUtc = DateTime.UtcNow,
+                NudgeOutcomes = outcomes
+            });
         }
         catch (Exception ex)
         {

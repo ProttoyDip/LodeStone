@@ -21,4 +21,7 @@ public class Nudge : AuditableEntity
     public DateTime? SnoozedUntilUtc { get; set; }
     /// <summary>True only for a counselor-created neutral support prompt.</summary>
     public bool IsManualCounselorNudge { get; set; }
+
+    /// <summary>The appointment a manual prompt was sent from, so the counselor can see its outcome.</summary>
+    public int? CounselorBookingId { get; set; }
 }

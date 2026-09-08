@@ -109,6 +109,10 @@
                                                 <p class="mb-1">
                                                     <span class="badge bg-success">Assigned</span>
                                                     <span class="badge bg-secondary">@request.Category</span>
+                                                    @if (request.UnreadForStudent > 0)
+                                                    {
+                                                        <span class="badge bg-danger">@request.UnreadForStudent new</span>
+                                                    }
                                                 </p>
                                                 <small class="text-muted">Started @request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
                                             </div>
@@ -180,7 +184,13 @@
                                     </div>
                                     @if (volunteer.OpenConversationRequestId is int openRequestId)
                                     {
-                                        <a class="btn btn-sm btn-primary" href="@Url.Action("ViewRequest", "StudentSupport", new { requestId = openRequestId })">Continue</a>
+                                        <a class="btn btn-sm btn-primary" href="@Url.Action("ViewRequest", "StudentSupport", new { requestId = openRequestId })">
+                                            Continue
+                                            @if (volunteer.UnreadMessages > 0)
+                                            {
+                                                <span class="badge bg-light text-dark ms-1">@volunteer.UnreadMessages</span>
+                                            }
+                                        </a>
                                     }
                                     else
                                     {

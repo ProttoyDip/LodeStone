@@ -9,6 +9,7 @@ public class RiskQueueEntryConfiguration : IEntityTypeConfiguration<RiskQueueEnt
     public void Configure(EntityTypeBuilder<RiskQueueEntry> builder)
     {
         builder.Property(entry => entry.ResolvedByUserId).HasMaxLength(450);
+        builder.Property(entry => entry.ResolutionNote).HasMaxLength(300);
         builder.Property(entry => entry.RowVersion).IsRowVersion().IsConcurrencyToken();
 
         builder.HasIndex(entry => entry.StudentProfileId)

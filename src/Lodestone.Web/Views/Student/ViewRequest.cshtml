@@ -176,8 +176,19 @@
                         </h5>
                     </div>
                     <div class="card-body">
-                        <p>Your request has been escalated to our professional counseling team because it may need specialized support.</p>
-                        <p>A counselor will be in touch with you soon.</p>
+                        @if (Model.EscalationHandledAtUtc is DateTime handled)
+                        {
+                            <p><strong>A counselor has picked this up</strong> (@handled.ToString("MMM d, yyyy")) and will contact you directly.</p>
+                        }
+                        else
+                        {
+                            <p>Your volunteer asked the counseling team to follow up, because they felt you deserve more support than peer conversation can offer.</p>
+                            <p>A counselor will review it soon. You don't have to wait for them, though:</p>
+                        }
+                        <a class="btn btn-primary w-100 mb-2" href="@Url.Action("Create", "Booking", new { peerRequestId = Model.Id })">
+                            <i class="bi bi-calendar-plus"></i>
+                            Book a counselor session
+                        </a>
                         <p class="mb-0 small text-muted">If you need immediate help, call 988 or visit the student center.</p>
                     </div>
                 </div>

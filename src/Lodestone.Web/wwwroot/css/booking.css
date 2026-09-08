@@ -35,6 +35,14 @@
 .manual-nudge__content{display:grid;gap:12px;padding-top:10px}.manual-nudge__content p{margin:0;color:var(--muted);font-size:.85rem;line-height:1.55}
 .manual-nudge__actions{display:flex;flex-wrap:wrap;gap:8px}.manual-nudge__actions .booking-btn{min-height:38px;padding:8px 11px;font-size:.78rem}
 .manual-nudge__actions .booking-btn:disabled{cursor:wait;opacity:.65}
+.manual-nudge__outcomes{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.manual-nudge__outcomes li{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper-2,#f6f1e8)}
+.manual-nudge__outcome-badge{padding:2px 8px;border-radius:99px;font:600 .66rem var(--font-mono);letter-spacing:.04em;text-transform:uppercase;border:1px solid transparent}
+.manual-nudge__outcome-badge--success{background:rgba(60,86,71,.14);color:#294332;border-color:rgba(60,86,71,.35)}
+.manual-nudge__outcome-badge--warning{background:rgba(188,81,56,.12);color:#7e321f;border-color:rgba(188,81,56,.35)}
+.manual-nudge__outcome-badge--neutral{background:rgba(0,0,0,.05);color:var(--muted);border-color:var(--line)}
+.manual-nudge__outcome-text{font-size:.82rem;color:var(--ink,#1e1a16);line-height:1.45}
+.manual-nudge__outcomes small{grid-column:2;color:var(--muted);font-size:.72rem}
 .booking-item .manual-nudge{grid-column:1 / -1;margin-top:-8px}.booking-history .manual-nudge{grid-column:1 / -1;margin-top:0}
 .counselor-outcome-form{display:grid;align-content:start;gap:10px}
 .counselor-outcome-form textarea{resize:vertical}

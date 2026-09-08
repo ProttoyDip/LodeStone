@@ -80,6 +80,33 @@ public sealed class ReportDataProvider : IReportDataProvider
             .AsNoTracking()
             .CountAsync(entry => !entry.IsResolved, cancellationToken);
 
+        var resolvedInPeriod = await _context.RiskQueueEntries
+            .AsNoTracking()
+            .Where(entry => entry.ResolvedAtUtc != null &&
+                            entry.ResolvedAtUtc >= fromUtc &&
+                            entry.ResolvedAtUtc < toUtc)
+            .Select(entry => new { entry.Resolution, entry.CreatedAtUtc, entry.ResolvedAtUtc })
+            .ToListAsync(cancellationToken);
+
+        var resolutionBreakdown = Enum.GetValues<RiskCaseResolution>()
+            .Select(resolution => new RiskResolutionCountDto(
+                ResolutionLabel(resolution),
+                resolvedInPeriod.Count(entry => entry.Resolution == resolution)))
+            .Where(item => item.Count > 0)
+            .ToArray();
+
+        double? medianHours = null;
+        if (resolvedInPeriod.Count > 0)
+        {
+            var hours = resolvedInPeriod
+                .Select(entry => (entry.ResolvedAtUtc!.Value - entry.CreatedAtUtc).TotalHours)
+                .OrderBy(value => value)
+                .ToArray();
+            medianHours = hours.Length % 2 == 1
+                ? hours[hours.Length / 2]
+                : (hours[hours.Length / 2 - 1] + hours[hours.Length / 2]) / 2d;
+        }
+
         return new RiskSummaryReportData(
             FromUtc: fromUtc,
             ToUtc: toUtc,
@@ -103,8 +130,22 @@ public sealed class ReportDataProvider : IReportDataProvider
                     row.Level.ToString(),
                     row.Probability,
                     row.ScoredAtUtc))
-                .ToArray());
+                .ToArray())
+        {
+            ResolutionBreakdown = resolutionBreakdown,
+            MedianHoursToResolve = medianHours
+        };
     }
+
+    private static string ResolutionLabel(RiskCaseResolution resolution) => resolution switch
+    {
+        RiskCaseResolution.Contacted => "Contacted the student",
+        RiskCaseResolution.NoConcern => "Reviewed, no concern",
+        RiskCaseResolution.Referred => "Referred elsewhere",
+        RiskCaseResolution.StudentDeclined => "Student declined support",
+        RiskCaseResolution.Unreachable => "Could not reach student",
+        _ => "No outcome recorded"
+    };
 
     public async Task<StudentEngagementReportData?> GetStudentEngagementAsync(
         int studentProfileId,

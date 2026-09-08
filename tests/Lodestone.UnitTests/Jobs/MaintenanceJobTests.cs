@@ -148,7 +148,7 @@ public sealed class MaintenanceJobTests
 
         queue.Verify(
             service => service.TryResolveAsync(
-                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<RiskCaseResolution>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

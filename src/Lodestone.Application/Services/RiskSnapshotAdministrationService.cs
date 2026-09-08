@@ -67,6 +67,22 @@ public sealed class RiskSnapshotAdministrationService : IRiskSnapshotAdministrat
             cancellationToken);
     }
 
+    public async Task<RiskScoringRunExportDto?> GetRunExportAsync(
+        Guid runKey,
+        string actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (runKey == Guid.Empty) return null;
+        if (string.IsNullOrWhiteSpace(actorUserId))
+            throw new ArgumentException("An actor is required to export scoring results.", nameof(actorUserId));
+
+        var run = await _scoringRepository.GetRunByKeyAsync(runKey, cancellationToken);
+        if (run is null) return null;
+
+        var rows = await _scoringRepository.GetRunRowsAsync(run.Id, actorUserId.Trim(), cancellationToken);
+        return new RiskScoringRunExportDto(RiskScoringService.ToRunDto(run), rows);
+    }
+
     public async Task<RiskSnapshotImportResultDto> ImportCsvAsync(
         Stream csv,
         string fileName,

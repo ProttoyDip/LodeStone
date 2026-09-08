@@ -22,6 +22,9 @@ public class RiskQueueEntry : AuditableEntity
     public bool IsResolved { get; set; }
     public string? ResolvedByUserId { get; set; }
     public DateTime? ResolvedAtUtc { get; set; }
+    public RiskCaseResolution Resolution { get; set; } = RiskCaseResolution.Unspecified;
+    /// <summary>Short counselor note about the outcome. Never the content of any conversation.</summary>
+    public string? ResolutionNote { get; set; }
 
     public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
