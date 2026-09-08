@@ -1,3 +1,4 @@
+using Lodestone.Application.DTOs.Forum;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Entities;
 using Lodestone.Domain.Enums;
@@ -48,6 +49,74 @@ public class ForumRepository : GenericRepository<ForumPost>, IForumRepository
             .OrderBy(post => post.CreatedAtUtc)
             .AsNoTracking()
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<ForumTriageCandidate>> GetTriageCandidatesAsync(
+        DateTime sinceUtc, CancellationToken cancellationToken = default)
+    {
+        var posts = await Set
+            .Where(post => !post.IsDeleted
+                        && post.Status != ForumPostStatus.Removed
+                        && (post.Flags.Any(flag => !flag.IsReviewed)
+                            || (post.CreatedAtUtc >= sinceUtc && post.LastModeratorReviewAtUtc == null)))
+            .Select(post => new
+            {
+                post.Id,
+                post.ForumCategoryId,
+                post.AuthorUserId,
+                post.Title,
+                post.Body,
+                post.Status,
+                post.CreatedAtUtc,
+                CommentCount = post.Comments.Count(comment =>
+                    !comment.IsDeleted && comment.Status == ForumPostStatus.Published),
+                UnreviewedFlagCount = post.Flags.Count(flag => !flag.IsReviewed)
+            })
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        if (posts.Count == 0) return Array.Empty<ForumTriageCandidate>();
+
+        var authorIds = posts.Select(post => post.AuthorUserId).Distinct().ToList();
+        var authorHistory = await Set
+            .Where(post => !post.IsDeleted && authorIds.Contains(post.AuthorUserId))
+            .Select(post => new { post.AuthorUserId, Length = post.Body.Length })
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        var authorStats = authorHistory
+            .GroupBy(entry => entry.AuthorUserId)
+            .ToDictionary(
+                group => group.Key,
+                group => (Count: group.Count(), Median: Median(group.Select(entry => entry.Length))));
+
+        return posts
+            .Select(post =>
+            {
+                var stats = authorStats.TryGetValue(post.AuthorUserId, out var found) ? found : (Count: 1, Median: 0);
+                return new ForumTriageCandidate(
+                    post.Id,
+                    post.ForumCategoryId,
+                    post.AuthorUserId,
+                    post.Title,
+                    post.Body,
+                    post.Status,
+                    post.CreatedAtUtc,
+                    post.CommentCount,
+                    post.UnreviewedFlagCount,
+                    stats.Count,
+                    stats.Median);
+            })
+            .ToList()
+            .AsReadOnly();
+    }
+
+    private static int Median(IEnumerable<int> values)
+    {
+        var sorted = values.OrderBy(value => value).ToArray();
+        if (sorted.Length == 0) return 0;
+        var middle = sorted.Length / 2;
+        return sorted.Length % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+    }
 
     public async Task AddPostAsync(ForumPost post, CancellationToken cancellationToken = default)
         => await Set.AddAsync(post, cancellationToken);

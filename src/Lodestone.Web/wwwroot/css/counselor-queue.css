@@ -343,6 +343,29 @@
 .queue-btn:disabled { cursor: wait; opacity: .62; }
 .queue-btn--resolve { border-color: rgba(60, 86, 71, .4); color: var(--forest); }
 .queue-btn--secondary { margin-top: .9rem; }
+.queue-btn--explain { color: var(--ink-soft); text-decoration: none; }
+.queue-actions { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
+.queue-actions form { margin: 0; }
+
+/* Explanation page */
+.explain-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; margin: 0; padding: 1.15rem 1.25rem; border-bottom: 1px solid var(--line); }
+.explain-summary dt { color: var(--muted); font-family: var(--font-mono); font-size: .65rem; letter-spacing: .08em; text-transform: uppercase; }
+.explain-summary dd { margin: .3rem 0 0; color: var(--ink); font-size: .95rem; }
+.explain-note { padding: 1rem 1.25rem; color: var(--ink-soft); font-size: .9rem; line-height: 1.6; border-bottom: 1px solid var(--line); }
+.explain-note--boundary { background: var(--paper-2); }
+.explain-factors { width: 100%; border-collapse: collapse; }
+.explain-factors th, .explain-factors td { padding: .8rem 1.25rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.explain-factors thead th { color: var(--muted); background: var(--paper-2); font-family: var(--font-mono); font-size: .65rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.explain-factors td.is-numeric { font-family: var(--font-mono); font-size: .78rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.explain-bar { position: relative; display: block; height: .45rem; min-width: 6rem; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+.explain-bar > span { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+.explain-bar--raising > span { right: 50%; background: var(--clay); }
+.explain-bar--protective > span { left: 50%; background: var(--forest); }
+.explain-bar::after { content: ""; position: absolute; top: -.2rem; bottom: -.2rem; left: 50%; width: 1px; background: var(--line-strong); }
+.explain-direction { font-family: var(--font-mono); font-size: .65rem; letter-spacing: .06em; text-transform: uppercase; }
+.explain-direction--raising { color: var(--clay-deep); }
+.explain-direction--protective { color: var(--forest); }
+.explain-caveat { padding: 1rem 1.25rem; color: var(--muted); font-size: .82rem; line-height: 1.6; }
 
 .queue-state {
     display: grid;

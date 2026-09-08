@@ -151,12 +151,27 @@ public sealed class AdminVolunteerController : Controller
         return RedirectToAction(nameof(Index), new { q });
     }
 
+    [HttpGet("routing")]
+    public async Task<IActionResult> Routing(CancellationToken cancellationToken)
+    {
+        await SetAdminShellAsync("Route requests", cancellationToken);
+        var routing = await _volunteerSupportService.GetRequestRoutingAsync(cancellationToken);
+        return View("~/Views/Admin/VolunteerRouting.cshtml", new AdminVolunteerRoutingViewModel { Routing = routing });
+    }
+
     [HttpGet("{volunteerProfileId:int}/assign")]
-    public async Task<IActionResult> Assign(int volunteerProfileId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Assign(int volunteerProfileId, int? studentProfileId, CancellationToken cancellationToken)
     {
         if (volunteerProfileId <= 0) return NotFound();
         var options = await _volunteerSupportService.GetAssignmentOptionsAsync(volunteerProfileId, cancellationToken);
         if (options is null) return NotFound();
+
+        // A suggestion from the routing page pre-selects the student; the administrator still
+        // reviews and submits the form.
+        var preselected = studentProfileId is > 0
+                          && options.Students.Any(student => student.StudentProfileId == studentProfileId.Value)
+            ? studentProfileId
+            : null;
 
         await SetAdminShellAsync("Assign volunteer", cancellationToken);
         return View("~/Views/Admin/AssignVolunteer.cshtml", new AdminVolunteerAssignmentViewModel
@@ -166,6 +181,7 @@ public sealed class AdminVolunteerController : Controller
             {
                 VolunteerProfileId = volunteerProfileId,
                 Target = VolunteerAssignmentTarget.Student,
+                StudentProfileId = preselected,
                 Role = "Peer Mentor"
             }
         });

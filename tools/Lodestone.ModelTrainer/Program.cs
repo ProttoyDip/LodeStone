@@ -3,6 +3,8 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Lodestone.Application.DTOs.Risk;
+using Lodestone.ML.Evaluation;
+using Lodestone.ML.Models;
 using Lodestone.ML.Training;
 using Microsoft.ML;
 
@@ -36,6 +38,7 @@ internal static class Program
                 "experiment-v2" => Train(options, schemaVersion: RiskFeatureSchema.Withdrawal28DayV2),
                 "experiment-v3" => Train(options, schemaVersion: RiskFeatureSchema.Withdrawal28DayV3),
                 "analyze" => Analyze(options),
+                "audit-fairness" => AuditFairness(options),
                 _ => throw new CliUsageException($"Unknown command '{args[0]}'.")
             };
         }
@@ -275,6 +278,135 @@ internal static class Program
         return 0;
     }
 
+    /// <summary>
+    /// Reports how the published model performs across student subgroups it was never trained on.
+    /// Loads the existing artifact, scores a held-out partition, and joins each row to the OULAD
+    /// demographics. It trains nothing, changes no artifact, and writes only its own report.
+    /// </summary>
+    private static int AuditFairness(IReadOnlyDictionary<string, string> options)
+    {
+        EnsureOnly(
+            options,
+            "data", "model", "metadata", "report", "partition", "queue-threshold",
+            "min-group-rows", "min-group-positives", "expect-student-hash");
+        var dataPath = Path.GetFullPath(Get(options, "data", Path.Combine("src", "Lodestone.ML", "Data", "OULAD")));
+        var modelPath = Path.GetFullPath(Get(
+            options,
+            "model",
+            Path.Combine("src", "Lodestone.Web", "App_Data", "ml", "risk-model.zip")));
+        var metadataPath = Path.GetFullPath(Get(
+            options,
+            "metadata",
+            Path.ChangeExtension(modelPath, ".metadata.json")));
+        var partition = Get(options, "partition", "test").Trim().ToLowerInvariant();
+        var reportPath = Path.GetFullPath(Get(
+            options,
+            "report",
+            Path.Combine("src", "Lodestone.ML", "Reports", $"fairness-audit.{partition}.json")));
+
+        if (!File.Exists(modelPath))
+            throw new CliUsageException($"No published model at '{modelPath}'. Train one first.");
+        if (!File.Exists(metadataPath))
+            throw new CliUsageException($"No model metadata at '{metadataPath}'.");
+
+        var metadata = JsonSerializer.Deserialize<RiskModelMetadata>(File.ReadAllText(metadataPath), JsonOptions)
+            ?? throw new InvalidDataException("The model metadata file is empty.");
+
+        var operatingPoints = new List<(string Name, double Threshold)>();
+        if (options.TryGetValue("queue-threshold", out var queueValue))
+        {
+            if (!double.TryParse(queueValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var queueThreshold)
+                || !double.IsFinite(queueThreshold) || queueThreshold is < 0 or > 1)
+            {
+                throw new CliUsageException("--queue-threshold must be a probability between 0 and 1.");
+            }
+
+            operatingPoints.Add(("queue-threshold", queueThreshold));
+        }
+
+        var mlContext = new MLContext(seed: metadata.Seed);
+        var auditor = new FairnessAuditor(mlContext, new OuladDataLoader(mlContext));
+        var report = auditor.Run(
+            new FairnessAuditOptions
+            {
+                DataDirectory = dataPath,
+                ModelPath = modelPath,
+                MetadataPath = metadataPath,
+                Partition = partition,
+                AdditionalOperatingPoints = operatingPoints,
+                MinimumGroupRows = ParseInt(options, "min-group-rows", 500),
+                MinimumGroupPositives = ParseInt(options, "min-group-positives", 20),
+                ExpectedPartitionStudentHash = options.GetValueOrDefault("expect-student-hash")
+            },
+            metadata);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+        File.WriteAllText(reportPath, JsonSerializer.Serialize(report, JsonOptions));
+        PrintFairnessSummary(report);
+        Console.WriteLine($"{Environment.NewLine}Report: {reportPath}");
+        return 0;
+    }
+
+    private static void PrintFairnessSummary(FairnessAuditReport report)
+    {
+        Console.WriteLine($"Model: {report.ModelVersion} ({report.FeatureSchemaVersion})");
+        Console.WriteLine(
+            $"Partition: {report.Partition} - {report.RowCount:N0} student-weeks, " +
+            $"{report.StudentCount:N0} students, base rate {report.BaseRate:P2}");
+        Console.WriteLine(
+            $"Partition student hash: {report.PartitionStudentHash}"
+            + (report.PartitionHashVerified ? " (verified against the training report)" : " (unverified)"));
+        if (report.UnmatchedRowCount > 0)
+            Console.WriteLine($"Unmatched rows excluded: {report.UnmatchedRowCount:N0}");
+        Console.WriteLine();
+        Console.WriteLine(
+            "The model never sees these attributes. Gaps below are disparate impact, not disparate");
+        Console.WriteLine(
+            "treatment: they show where a behaviour-only signal works less well for some students.");
+
+        foreach (var point in report.OperatingPoints)
+        {
+            Console.WriteLine();
+            Console.WriteLine(
+                $"=== {point.Name} (threshold {point.Threshold:F4}) - overall recall " +
+                $"{point.Overall.Recall:P1}, precision {point.Overall.Precision:P1}, " +
+                $"flagging {point.Overall.SelectionRate:P2} of student-weeks ===");
+
+            foreach (var attribute in point.Attributes)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"  {attribute.Attribute}");
+                foreach (var group in attribute.Groups)
+                {
+                    Console.WriteLine(
+                        $"    {group.Group,-30} n={group.RowCount,7:N0} ({group.StudentCount,5:N0} students)  " +
+                        $"base={group.BaseRate,7:P2}  recall={group.Recall,6:P1}  " +
+                        $"precision={group.Precision,6:P1}  FPR={group.FalsePositiveRate,7:P2}  " +
+                        $"AUC={FormatOptional(group.AreaUnderRocCurve)}");
+                }
+
+                foreach (var suppressed in attribute.SuppressedGroups)
+                {
+                    Console.WriteLine(
+                        $"    {suppressed.Group,-30} n={suppressed.RowCount,7:N0} " +
+                        $"({suppressed.StudentCount,5:N0} students)  suppressed: {suppressed.Reason}");
+                }
+
+                if (attribute.Groups.Count >= 2)
+                {
+                    Console.WriteLine(
+                        $"    -> recall gap {attribute.RecallGap:P1}, precision gap {attribute.PrecisionGap:P1}, " +
+                        $"FPR gap {attribute.FalsePositiveRateGap:P2}, " +
+                        $"selection-rate ratio {attribute.SelectionRateRatio:F3} " +
+                        $"(base-rate gap {attribute.BaseRateGap:P2})");
+                }
+            }
+        }
+    }
+
+    private static string FormatOptional(double? value)
+        => value is null ? "   n/a" : value.Value.ToString("F3", CultureInfo.InvariantCulture);
+
     private static IReadOnlyDictionary<string, string> ParseOptions(string[] args)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -433,6 +565,18 @@ internal static class Program
             measurement rather than assumption. Trains on the training split and scores validation
             only; it publishes nothing and never touches the locked test partition:
               dotnet run --project tools/Lodestone.ModelTrainer -- analyze [--data <directory>] [--schema <feature-schema>] [--report <json>] [--seed <number>] [--candidate <id>] [--weighting <balanced|square-root-balanced|unweighted>] [--target <within-28-days|eventual-withdrawal|eventual-non-completion>]
+
+            Audit the published model for subgroup performance across gender, age band, deprivation
+            band, disability, prior education and region. These attributes are never trained on and
+            never stored by the application; the audit reads them from OULAD only, to measure
+            disparate impact. It trains nothing and publishes nothing:
+              dotnet run --project tools/Lodestone.ModelTrainer -- audit-fairness [--data <directory>] [--model <risk-model.zip>] [--metadata <json>] [--report <json>] [--partition <test|validation>] [--queue-threshold <probability>] [--min-group-rows <n>] [--min-group-positives <n>] [--expect-student-hash <sha256>]
+
+            Pass --queue-threshold with the deployed MachineLearning:QueueThreshold value: fairness
+            is a property of an operating point, and the threshold that decides whose name reaches a
+            counselor matters more than the one stamped into the artifact. Pass --expect-student-hash
+            with testStudentHash from the training report to prove the audit scored the same
+            partition the published metrics came from.
 
             Every training command uses the fixed AUC >= .70, recall >= .70, precision >= .30 gate. The
             locked test partition is never evaluated if validation fails. Exit code 3 leaves any

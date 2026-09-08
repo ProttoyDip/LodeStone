@@ -14,6 +14,7 @@ namespace Lodestone.Web.Controllers;
 public class CounselorController : Controller
 {
     private readonly ICounselorQueueService _queueService;
+    private readonly IRiskExplanationService _explanationService;
     private readonly IBookingService _bookingService;
     private readonly INudgeService _nudgeService;
     private readonly ICurrentUserService _currentUserService;
@@ -24,6 +25,7 @@ public class CounselorController : Controller
 
     public CounselorController(
         ICounselorQueueService queueService,
+        IRiskExplanationService explanationService,
         IBookingService bookingService,
         INudgeService nudgeService,
         ICurrentUserService currentUserService,
@@ -31,9 +33,9 @@ public class CounselorController : Controller
         IRiskModelStatusProvider riskModelStatusProvider,
         IAdminDashboardService adminDashboardService,
         ILogger<CounselorController> logger)
-        => (_queueService, _bookingService, _nudgeService, _currentUserService, _riskSnapshotAdministrationService,
+        => (_queueService, _explanationService, _bookingService, _nudgeService, _currentUserService, _riskSnapshotAdministrationService,
                 _riskModelStatusProvider, _adminDashboardService, _logger) =
-            (queueService, bookingService, nudgeService, currentUserService, riskSnapshotAdministrationService,
+            (queueService, explanationService, bookingService, nudgeService, currentUserService, riskSnapshotAdministrationService,
                 riskModelStatusProvider, adminDashboardService, logger);
 
     /// <summary>
@@ -89,6 +91,35 @@ public class CounselorController : Controller
                 LoadFailed = true,
                 ErrorMessage = "The support queue could not be loaded. No cases were changed."
             });
+        }
+    }
+
+    /// <summary>
+    /// Why one open case carries its score. Computed on request and never stored (see
+    /// AI-GOVERNANCE.md section 5); the log line below deliberately records only the entry id.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> Explain(int queueEntryId, CancellationToken cancellationToken)
+    {
+        if (queueEntryId <= 0) return NotFound();
+        await SetAdminShellIfAdminAsync(cancellationToken);
+
+        try
+        {
+            var explanation = await _explanationService.ExplainQueueEntryAsync(queueEntryId, cancellationToken);
+            if (explanation is null)
+            {
+                TempData["QueueConflict"] = "That case is no longer open, or the student has withdrawn monitoring consent.";
+                return RedirectToAction(nameof(Queue));
+            }
+
+            return View(explanation);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not explain queue entry {QueueEntryId}.", queueEntryId);
+            TempData["QueueError"] = "The score breakdown could not be produced. The case is unchanged.";
+            return RedirectToAction(nameof(Queue));
         }
     }
 
@@ -221,7 +252,7 @@ public class CounselorController : Controller
                     TempData["AppointmentConflict"] = "That appointment is not ready for this update. The list has been refreshed.";
                     break;
                 default:
-                    TempData["AppointmentError"] = "Choose a valid outcome and keep session notes within 2,000 characters.";
+                    TempData["AppointmentError"] = "Choose a valid outcome, keep session notes within 2,000 characters, and fill in or remove every [ ] from the note outline.";
                     break;
             }
         }

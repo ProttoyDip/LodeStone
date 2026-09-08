@@ -227,3 +227,16 @@ textarea.form-control { resize: vertical; min-height: 5rem; }
     .btn { transition: none; }
     .btn:hover { transform: none; }
 }
+
+/* Screen-reader-only status line announcing live updates. */
+.visually-hidden-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}

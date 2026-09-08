@@ -564,6 +564,68 @@
 }
 
 /* ==========================================================================
+   Assigned peer volunteers
+   ========================================================================== */
+.student-volunteer-list { display: grid; gap: .9rem; }
+
+.student-volunteer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1.25rem;
+    align-items: start;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--card);
+    box-shadow: var(--shadow-print);
+}
+
+.student-volunteer__copy h3 { margin: .6rem 0 0; font: 400 1.35rem var(--font-display); color: var(--ink); }
+.student-volunteer__copy > p { margin: .55rem 0 0; color: var(--ink-soft); line-height: 1.6; }
+
+.student-volunteer__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: .6rem 1.25rem;
+    margin: .85rem 0 0;
+}
+.student-volunteer__facts dt {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+.student-volunteer__facts dd { margin: .15rem 0 0; color: var(--ink-soft); font-size: .88rem; line-height: 1.5; }
+
+.student-volunteer__actions { display: grid; gap: .5rem; justify-items: stretch; min-width: 12rem; }
+.student-volunteer__actions form { display: contents; }
+
+.student-volunteer__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: .55rem .9rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    background: var(--paper);
+    color: var(--ink);
+    font: 600 .8rem var(--font-body);
+    text-decoration: none;
+    cursor: pointer;
+}
+.student-volunteer__button--primary { background: var(--forest); border-color: var(--forest); color: var(--paper); }
+.student-volunteer__button--primary:hover { background: #314a3b; color: var(--paper); }
+.student-volunteer__button:focus-visible { outline: 3px solid var(--clay); outline-offset: 3px; }
+
+@media (max-width: 720px) {
+    .student-volunteer { grid-template-columns: 1fr; }
+    .student-volunteer__actions { min-width: 0; }
+}
+
+/* ==========================================================================
    Optional counselor prompts (separate from ML monitoring)
    ========================================================================== */
 .student-nudges__layout {

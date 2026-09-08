@@ -1164,6 +1164,40 @@ body.ls-admin {
     color: var(--admin-text-muted);
 }
 
+.ls-admin-suggestions {
+    display: grid;
+    gap: .6rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: 18rem;
+}
+
+.ls-admin-suggestion {
+    padding: .55rem .7rem;
+    border: 1px solid var(--admin-border, rgba(0,0,0,.08));
+    border-radius: .5rem;
+}
+
+.ls-admin-suggestion__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+
+.ls-admin-suggestion__head a {
+    margin-left: auto;
+}
+
+.ls-admin-suggestion__reasons {
+    margin: .4rem 0 0;
+    padding-left: 1.1rem;
+    color: var(--admin-text-muted);
+    font-size: .78rem;
+    line-height: 1.4;
+}
+
 .ls-admin-pager {
     display: flex;
     flex-wrap: wrap;

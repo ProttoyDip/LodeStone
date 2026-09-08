@@ -81,6 +81,14 @@ public static class DependencyInjection
         services.AddSingleton<IRiskModelPredictor>(loadResult.Predictor);
         services.AddSingleton<IRiskModelStatusProvider>(new RiskModelStatusProvider(loadResult.Status));
 
+        // Explanation is only offered when a real model is loaded. Without one there is nothing to
+        // explain, and Application's null explainer stays in place so the queue still renders.
+        if (loadResult.Status.IsAvailable)
+        {
+            services.AddSingleton<IRiskModelExplainer>(
+                provider => new AblationRiskExplainer(provider.GetRequiredService<IRiskModelPredictor>()));
+        }
+
         return services;
     }
 

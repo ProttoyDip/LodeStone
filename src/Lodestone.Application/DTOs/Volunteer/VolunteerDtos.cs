@@ -104,6 +104,20 @@ public record CreateSupportRequestDto(
     string? Message,
     string? Availability);
 
+/// <summary>
+/// A volunteer currently assigned to the signed-in student, as the student sees them. Only
+/// what the volunteer chose to share on their profile is included.
+/// </summary>
+public record AssignedVolunteerDto(
+    int VolunteerProfileId,
+    string DisplayName,
+    string Role,
+    string? Department,
+    string? Skills,
+    string? Availability,
+    string? Bio,
+    int? OpenConversationRequestId);
+
 public record SupportRequestDto(
     int Id,
     SupportRequestCategory Category,

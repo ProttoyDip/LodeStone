@@ -13,7 +13,9 @@
         .ToList();
 }
 
-<div class="ls-admin-page">
+<div class="ls-admin-page" data-volunteer-roster-live>
+    <p class="ls-admin-visually-hidden" role="status" aria-live="polite" data-volunteer-roster-status></p>
+
     <header class="ls-admin-page-header">
         <div class="ls-admin-page-header__content">
             <p class="ls-admin-page-header__eyebrow">Community</p>
@@ -24,6 +26,10 @@
             <a class="ls-admin-btn ls-admin-btn--secondary" asp-controller="Admin" asp-action="Index">
                 <i class="bi bi-arrow-left" aria-hidden="true"></i>
                 Dashboard
+            </a>
+            <a class="ls-admin-btn ls-admin-btn--secondary" href="/Admin/Volunteers/routing">
+                <i class="bi bi-signpost-split" aria-hidden="true"></i>
+                Route requests
             </a>
             <a class="ls-admin-btn ls-admin-btn--primary" asp-action="Invite">
                 <i class="bi bi-envelope-plus" aria-hidden="true"></i>

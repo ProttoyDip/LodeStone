@@ -279,6 +279,68 @@
         </div>
     </section>
 
+    @if (Model.AssignedVolunteers.Count > 0)
+    {
+        <section class="student-shell student-section student-volunteers" id="peer-volunteers" aria-labelledby="peer-volunteers-title">
+            <div class="student-section__head student-reveal">
+                <span class="section-index">03b</span>
+                <div>
+                    <h2 id="peer-volunteers-title">Your peer volunteers</h2>
+                    <p>Trained students assigned to you. Start a private conversation whenever you like; only you and that volunteer can read it.</p>
+                </div>
+            </div>
+
+            <div class="student-volunteer-list student-reveal" role="list">
+                @foreach (var volunteer in Model.AssignedVolunteers)
+                {
+                    <article class="student-volunteer" role="listitem">
+                        <div class="student-volunteer__copy">
+                            <span class="student-badge student-badge--green">@volunteer.Role</span>
+                            <h3>@volunteer.DisplayName</h3>
+                            @if (!string.IsNullOrWhiteSpace(volunteer.Bio))
+                            {
+                                <p>@volunteer.Bio</p>
+                            }
+                            <dl class="student-volunteer__facts">
+                                @if (!string.IsNullOrWhiteSpace(volunteer.Department))
+                                {
+                                    <div><dt>Department</dt><dd>@volunteer.Department</dd></div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(volunteer.Skills))
+                                {
+                                    <div><dt>Can help with</dt><dd>@volunteer.Skills</dd></div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(volunteer.Availability))
+                                {
+                                    <div><dt>Usually available</dt><dd>@volunteer.Availability</dd></div>
+                                }
+                            </dl>
+                        </div>
+                        <div class="student-volunteer__actions">
+                            @if (volunteer.OpenConversationRequestId is int openRequestId)
+                            {
+                                <a class="student-volunteer__button student-volunteer__button--primary"
+                                   asp-controller="StudentSupport" asp-action="ViewRequest" asp-route-requestId="@openRequestId">
+                                    Continue conversation
+                                </a>
+                            }
+                            else
+                            {
+                                <form asp-controller="StudentSupport" asp-action="StartConversation" method="post">
+                                    <input type="hidden" name="volunteerProfileId" value="@volunteer.VolunteerProfileId" />
+                                    <button class="student-volunteer__button student-volunteer__button--primary" type="submit">
+                                        Start a conversation
+                                    </button>
+                                </form>
+                            }
+                            <a class="student-volunteer__button" asp-controller="StudentSupport" asp-action="MyRequests">All requests</a>
+                        </div>
+                    </article>
+                }
+            </div>
+        </section>
+    }
+
     <section class="student-shell student-section student-nudges" id="support-prompts" aria-labelledby="support-prompts-title">
         <div class="student-section__head student-reveal">
             <span class="section-index">04</span>

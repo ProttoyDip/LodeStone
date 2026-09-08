@@ -30,8 +30,8 @@ public sealed class MaintenanceJobTests
     public async Task ForumModeration_notifies_moderators_when_flagged_posts_are_waiting()
     {
         var forum = new Mock<IForumService>();
-        forum.Setup(service => service.GetFlaggedPostsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { FlaggedPost(1), FlaggedPost(2) });
+        forum.Setup(service => service.GetModerationQueueAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Queue(FlaggedPost(1), FlaggedPost(2)));
         var notifications = new Mock<INotificationService>();
 
         await new ForumModerationJob(forum.Object, notifications.Object, NullLogger<ForumModerationJob>.Instance)
@@ -50,8 +50,8 @@ public sealed class MaintenanceJobTests
     public async Task ForumModeration_stays_silent_when_there_is_no_backlog()
     {
         var forum = new Mock<IForumService>();
-        forum.Setup(service => service.GetFlaggedPostsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Array.Empty<ForumPostDto>());
+        forum.Setup(service => service.GetModerationQueueAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Queue());
         var notifications = new Mock<INotificationService>(MockBehavior.Strict);
 
         await new ForumModerationJob(forum.Object, notifications.Object, NullLogger<ForumModerationJob>.Instance)
@@ -64,8 +64,8 @@ public sealed class MaintenanceJobTests
     public async Task ForumModeration_never_reviews_posts_itself()
     {
         var forum = new Mock<IForumService>();
-        forum.Setup(service => service.GetFlaggedPostsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { FlaggedPost(1) });
+        forum.Setup(service => service.GetModerationQueueAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Queue(FlaggedPost(1)));
 
         await new ForumModerationJob(
                 forum.Object,
@@ -252,6 +252,13 @@ public sealed class MaintenanceJobTests
 
     private static ForumPostDto FlaggedPost(int id)
         => new(id, 1, "author", "Post", "Body", ForumPostStatus.Flagged, NowUtc.AddDays(-1));
+
+    private static ForumModerationQueueDto Queue(params ForumPostDto[] reported)
+        => new(
+            reported.Select(post => new ForumModerationQueueItemDto(
+                post, 0.5, new[] { "Reported by a community member and not yet reviewed" }, true, false)).ToArray(),
+            reported.Length,
+            0);
 
     private static RiskQueueItemDto QueueItem(
         int id,

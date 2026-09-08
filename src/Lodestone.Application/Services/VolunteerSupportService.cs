@@ -20,6 +20,8 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLog;
     private readonly INotificationService _notificationService;
+    private readonly IPeerSupportNotifier _peerSupportNotifier;
+    private readonly IVolunteerRosterNotifier _volunteerRosterNotifier;
     private readonly ILogger<VolunteerSupportService> _logger;
 
     public VolunteerSupportService(
@@ -28,6 +30,8 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         IUnitOfWork unitOfWork,
         IAuditLogService auditLog,
         INotificationService notificationService,
+        IPeerSupportNotifier peerSupportNotifier,
+        IVolunteerRosterNotifier volunteerRosterNotifier,
         ILogger<VolunteerSupportService> logger)
     {
         _repository = repository;
@@ -35,6 +39,8 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         _unitOfWork = unitOfWork;
         _auditLog = auditLog;
         _notificationService = notificationService;
+        _peerSupportNotifier = peerSupportNotifier;
+        _volunteerRosterNotifier = volunteerRosterNotifier;
         _logger = logger;
     }
 
@@ -84,6 +90,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             "Volunteer profile awaiting approval",
             "An invited volunteer completed their profile and is waiting for approval.",
             cancellationToken);
+        await NotifyRosterChangedAsync(cancellationToken);
 
         return MapVolunteer(volunteer);
     }
@@ -124,6 +131,51 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             ActiveVolunteers: allVolunteers.Count(profile => GetApprovalState(profile) == VolunteerApprovalState.Approved),
             PendingRequests: allPendingRequests,
             Volunteers: items);
+    }
+
+    /// <summary>How many suggestions to show per request. Enough to choose between, few enough to read.</summary>
+    public const int SuggestionsPerRequest = 3;
+
+    public async Task<SupportRequestRoutingDto> GetRequestRoutingAsync(
+        CancellationToken cancellationToken = default)
+    {
+        RequireUser(RoleConstants.Admin);
+
+        var requests = await _repository.GetUnroutedPendingRequestsAsync(cancellationToken);
+        var volunteers = await _repository.GetAvailableVolunteersAsync(cancellationToken);
+        if (requests.Count == 0)
+            return new SupportRequestRoutingDto(Array.Empty<SupportRequestRoutingItemDto>(), volunteers.Count);
+
+        var workload = await _repository.GetActiveAssignmentCountsAsync(cancellationToken);
+        var candidates = volunteers
+            .Select(volunteer => new VolunteerMatchCandidate(
+                volunteer.Id,
+                FirstNonEmpty(volunteer.User?.FullName, volunteer.User?.Email, "Volunteer"),
+                volunteer.Skills,
+                volunteer.Department,
+                volunteer.Bio,
+                volunteer.Availability,
+                workload.TryGetValue(volunteer.Id, out var open) ? open : 0))
+            .ToArray();
+
+        var items = requests
+            .Select(request => new SupportRequestRoutingItemDto(
+                request.Id,
+                request.StudentProfileId,
+                StudentDisplayName(request.StudentProfile),
+                request.Category,
+                request.Title,
+                request.Availability,
+                request.CreatedAtUtc,
+                VolunteerMatcher.Rank(
+                        new VolunteerMatchRequest(request.Category, request.Message, request.Availability),
+                        candidates)
+                    .Take(SuggestionsPerRequest)
+                    .ToArray()))
+            .ToList()
+            .AsReadOnly();
+
+        return new SupportRequestRoutingDto(items, volunteers.Count);
     }
 
     public async Task<VolunteerAssignmentOptionsDto?> GetAssignmentOptionsAsync(
@@ -205,6 +257,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             volunteer.Id.ToString(),
             isActive ? "Volunteer support access activated." : "Volunteer support access deactivated.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyRosterChangedAsync(cancellationToken);
         return true;
     }
 
@@ -368,6 +421,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             details: "Student created a peer-support request.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        await NotifyParticipantsAsync(request, cancellationToken);
         return MapRequest(request);
     }
 
@@ -392,6 +446,105 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
 
         var request = await _repository.GetRequestForStudentAsync(requestId, userId, cancellationToken);
         return request is null ? null : MapRequest(request);
+    }
+
+    public async Task<IReadOnlyList<AssignedVolunteerDto>> GetAssignedVolunteersForStudentAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var userId = RequireUser(RoleConstants.Student);
+        var student = await _repository.GetStudentProfileByUserIdAsync(userId, cancellationToken);
+        if (student is null) return Array.Empty<AssignedVolunteerDto>();
+
+        var assignments = await _repository.GetActiveAssignmentsForStudentAsync(student.Id, cancellationToken);
+        if (assignments.Count == 0) return Array.Empty<AssignedVolunteerDto>();
+
+        // One open conversation per volunteer is enough; surface it so the student resumes it.
+        var openRequests = (await _repository.GetRequestsForStudentAsync(userId, cancellationToken))
+            .Where(request => request.Status == SupportRequestStatus.Accepted && request.VolunteerProfileId.HasValue)
+            .GroupBy(request => request.VolunteerProfileId!.Value)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(request => request.CreatedAtUtc).First().Id);
+
+        return assignments
+            .Where(assignment => assignment.VolunteerProfile is not null)
+            .GroupBy(assignment => assignment.VolunteerProfileId)
+            .Select(group =>
+            {
+                var assignment = group.OrderByDescending(item => item.CreatedAtUtc).First();
+                var volunteer = assignment.VolunteerProfile!;
+                return new AssignedVolunteerDto(
+                    volunteer.Id,
+                    FirstNonEmpty(volunteer.User?.FullName, volunteer.User?.Email, "Volunteer"),
+                    string.IsNullOrWhiteSpace(assignment.Role) ? "Peer volunteer" : assignment.Role,
+                    volunteer.Department,
+                    volunteer.Skills,
+                    volunteer.Availability,
+                    volunteer.Bio,
+                    openRequests.TryGetValue(volunteer.Id, out var requestId) ? requestId : null);
+            })
+            .ToList()
+            .AsReadOnly();
+    }
+
+    public async Task<int> StartConversationWithVolunteerAsync(
+        int volunteerProfileId,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = RequireUser(RoleConstants.Student);
+        ArgumentOutOfRangeException.ThrowIfLessThan(volunteerProfileId, 1);
+
+        var student = await _repository.GetStudentProfileByUserIdAsync(userId, cancellationToken)
+            ?? throw new InvalidOperationException("Student profile not found.");
+
+        var assignment = (await _repository.GetActiveAssignmentsForStudentAsync(student.Id, cancellationToken))
+            .FirstOrDefault(item => item.VolunteerProfileId == volunteerProfileId)
+            ?? throw new InvalidOperationException("That volunteer is not currently assigned to you.");
+
+        var existing = (await _repository.GetRequestsForStudentAsync(userId, cancellationToken))
+            .Where(request => request.Status == SupportRequestStatus.Accepted && request.VolunteerProfileId == volunteerProfileId)
+            .OrderByDescending(request => request.CreatedAtUtc)
+            .FirstOrDefault();
+        if (existing is not null) return existing.Id;
+
+        var nowUtc = DateTime.UtcNow;
+        // Assignments are loaded untracked; attaching the navigation would make EF insert the volunteer graph again.
+        var request = new SupportRequest
+        {
+            StudentProfileId = student.Id,
+            StudentProfile = student,
+            VolunteerProfileId = volunteerProfileId,
+            Category = SupportRequestCategory.PeerDiscussion,
+            Title = "Conversation with your volunteer",
+            Message = "Started directly from the student dashboard with an assigned volunteer.",
+            Status = SupportRequestStatus.Accepted,
+            IsVisibleToVolunteers = false,
+            CreatedAtUtc = nowUtc
+        };
+
+        await _repository.AddSupportRequestAsync(request, cancellationToken);
+        _auditLog.Record(
+            "SupportRequest.StartConversation",
+            nameof(SupportRequest),
+            details: "Student opened a direct conversation with an assigned volunteer.");
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await NotifyParticipantsAsync(request, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(assignment.VolunteerProfile?.UserId))
+        {
+            try
+            {
+                await _notificationService.CreateAsync(
+                    assignment.VolunteerProfile.UserId,
+                    NotificationType.System,
+                    "A student opened a conversation",
+                    "A student you are assigned to started a private peer-support conversation with you. Open your volunteer dashboard to reply.",
+                    cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Could not notify the volunteer about a new direct conversation.");
+            }
+        }
+        return request.Id;
     }
 
     public async Task<VolunteerDashboardDto> GetVolunteerDashboardAsync(
@@ -479,6 +632,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             request.Id.ToString(),
             "Assigned volunteer accepted a peer-support request.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return true;
     }
 
@@ -513,6 +667,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             request.Id.ToString(),
             "Assigned volunteer declined a pending peer-support request; it remains pending for other assigned volunteers.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return true;
     }
 
@@ -543,6 +698,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             nameof(SupportInteraction),
             details: $"Volunteer added a peer-guidance interaction to request {request.Id}.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return MapInteraction(interaction);
     }
 
@@ -574,6 +730,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             request.Id.ToString(),
             "Assigned volunteer marked the peer-support request complete.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return true;
     }
 
@@ -610,7 +767,75 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         await NotifyCounselorsOfEscalationAsync(request.Id, cancellationToken);
+        await NotifyParticipantsAsync(request, cancellationToken);
         return true;
+    }
+
+    /// <summary>
+    /// Tells the people who can currently see this request that it changed, so their page refreshes
+    /// itself. The set is resolved server-side and always includes the student, whichever volunteer
+    /// holds it, and every volunteer assigned to that student -- the last of those matters because a
+    /// request being accepted or completed removes it from other volunteers' lists too.
+    /// </summary>
+    private async Task NotifyParticipantsAsync(SupportRequest request, CancellationToken cancellationToken)
+    {
+        // Everything here runs after the change is committed, so resolving the audience is as
+        // non-fatal as delivering to it: neither may turn a saved change into an error.
+        try
+        {
+            var recipients = new HashSet<string>(StringComparer.Ordinal);
+
+            if (!string.IsNullOrWhiteSpace(request.StudentProfile?.UserId))
+                recipients.Add(request.StudentProfile!.UserId);
+            if (!string.IsNullOrWhiteSpace(request.VolunteerProfile?.UserId))
+                recipients.Add(request.VolunteerProfile!.UserId);
+
+            var assigned = await _repository.GetAssignedVolunteerUserIdsAsync(
+                request.StudentProfileId,
+                cancellationToken);
+            foreach (var volunteerUserId in assigned ?? Array.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(volunteerUserId)) recipients.Add(volunteerUserId);
+            }
+
+            if (recipients.Count == 0) return;
+
+            await _peerSupportNotifier.NotifyChangedAsync(recipients.ToArray(), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // The change is already committed. A transport failure must not undo it; the page
+            // still shows the new state on its next load.
+            _logger.LogWarning(
+                exception,
+                "Could not signal peer-support participants for request {RequestId}.",
+                request.Id);
+        }
+    }
+
+    /// <summary>
+    /// Tells administrators their volunteer list is out of date. Best-effort by design: this runs
+    /// after the roster change is committed, so a transport failure must not turn a saved change
+    /// into an error for whoever made it.
+    /// </summary>
+    private async Task NotifyRosterChangedAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _volunteerRosterNotifier.NotifyRosterChangedAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Could not signal administrators that the volunteer roster changed.");
+        }
     }
 
     private async Task<bool> ReviewVolunteerAsync(
@@ -642,6 +867,7 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             volunteer.Id.ToString(),
             approve ? "Volunteer application approved." : "Volunteer application rejected and assignments deactivated.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await NotifyRosterChangedAsync(cancellationToken);
         return true;
     }
 

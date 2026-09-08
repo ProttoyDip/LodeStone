@@ -12,7 +12,9 @@
     <link rel="stylesheet" href="~/css/peer-support.css" asp-append-version="true" />
 }
 
-<div class="container my-5">
+<div class="container my-5" data-peer-support-live>
+    <span class="visually-hidden-status" role="status" aria-live="polite" data-peer-support-status></span>
+
     <div class="row mb-4">
         <div class="col-12">
             <a href="@Url.Action("Dashboard", "Volunteer")" class="btn btn-outline-secondary btn-sm mb-3">← Back to Dashboard</a>
@@ -79,54 +81,48 @@
             }
             else if (Model.Request.Status == SupportRequestStatus.Accepted)
             {
-                <div class="card mb-4">
+                <div class="card mb-4"
+                     data-peer-chat
+                     data-request-id="@Model.Request.Id"
+                     data-user-id="@(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)"
+                     data-self-label="You"
+                     data-other-label="Student">
                     <div class="card-header bg-light">
                         <h5 class="mb-0">Conversation</h5>
                     </div>
                     <div class="card-body">
-                        @if (Model.Request.Interactions.Count == 0)
-                        {
-                            <p class="text-muted">No interactions yet. Start helping!</p>
-                        }
-                        else
-                        {
-                            <div class="mb-4">
-                                @foreach (var interaction in Model.Request.Interactions)
-                                {
-                                    <div class="mb-3 p-3 bg-light rounded">
-                                        <div class="d-flex justify-content-between mb-2">
-                                            <strong>
-                                                @if (interaction.IsFromVolunteer)
-                                                {
-                                                    <span>You</span>
-                                                }
-                                                else
-                                                {
-                                                    <span>Student</span>
-                                                }
-                                            </strong>
-                                            <small class="text-muted">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</small>
-                                        </div>
-                                        <p class="mb-0">@interaction.Message</p>
-                                        @if (interaction.EscalatedToCounselor)
-                                        {
-                                            <p class="mb-0 mt-2">
-                                                <span class="badge bg-warning text-dark">Escalated to Counselor</span>
-                                            </p>
-                                        }
+                        <span class="visually-hidden-status" role="status" aria-live="polite" data-peer-chat-status></span>
+                        <p class="text-muted" data-peer-chat-empty hidden="@(Model.Request.Interactions.Count > 0)">No messages yet. Start helping!</p>
+                        <div class="mb-4" data-peer-chat-messages>
+                            @foreach (var interaction in Model.Request.Interactions)
+                            {
+                                <div class="mb-3 p-3 bg-light rounded" data-message-id="@interaction.Id">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <strong>
+                                            @if (interaction.IsFromVolunteer)
+                                            {
+                                                <span>You</span>
+                                            }
+                                            else
+                                            {
+                                                <span>Student</span>
+                                            }
+                                        </strong>
+                                        <small class="text-muted">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</small>
                                     </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                </div>
+                                    <p class="mb-0">@interaction.Message</p>
+                                    @if (interaction.EscalatedToCounselor)
+                                    {
+                                        <p class="mb-0 mt-2">
+                                            <span class="badge bg-warning text-dark">Escalated to Counselor</span>
+                                        </p>
+                                    }
+                                </div>
+                            }
+                        </div>
 
-                <div class="card mb-4">
-                    <div class="card-header bg-light">
-                        <h5 class="mb-0">Add Your Response</h5>
-                    </div>
-                    <div class="card-body">
-                        <form asp-controller="Volunteer" asp-action="AddInteraction" asp-route-requestId="@Model.Request.Id" method="post">
+                        <h6>Add your response</h6>
+                        <form asp-controller="Volunteer" asp-action="AddInteraction" asp-route-requestId="@Model.Request.Id" method="post" data-peer-chat-form>
                             @Html.AntiForgeryToken()
                             <div class="mb-3">
                                 <label asp-for="Interaction.Message" class="form-label">Your Message</label>
@@ -257,3 +253,9 @@
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.0/dist/browser/signalr.min.js" crossorigin="anonymous"></script>
+    <script src="~/js/peer-support.js" asp-append-version="true"></script>
+    <script src="~/js/peer-chat.js" asp-append-version="true"></script>
+}

@@ -11,6 +11,15 @@ public interface IBookingRepository
     Task<IReadOnlyList<CounselorBooking>> GetByStudentIdAsync(int studentProfileId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CounselorBooking>> GetByCounselorIdAsync(int counselorProfileId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CounselorBooking>> GetCounselorWorkspaceAsync(int counselorProfileId, DateTime recentFromUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Per student, how many sessions this counselor has completed with them and when the latest
+    /// was. Feeds the session-note draft; contains no note text.
+    /// </summary>
+    Task<IReadOnlyDictionary<int, (int Count, DateTime? LastUtc)>> GetCompletedSessionHistoryAsync(
+        int counselorProfileId,
+        IReadOnlyCollection<int> studentProfileIds,
+        CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CounselorAvailabilitySlot>> GetAvailableSlotsAsync(int? counselorProfileId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CounselorProfile>> GetAllCounselorsAsync(CancellationToken cancellationToken = default);
     Task<CounselorBooking?> TryCreateConfirmedAsync(int studentProfileId, int slotId, string? notes, CancellationToken cancellationToken = default);

@@ -1,4 +1,4 @@
-@model IReadOnlyList<Lodestone.Application.DTOs.Forum.ForumPostDto>
+@model Lodestone.Application.DTOs.Forum.ForumModerationQueueDto
 @{
     ViewData["Title"] = "Forum Moderation";
 }
@@ -18,8 +18,8 @@
             <div class="forum-subhero__content">
                 <div>
                     <p class="forum-kicker"><span aria-hidden="true"></span>Moderation queue</p>
-                    <h1>Review flagged discussions.</h1>
-                    <p>Assess each report carefully and choose whether the discussion should remain available to the community.</p>
+                    <h1>Review discussions in reading order.</h1>
+                    <p>Reported posts come first. Below them are posts nobody reported that went unanswered or stand out from the author's usual posting. The order suggests what to read next; every decision is yours.</p>
                 </div>
             </div>
         </div>
@@ -30,43 +30,62 @@
             <div class="forum-section-head forum-section-head--compact">
                 <div>
                     <p class="forum-section-eyebrow">Review required</p>
-                    <h2 id="flagged-posts-title">@Model.Count @(Model.Count == 1 ? "flagged post" : "flagged posts")</h2>
+                    <h2 id="flagged-posts-title">@Model.Items.Count @(Model.Items.Count == 1 ? "post" : "posts") to read</h2>
                 </div>
-                <p>Approving makes a post available; removing takes it out of the public discussion.</p>
+                <p>@Model.ReportedCount reported · @Model.SurfacedWithoutFlagCount surfaced without a report. Approving keeps a post available; removing takes it out of the public discussion. Either marks it as read.</p>
             </div>
 
-            @if (Model.Count == 0)
+            @if (Model.Items.Count == 0)
             {
                 <div class="forum-empty" role="status">
                     <span class="forum-empty__index" aria-hidden="true">00</span>
                     <div>
                         <h3>The moderation queue is clear.</h3>
-                        <p>There are no flagged discussions awaiting review.</p>
+                        <p>There are no discussions awaiting review.</p>
                     </div>
                 </div>
             }
             else
             {
-                <div class="forum-post-list" aria-label="Flagged posts awaiting review">
-                    @foreach (var post in Model)
+                <div class="forum-post-list" aria-label="Posts awaiting review, most urgent first">
+                    @foreach (var item in Model.Items)
                     {
+                        var post = item.Post;
                         <article class="forum-post-card">
                             <div class="forum-post-card__meta">
+                                @if (item.WasReported)
+                                {
+                                    <span class="forum-triage-tier forum-triage-tier--reported">Reported</span>
+                                }
+                                else
+                                {
+                                    <span class="forum-triage-tier forum-triage-tier--surfaced">Surfaced without a report</span>
+                                }
+                                <span aria-hidden="true">·</span>
                                 <span>Post #@post.Id</span>
                                 <span aria-hidden="true">·</span>
                                 <span>Status: @post.Status</span>
                                 <span aria-hidden="true">·</span>
                                 <time datetime="@post.CreatedAtUtc.ToString("O")">@post.CreatedAtUtc.ToString("dd MMM yyyy, HH:mm") UTC</time>
                             </div>
-                            <h3>@post.Title</h3>
+                            <h3><a asp-controller="Forum" asp-action="Post" asp-route-id="@post.Id">@post.Title</a></h3>
                             <p class="forum-post-card__excerpt">@post.Body</p>
+                            @if (item.Reasons.Count > 0)
+                            {
+                                <ul class="forum-triage-reasons" aria-label="Why this post is in the queue">
+                                    @foreach (var reason in item.Reasons)
+                                    {
+                                        <li>@reason</li>
+                                    }
+                                </ul>
+                            }
 
                             <form class="forum-form__footer" action="/Forum/Review" method="post" aria-label="Moderation decision for post @post.Id">
                                 @Html.AntiForgeryToken()
                                 <input type="hidden" name="postId" value="@post.Id" />
-                                <p>Review this post against the community guidelines before making a decision.</p>
+                                <p>Read the post before deciding. Nothing here is a judgement about the author.</p>
                                 <div>
-                                    <button class="ls-btn ls-btn--ghost ls-btn--sm" type="submit" name="publish" value="true">Approve post</button>
+                                    <button class="ls-btn ls-btn--ghost ls-btn--sm" type="submit" name="publish" value="true">@(item.WasReported ? "Approve post" : "Mark as read")</button>
                                     <button class="ls-btn ls-btn--clay ls-btn--sm" type="submit" name="publish" value="false">Remove post</button>
                                 </div>
                             </form>

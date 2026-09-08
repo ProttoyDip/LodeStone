@@ -11,7 +11,9 @@
     <link rel="stylesheet" href="~/css/peer-support.css" asp-append-version="true" />
 }
 
-<div class="container my-5">
+<div class="container my-5" data-peer-support-live>
+    <span class="visually-hidden-status" role="status" aria-live="polite" data-peer-support-status></span>
+
     <div class="row mb-4">
         <div class="col-12">
             <a href="@Url.Action("Index", "Student")" class="btn btn-outline-secondary btn-sm mb-3">← Back to Dashboard</a>
@@ -161,6 +163,39 @@
         </div>
 
         <div class="col-lg-4">
+            @if (Model.AssignedVolunteers.Count > 0)
+            {
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0"><i class="bi bi-people"></i> Your volunteers</h5>
+                    </div>
+                    <div class="list-group list-group-flush">
+                        @foreach (var volunteer in Model.AssignedVolunteers)
+                        {
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-center gap-2">
+                                    <div>
+                                        <strong>@volunteer.DisplayName</strong>
+                                        <div class="small text-muted">@volunteer.Role</div>
+                                    </div>
+                                    @if (volunteer.OpenConversationRequestId is int openRequestId)
+                                    {
+                                        <a class="btn btn-sm btn-primary" href="@Url.Action("ViewRequest", "StudentSupport", new { requestId = openRequestId })">Continue</a>
+                                    }
+                                    else
+                                    {
+                                        <form method="post" asp-controller="StudentSupport" asp-action="StartConversation">
+                                            <input type="hidden" name="volunteerProfileId" value="@volunteer.VolunteerProfileId" />
+                                            <button type="submit" class="btn btn-sm btn-outline-primary">Message</button>
+                                        </form>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
             @if (Model.Pending.Count > 0 || Model.Active.Count > 0 || Model.History.Count > 0)
             {
                 <div class="card mb-3">
@@ -212,3 +247,8 @@
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/@@microsoft/signalr@8.0.0/dist/browser/signalr.min.js" crossorigin="anonymous"></script>
+    <script src="~/js/peer-support.js" asp-append-version="true"></script>
+}

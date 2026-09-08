@@ -10,14 +10,15 @@ Lodestone is not a diagnostic or clinical system. ML predictions are support-rou
 
 ## Current Status
 
-**State B: Runtime integration complete but no acceptable model.**
+**State D: A published v3 model, explained and audited, with runtime scoring enabled per environment.**
 
 - Runtime ML is implemented as a first-class application feature through the Application-owned `IRiskModelPredictor` boundary.
-- `MachineLearning:Enabled=true` is supported for local/demo runs only after a validated model, metadata, and publication manifest are present.
-- The real OULAD v2 experiment completed on 2026-08-31 and failed the fixed validation gate. No locked-test evaluation was performed and no runtime artifact was published.
-- `src/Lodestone.Web/App_Data/ml` contains only `.gitkeep`; tracked config keeps `MachineLearning:Enabled=false`.
-- Release build passes with zero warnings. Full tests pass: 84 Unit, 45 Integration, 29 ML, 158 total.
-- EF reports no pending model changes after `20260831094114_RuntimeMlV2AndManualNudges`.
+- The seventeen-feature `withdrawal-28d-v3` experiment passed its gates and published a runtime artifact to `src/Lodestone.Web/App_Data/ml`.
+- Tracked config keeps `MachineLearning:Enabled=false` because the artifacts are git-ignored; each environment that holds them enables scoring explicitly (user-secrets, `MachineLearning__Enabled`, or `LODESTONE_ML_ENABLED` in Docker). The decision and its reasoning are recorded in [AI Governance §9a](docs/AI-GOVERNANCE.md).
+- Predictions are explainable on demand from the counselor queue ("Why this score"), and the model has been audited for subgroup performance at both the artifact and deployed thresholds.
+- Full tests pass: 192 Unit, 65 Integration, 81 ML, 338 total.
+
+**Known operating-point finding.** The configured `MachineLearning:QueueThreshold` of `0.83` was chosen for precision (about 1 flagged student in 6.5 is genuinely at risk). The fairness audit measured its recall: **4.5%**. At that threshold the queue is accurate and nearly empty, missing roughly 21 of every 22 at-risk student-weeks. At the artifact's own threshold recall is 69.3%, but a third of all student-weeks are flagged. Scoring was enabled with this known; the queue is a capacity-bounded triage aid, not a safety net, and the threshold should be revisited once real counselor capacity is measured.
 
 ## Implemented Product Areas
 
@@ -143,10 +144,17 @@ Download:
 dotnet run --project tools/Lodestone.ModelTrainer -- download
 ```
 
-Run v2 experiment:
+Run the v2 or v3 experiment:
 
 ```bash
 dotnet run --project tools/Lodestone.ModelTrainer -- experiment-v2
+dotnet run --project tools/Lodestone.ModelTrainer -- experiment-v3
+```
+
+Audit a published model for subgroup performance:
+
+```bash
+dotnet run --project tools/Lodestone.ModelTrainer -- audit-fairness --queue-threshold 0.83
 ```
 
 The v2 pipeline:
@@ -169,7 +177,9 @@ The model schema controls the required snapshot header. `withdrawal-28d-v1` keep
 
 Imports accept only active consent plus verified student-number matches. They validate duplicate headers, source provenance, schema, feature ranges, UTC timestamps, duplicate snapshots, and maximum snapshot age.
 
-## V2 Experiment Result
+## Experiment Results
+
+### v2 (failed the gate)
 
 Real-data v2 report:
 
@@ -187,6 +197,74 @@ Dataset provenance:
 - Students: 17,393 train, 3,726 validation, 3,729 locked test
 
 Best grouped-CV candidates reached ROC AUC around `0.748`, but precision stayed around `0.05`, far below the required `0.30`. No validation candidate satisfied the fixed AUC/recall/precision gate. The locked test partition was not evaluated, `eligibleForRuntimeIntegration=false`, `modelSha256` is empty, and no runtime artifact was published.
+
+The gate itself was the error, not the training run. At a 2.5% base rate, precision `0.30` demands about a 12x lift over chance; the measured precision/recall frontier tops out near 2x. `ModelQualityGates` now records that arithmetic in full, and the gates sit below the measured frontier on both axes rather than above it.
+
+### v3 (published)
+
+The seventeen-feature schema adds activity acceleration, click volatility, forum-engagement share, weekly inactivity coverage, and an assessment-miss streak. Still clickstream and assessment timing only; no demographic or registration data.
+
+- Model version: `withdrawal-28d-v3-20260905T175232755Z`
+- Algorithm: LightGbm, seed `20260901`
+- Split: 17,339 / 3,714 / 3,718 students (504,023 / 107,501 / 108,238 student-weeks)
+- Locked test: ROC AUC `0.753`, PR AUC `0.078`, recall `0.693`, precision `0.053` at the artifact threshold `0.4629`
+- Base rate in the locked test partition: 2.55%
+
+Precision near `0.05` at 69% recall is roughly twice the base rate. That is a real signal and a weak one: most flagged student-weeks are not withdrawals. It routes attention; it does not make a determination about anyone.
+
+## Explainable Predictions
+
+A risk score a counselor cannot interrogate is a score they cannot exercise judgement over. `IRiskModelExplainer` reports each feature's measured influence on a single prediction.
+
+Contributions are measured, not estimated: `AblationRiskExplainer` replaces one feature with a reference value, holds the rest still, and re-scores the student. The difference is that feature's contribution, computed from the model's own outputs. Ablation was chosen over ML.NET's feature-contribution transform because it treats the model as a black box, so it survives a change of algorithm rather than failing as a blank panel in front of a counselor.
+
+Three constraints are enforced rather than documented:
+
+- **Nothing is persisted.** Explanations are computed on request and discarded. "Why we believe this student may withdraw" is a stronger inference than the score itself; storing it would create a new class of sensitive record requiring its own consent basis and retention rule.
+- **Language cannot overstate the measurement.** `RiskFeatureVocabulary` holds one agreed phrase per feature. `RecentActiveDayRate` reads as "share of days active on the platform", never as *attendance*. `RiskFeatureVocabularyTests` fails the build if a phrase contains attendance, quiz, exam, grade, mark, lecture or class, or if a schema gains a feature with no agreed phrasing.
+- **No causal claims.** The model learned association from observational data. Where the system describes what would move a student across the threshold, it is phrased as a property of the model's decision boundary and says so in the same sentence.
+
+Explanation is offered only when a validated model is loaded; otherwise a null explainer keeps the queue rendering the score alone.
+
+## Fairness Audit
+
+`audit-fairness` measures how the published model performs across groups it was never trained on: gender, age band, deprivation band, disability, prior education and region.
+
+```bash
+dotnet run --project tools/Lodestone.ModelTrainer -- audit-fairness \
+  --queue-threshold 0.83 \
+  --expect-student-hash <testStudentHash from the training report>
+```
+
+These attributes exist only inside the offline audit. They are never loaded as features and the application stores none of them: `StudentProfile` has no demographic columns. The audit reads them from OULAD's `studentInfo.csv` to measure disparate impact, trains nothing, and publishes nothing. Reports are gitignored alongside the training reports.
+
+It reconstructs the exact evaluation partition from the model's own seed and verifies it by recomputing the student hash against the training report, so it cannot score a lookalike partition and report reassuring numbers. It audits every operating point, not just the artifact threshold, because fairness is a property of an operating point and the deployed queue threshold is the one that decides whose name a counselor sees. Groups below a size floor are suppressed: their rates are unstable enough to mislead, and a full breakdown starts to identify people.
+
+Measured on the v3 model, gaps are moderate at the artifact threshold and considerably worse at the deployed one — the gender selection-rate ratio falls from 0.870 to 0.434. A single-threshold audit would have missed that.
+
+**The limitation this accepts on purpose:** a deployment that records no protected attributes cannot measure its own bias. Subgroup performance is only measurable offline, against the research dataset. That trade-off is stated rather than hidden, because the absence of bad news is not good news.
+
+## Forum Moderation Triage
+
+Moderation used to begin when somebody reported a post. That covers content people object to, and misses the case this product exists for: a student writes something quietly worrying, nobody replies, nobody reports it, and it ages off the front page unread. Reactive flagging cannot reach such a post precisely because nobody engaged with it.
+
+`ForumTriageRanker` orders posts by how soon a human should read them, using facts about each post's history: unreviewed community reports, no replies after 24 hours, a first-time or infrequent author, a post far longer than that author's own norm, and how long it has gone unattended. Length is compared against the author's own median rather than the forum's, so a habitually terse person writing at length stands out instead of being buried under chattier users.
+
+**It is not a content classifier and assigns no category.** There is no labelled data in this project to train a distress or self-harm classifier, and none to measure one — and the costly error is the false negative, which is exactly the number that could not be measured. A post shown to a moderator without a concern label would also read as cleared, so an unmeasurable classifier would make quiet cases *less* visible than none at all. Every reason shown is something a moderator could have observed unaided; the ranker only notices them all at once, on every post, every day. A test fails the build if any reason contains distress, crisis, self-harm, risk, concern, mental or suicide.
+
+Posts that a community member reported form their own tier ahead of everything the ranker inferred. That ordering is structural rather than a consequence of weights, so a future tuning change cannot quietly let a derived signal outvote a human explicitly asking for review.
+
+Triage surfaces and never decides: nothing here changes a post's status, hides it, or notifies its author.
+
+## Volunteer Matching
+
+`VolunteerMatcher` ranks approved, active volunteers for a support request on three signals: overlap between the request and the volunteer's declared skills, department and bio; overlap in stated availability; and how many students the volunteer already carries. Capacity is weighted deliberately small — spreading work stops one willing volunteer absorbing every request, but it must never outrank actually being able to help.
+
+Every match carries the reasons that produced it, because a ranking an administrator cannot audit is an instruction with a number attached. Assignment stays a human decision; the matcher only puts plausible options at the top of the list.
+
+The student's message is read to find matching skills and is never reproduced in a match reason. An administrator choosing between volunteers needs to know what the volunteer offers, not to have the student's account of their situation quoted back in a ranking widget; a test enforces this.
+
+Everything is local, deterministic and inspectable — word overlap, declared availability and current workload. No model, no embedding service, nothing leaves the process.
 
 ## Background Jobs And Real-Time Updates
 
@@ -245,10 +323,10 @@ dotnet test Lodestone.sln
 
 Latest verified counts:
 
-- Unit: 84
-- Integration: 45
-- ML: 29
-- Total: 158
+- Unit: 153
+- Integration: 64
+- ML: 81
+- Total: 298
 
 Additional verification performed:
 
@@ -264,6 +342,8 @@ Additional verification performed:
 - Claimed LMS identifiers require Admin verification.
 - Withdrawal deletes derived monitoring data.
 - ML uses only aggregate behavioral features available at prediction time.
+- Protected attributes are never collected, never trained on, and never stored; the fairness audit reads them offline from OULAD only.
+- Prediction explanations are computed on demand and never persisted.
 - Journal notes are protected with ASP.NET Data Protection.
 - Account reset/setup links use a configured public base URL, not request host headers.
 - Account/setup failure logs are sanitized and do not include reset tokens, setup URLs, or recipient addresses.

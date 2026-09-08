@@ -223,6 +223,103 @@ public sealed class VolunteerSupportServiceTests
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [Fact]
+    public async Task CreateSupportRequestAsync_SignalsOnlyTheVolunteersAssignedToThatStudent()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetStudentProfileByUserIdAsync("student-42", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StudentProfile
+            {
+                Id = 7,
+                UserId = "student-42",
+                User = new ApplicationUser { Id = "student-42", FullName = "Student A" }
+            });
+        repo.Setup(r => r.AddSupportRequestAsync(It.IsAny<SupportRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.GetAssignedVolunteerUserIdsAsync(7, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { "vol-assigned" });
+
+        IReadOnlyCollection<string>? signalled = null;
+        var peerSupport = new Mock<IPeerSupportNotifier>();
+        peerSupport.Setup(n => n.NotifyChangedAsync(
+                It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyCollection<string>, CancellationToken>((ids, _) => signalled = ids)
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(repo, Student("student-42"), peerSupport: peerSupport);
+
+        await service.CreateSupportRequestAsync(
+            new CreateSupportRequestDto(SupportRequestCategory.GeneralSupport, "Help please.", null),
+            CancellationToken.None);
+
+        // Only the student and the volunteers actually assigned to them; a request is private to
+        // the people already entitled to see it.
+        signalled.Should().NotBeNull();
+        signalled.Should().BeEquivalentTo(new[] { "student-42", "vol-assigned" });
+    }
+
+    [Fact]
+    public async Task CreateSupportRequestAsync_SucceedsEvenIfTheRealtimeSignalFails()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetStudentProfileByUserIdAsync("student-42", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StudentProfile { Id = 7, UserId = "student-42" });
+        repo.Setup(r => r.AddSupportRequestAsync(It.IsAny<SupportRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.GetAssignedVolunteerUserIdsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<string>());
+
+        var peerSupport = new Mock<IPeerSupportNotifier>();
+        peerSupport.Setup(n => n.NotifyChangedAsync(
+                It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("hub unavailable"));
+
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var service = CreateService(repo, Student("student-42"), unitOfWork, peerSupport: peerSupport);
+
+        // The request is already committed by the time the signal is sent; a transport failure
+        // must not turn a saved request into an error for the student.
+        var act = async () => await service.CreateSupportRequestAsync(
+            new CreateSupportRequestDto(SupportRequestCategory.GeneralSupport, "Help please.", null),
+            CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateVolunteerProfileAsync_TellsAdministratorsTheirVolunteerListChanged()
+    {
+        var repo = ProfileCreationRepo(_ => { });
+        var roster = new Mock<IVolunteerRosterNotifier>();
+        var service = CreateService(repo, Volunteer("vol-1"), roster: roster);
+
+        await service.CreateVolunteerProfileAsync(Profile(), CancellationToken.None);
+
+        // This is the one roster change no administrator causes themselves, so it is the one their
+        // open list would otherwise never learn about.
+        roster.Verify(n => n.NotifyRosterChangedAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateVolunteerProfileAsync_SucceedsEvenIfTheRosterSignalFails()
+    {
+        var repo = ProfileCreationRepo(_ => { });
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var roster = new Mock<IVolunteerRosterNotifier>();
+        roster.Setup(n => n.NotifyRosterChangedAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("hub unavailable"));
+
+        var service = CreateService(repo, Volunteer("vol-1"), unitOfWork, roster: roster);
+
+        // The profile is committed before the signal is sent; a volunteer who has just filled in
+        // their details must not be told it failed because a hub was unreachable.
+        var act = async () => await service.CreateVolunteerProfileAsync(Profile(), CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+        unitOfWork.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     // ---------- helpers ----------
 
     private static CreateVolunteerProfileDto Profile(string fullName = "Volunteer A")
@@ -240,6 +337,86 @@ public sealed class VolunteerSupportServiceTests
             .Returns(Task.CompletedTask);
         return repo;
     }
+
+    [Fact]
+    public async Task GetRequestRoutingAsync_RanksVolunteersForEachUnroutedRequestAndNeverQuotesTheStudent()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        var studentMessage = "I keep failing my python labs and my laptop will not connect to the portal.";
+        repo.Setup(r => r.GetUnroutedPendingRequestsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new SupportRequest
+                {
+                    Id = 11,
+                    StudentProfileId = 5,
+                    StudentProfile = new StudentProfile { Id = 5, UserId = "s-5", User = new ApplicationUser { Id = "s-5", FullName = "Student Five" } },
+                    Category = SupportRequestCategory.TechnicalHelp,
+                    Title = "Technical help",
+                    Message = studentMessage,
+                    Availability = "Tuesday evenings",
+                    Status = SupportRequestStatus.Pending,
+                    IsVisibleToVolunteers = true,
+                    CreatedAtUtc = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc)
+                }
+            });
+        repo.Setup(r => r.GetAvailableVolunteersAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                Volunteer(1, "Ada", skills: "python, programming, laptops", availability: "Tuesday evenings"),
+                Volunteer(2, "Ben", skills: "essay writing, revision", availability: "Weekends"),
+                Volunteer(3, "Cal", skills: "python", availability: "Monday"),
+                Volunteer(4, "Dee", skills: null, availability: null)
+            });
+        repo.Setup(r => r.GetActiveAssignmentCountsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<int, int> { [1] = 1, [3] = 4 });
+
+        var routing = await CreateService(repo, InRole("admin", RoleConstants.Admin)).GetRequestRoutingAsync();
+
+        routing.AvailableVolunteers.Should().Be(4);
+        var item = routing.Requests.Should().ContainSingle().Subject;
+        item.Suggestions.Should().HaveCount(VolunteerSupportService.SuggestionsPerRequest);
+        item.Suggestions[0].FullName.Should().Be("Ada");
+        item.Suggestions.SelectMany(match => match.Reasons)
+            .Should().NotContain(reason => reason.Contains("failing", StringComparison.OrdinalIgnoreCase));
+        item.GetType().GetProperties().Select(property => property.Name).Should().NotContain("Message");
+    }
+
+    [Fact]
+    public async Task GetRequestRoutingAsync_DoesNotScoreWhenNothingIsWaiting()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        repo.Setup(r => r.GetUnroutedPendingRequestsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<SupportRequest>());
+        repo.Setup(r => r.GetAvailableVolunteersAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { Volunteer(1, "Ada", "python", "Tuesday") });
+
+        var routing = await CreateService(repo, InRole("admin", RoleConstants.Admin)).GetRequestRoutingAsync();
+
+        routing.Requests.Should().BeEmpty();
+        routing.AvailableVolunteers.Should().Be(1);
+        repo.Verify(r => r.GetActiveAssignmentCountsAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetRequestRoutingAsync_RefusesANonAdministrator()
+    {
+        var repo = new Mock<IVolunteerSupportRepository>();
+        var act = async () => await CreateService(repo, Volunteer("v-1")).GetRequestRoutingAsync();
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    private static VolunteerProfile Volunteer(int id, string name, string? skills, string? availability)
+        => new()
+        {
+            Id = id,
+            UserId = $"v-{id}",
+            User = new ApplicationUser { Id = $"v-{id}", FullName = name, IsActive = true },
+            Skills = skills,
+            Availability = availability,
+            IsApproved = true,
+            IsActive = true
+        };
 
     private static Mock<ICurrentUserService> Student(string userId) => InRole(userId, RoleConstants.Student);
 
@@ -259,12 +436,16 @@ public sealed class VolunteerSupportServiceTests
         Mock<ICurrentUserService> currentUser,
         Mock<IUnitOfWork>? unitOfWork = null,
         Mock<IAuditLogService>? audit = null,
-        Mock<INotificationService>? notifications = null)
+        Mock<INotificationService>? notifications = null,
+        Mock<IPeerSupportNotifier>? peerSupport = null,
+        Mock<IVolunteerRosterNotifier>? roster = null)
         => new(
             repo.Object,
             currentUser.Object,
             (unitOfWork ?? new Mock<IUnitOfWork>()).Object,
             (audit ?? new Mock<IAuditLogService>()).Object,
             (notifications ?? new Mock<INotificationService>()).Object,
+            (peerSupport ?? new Mock<IPeerSupportNotifier>()).Object,
+            (roster ?? new Mock<IVolunteerRosterNotifier>()).Object,
             NullLogger<VolunteerSupportService>.Instance);
 }

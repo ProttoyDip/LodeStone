@@ -41,9 +41,13 @@ jobs:
       - name: Check browser scripts
         run: find src/Lodestone.Web/wwwroot/js -type f -name '*.js' -exec node --check {} \;
 
+      # --no-build reuses the build above, which is Release. Without matching --configuration,
+      # dotnet-ef looks for Debug output that this job never produces and exits 129 on a missing
+      # deps.json before it evaluates the model at all.
       - name: Check EF model drift
         run: >-
           dotnet tool run dotnet-ef -- migrations has-pending-model-changes --no-build
+          --configuration Release
           --project src/Lodestone.Infrastructure/Lodestone.Infrastructure.csproj
           --startup-project src/Lodestone.Web/Lodestone.Web.csproj
 

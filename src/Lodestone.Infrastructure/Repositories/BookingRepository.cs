@@ -86,6 +86,31 @@ public class BookingRepository : GenericRepository<CounselorBooking>, IBookingRe
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyDictionary<int, (int Count, DateTime? LastUtc)>> GetCompletedSessionHistoryAsync(
+        int counselorProfileId,
+        IReadOnlyCollection<int> studentProfileIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (studentProfileIds.Count == 0) return new Dictionary<int, (int, DateTime?)>();
+
+        var ids = studentProfileIds.ToArray();
+        var rows = await Set
+            .AsNoTracking()
+            .Where(booking => booking.CounselorProfileId == counselorProfileId
+                              && booking.Status == BookingStatus.Completed
+                              && ids.Contains(booking.StudentProfileId))
+            .GroupBy(booking => booking.StudentProfileId)
+            .Select(group => new
+            {
+                group.Key,
+                Count = group.Count(),
+                LastUtc = (DateTime?)group.Max(booking => booking.ScheduledForUtc)
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(row => row.Key, row => (row.Count, row.LastUtc));
+    }
+
     public async Task<IReadOnlyList<CounselorAvailabilitySlot>> GetAvailableSlotsAsync(
         int? counselorProfileId, CancellationToken cancellationToken = default)
         => await Context.CounselorAvailabilitySlots

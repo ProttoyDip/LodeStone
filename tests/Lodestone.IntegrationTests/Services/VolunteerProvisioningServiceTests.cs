@@ -32,7 +32,8 @@ public sealed class VolunteerProvisioningServiceTests
             .ReturnsAsync("setup-token");
 
         await using var context = CreateContext();
-        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.InviteAsync(new InviteVolunteerDto("  Vol@University.test  "));
 
@@ -56,7 +57,8 @@ public sealed class VolunteerProvisioningServiceTests
         users.Setup(m => m.GeneratePasswordResetTokenAsync(It.IsAny<ApplicationUser>())).ReturnsAsync("t");
 
         await using var context = CreateContext();
-        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         await service.InviteAsync(new InviteVolunteerDto("vol@university.test"));
 
@@ -79,7 +81,8 @@ public sealed class VolunteerProvisioningServiceTests
         users.Setup(m => m.DeleteAsync(It.IsAny<ApplicationUser>())).ReturnsAsync(IdentityResult.Success);
 
         await using var context = CreateContext();
-        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.InviteAsync(new InviteVolunteerDto("vol@university.test"));
 
@@ -97,7 +100,8 @@ public sealed class VolunteerProvisioningServiceTests
             .ReturnsAsync(new ApplicationUser { Id = "existing", Email = "vol@university.test" });
 
         await using var context = CreateContext();
-        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.InviteAsync(new InviteVolunteerDto("vol@university.test"));
 
@@ -117,7 +121,8 @@ public sealed class VolunteerProvisioningServiceTests
     {
         var users = CreateUserManager();
         await using var context = CreateContext();
-        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.InviteAsync(new InviteVolunteerDto(email));
 
@@ -134,7 +139,8 @@ public sealed class VolunteerProvisioningServiceTests
         users.Setup(m => m.IsInRoleAsync(user, RoleConstants.Volunteer)).ReturnsAsync(false);
 
         await using var context = CreateContext();
-        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.CreateSetupTokenAsync("student@university.test");
 
@@ -152,7 +158,8 @@ public sealed class VolunteerProvisioningServiceTests
         users.Setup(m => m.GeneratePasswordResetTokenAsync(user)).ReturnsAsync("fresh-token");
 
         await using var context = CreateContext();
-        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>());
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
 
         var result = await service.CreateSetupTokenAsync("  vol@university.test  ");
 

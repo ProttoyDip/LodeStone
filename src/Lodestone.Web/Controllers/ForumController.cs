@@ -115,7 +115,7 @@ public class ForumController : Controller
     [Authorize(Policy = PolicyConstants.CanModerateForum)]
     [HttpGet]
     public async Task<IActionResult> Moderation(CancellationToken cancellationToken)
-        => View(await _forumService.GetFlaggedPostsAsync(cancellationToken));
+        => View(await _forumService.GetModerationQueueAsync(cancellationToken));
 
     [Authorize(Policy = PolicyConstants.CanModerateForum)]
     [HttpPost]
@@ -124,7 +124,7 @@ public class ForumController : Controller
     {
         var reviewed = await _forumService.ReviewPostAsync(postId, publish, cancellationToken);
         TempData[reviewed ? "ForumSuccess" : "ForumError"] = reviewed
-            ? publish ? "The post has been restored." : "The post has been removed."
+            ? publish ? "The post stays available and is marked as reviewed." : "The post has been removed."
             : "That post was not found. It may have already been reviewed.";
         return RedirectToAction(nameof(Moderation));
     }

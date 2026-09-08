@@ -73,6 +73,8 @@ builder.Services.AddApplication();
 // Override Application's transport-neutral no-op with Web's authorized SignalR refresh signal.
 builder.Services.AddScoped<IRiskQueueNotifier, SignalRRiskQueueNotifier>();
 builder.Services.AddScoped<IAdminNotificationNotifier, SignalRAdminNotifier>();
+builder.Services.AddScoped<IPeerSupportNotifier, SignalRPeerSupportNotifier>();
+builder.Services.AddScoped<IVolunteerRosterNotifier, SignalRVolunteerRosterNotifier>();
 
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.ContentRootPath);
 if (builder.Environment.IsDevelopment())
@@ -163,9 +165,14 @@ app.MapHealthChecks("/health/ml", new Microsoft.AspNetCore.Diagnostics.HealthChe
     ResponseWriter = WriteHealthResponseAsync
 });
 app.MapHub<CounselorQueueHub>(CounselorQueueHub.Route);
-// Peer chat has no server-owned room membership or moderation model yet. It is not
-// mapped until those privacy and authorization requirements are implemented.
 app.MapHub<AdminNotificationHub>(AdminNotificationHub.Route);
+// PeerSupportHub only tells a named user that something they can already see has changed, so it
+// needs no room membership.
+app.MapHub<PeerSupportHub>(PeerSupportHub.Route);
+// PeerChatHub carries message content, so it is mapped only because membership is now resolved
+// server-side from the SupportRequest row (IPeerChatService) and re-checked on every send. There is
+// no automated moderation; the volunteer in the room can escalate to a counselor.
+app.MapHub<PeerChatHub>(PeerChatHub.Route);
 if (useHangfire)
 {
     app.MapHangfireDashboard()
