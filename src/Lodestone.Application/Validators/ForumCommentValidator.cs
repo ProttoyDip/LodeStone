@@ -8,6 +8,6 @@ public class ForumCommentValidator : AbstractValidator<CreateForumCommentDto>
     public ForumCommentValidator()
     {
         RuleFor(x => x.PostId).GreaterThan(0);
-        RuleFor(x => x.Body).NotEmpty().MaximumLength(2000);
+        RuleFor(x => x.Body).NotEmpty().MaximumTrimmedLength(2000);
     }
 }

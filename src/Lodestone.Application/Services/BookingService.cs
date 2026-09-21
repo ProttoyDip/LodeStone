@@ -8,6 +8,7 @@ namespace Lodestone.Application.Services;
 
 public class BookingService : IBookingService
 {
+    private const int MaximumBookingNotesLength = 1_000;
     private const int MaximumSessionNotesLength = 2_000;
     private readonly IBookingRepository _bookingRepository;
     private readonly IAuditLogService _auditLogService;
@@ -28,10 +29,13 @@ public class BookingService : IBookingService
 
     public async Task<BookingDto> CreateBookingAsync(int studentProfileId, CreateBookingDto dto, CancellationToken cancellationToken = default)
     {
-        if (dto.AvailabilitySlotId <= 0 || dto.Notes?.Length > 1000)
+        // Measured after trimming, because the trimmed value is what gets stored: a note that fits
+        // once its trailing newline is removed must not be refused for being one character over.
+        var notes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
+        if (dto.AvailabilitySlotId <= 0 || notes?.Length > MaximumBookingNotesLength)
             throw new ArgumentException("Select an available appointment and keep notes within 1,000 characters.", nameof(dto));
 
-        var booking = await _bookingRepository.TryCreateConfirmedAsync(studentProfileId, dto.AvailabilitySlotId, dto.Notes?.Trim(), cancellationToken)
+        var booking = await _bookingRepository.TryCreateConfirmedAsync(studentProfileId, dto.AvailabilitySlotId, notes, cancellationToken)
             ?? throw new BookingSlotUnavailableException();
         _auditLogService.Record("BookingCreated", nameof(CounselorBooking), booking.Id.ToString(), "Confirmed from a published slot.");
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -139,12 +143,13 @@ public class BookingService : IBookingService
         string? sessionNotes,
         CancellationToken cancellationToken = default)
     {
+        var notes = string.IsNullOrWhiteSpace(sessionNotes) ? null : sessionNotes.Trim();
         if (string.IsNullOrWhiteSpace(counselorUserId)
             || bookingId <= 0
             || outcome is not (BookingStatus.Completed or BookingStatus.NoShow)
-            || sessionNotes?.Length > MaximumSessionNotesLength
+            || notes?.Length > MaximumSessionNotesLength
             // An unfilled template is not a record of anything; the counselor must write or clear it.
-            || sessionNotes?.Contains(SessionReportDrafter.Placeholder, StringComparison.Ordinal) == true)
+            || notes?.Contains(SessionReportDrafter.Placeholder, StringComparison.Ordinal) == true)
         {
             return CounselorBookingUpdateResult.InvalidRequest;
         }
@@ -157,7 +162,7 @@ public class BookingService : IBookingService
             counselorUserId,
             bookingId,
             outcome,
-            string.IsNullOrWhiteSpace(sessionNotes) ? null : sessionNotes.Trim(),
+            notes,
             _timeProvider.GetUtcNow().UtcDateTime,
             cancellationToken);
 

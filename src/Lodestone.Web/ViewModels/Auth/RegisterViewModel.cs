@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Lodestone.Web.Validation;
 
 namespace Lodestone.Web.ViewModels.Auth;
 
@@ -25,7 +26,7 @@ public class RegisterViewModel
     public string ConfirmPassword { get; set; } = string.Empty;
 
     [Display(Name = "I agree to the privacy commitment")]
-    [Range(typeof(bool), "true", "true", ErrorMessage = "You must accept the privacy commitment to continue.")]
+    [MustBeAccepted(ErrorMessage = "You must accept the privacy commitment to continue.")]
     public bool AcceptPrivacy { get; set; }
 
     [Display(Name = "Enable weekly risk monitoring")]

@@ -7,6 +7,8 @@ namespace Lodestone.Application.Services;
 
 public class JournalService : IJournalService
 {
+    private const int MaximumNoteLength = 2_000;
+
     private readonly IJournalRepository _journalRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISensitiveDataProtector _sensitiveDataProtector;
@@ -42,7 +44,9 @@ public class JournalService : IJournalService
         ArgumentOutOfRangeException.ThrowIfLessThan(studentProfileId, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(dto.MoodRating, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(dto.MoodRating, 5);
-        if (dto.Note?.Length > 2000)
+        // Measured after trimming, because the trimmed note is what gets stored.
+        var plaintextNote = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim();
+        if (plaintextNote?.Length > MaximumNoteLength)
             throw new ArgumentException("Journal notes cannot exceed 2000 characters.", nameof(dto));
 
         var now = DateTime.UtcNow;
@@ -50,7 +54,6 @@ public class JournalService : IJournalService
         if (await _journalRepository.HasEntryForDayAsync(studentProfileId, dayStartUtc, cancellationToken))
             throw new DailyJournalEntryLimitException();
 
-        var plaintextNote = string.IsNullOrWhiteSpace(dto.Note) ? null : dto.Note.Trim();
         var entry = new MoodJournalEntry
         {
             StudentProfileId = studentProfileId,

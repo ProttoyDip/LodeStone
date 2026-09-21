@@ -1,0 +1,314 @@
+{
+  "account": {
+    "email": "lab6.student333687@test.local",
+    "studentNumber": "L6333687"
+  },
+  "cases": [
+    {
+      "id": "TC-S01",
+      "title": "Landing page loads for an anonymous visitor",
+      "kind": "Normal",
+      "expected": "Public landing page renders without authentication",
+      "actual": "Landing page served, title 'Lodestone - Student Wellbeing, Before Silence Becomes Crisis - Lodestone'.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S01.png"
+    },
+    {
+      "id": "TC-S02",
+      "title": "Anonymous request for the student dashboard",
+      "kind": "Exceptional",
+      "expected": "Redirect to sign-in instead of serving private data",
+      "actual": "Redirected to the sign-in page with a ReturnUrl.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S02.png"
+    },
+    {
+      "id": "TC-S03",
+      "title": "Anonymous request for the counselor queue",
+      "kind": "Exceptional",
+      "expected": "Redirect to sign-in",
+      "actual": "Counselor workspace is not reachable while signed out.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S03.png"
+    },
+    {
+      "id": "TC-S04",
+      "title": "Registration with every field empty",
+      "kind": "Invalid",
+      "expected": "Required-field validation messages, no account created",
+      "actual": "Required-field messages shown; the form did not submit.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S04.png"
+    },
+    {
+      "id": "TC-S05",
+      "title": "Registration with mismatched password confirmation",
+      "kind": "Invalid",
+      "expected": "'The passwords do not match.' and no account created",
+      "actual": "Password mismatch reported; registration refused.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S05.png"
+    },
+    {
+      "id": "TC-S06",
+      "title": "Registration with a password below the minimum length",
+      "kind": "Boundary",
+      "expected": "Length validation message at 4 characters against a minimum of 8",
+      "actual": "Minimum password length enforced.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S06.png"
+    },
+    {
+      "id": "TC-S07",
+      "title": "Registration with an illegal student number",
+      "kind": "Invalid",
+      "expected": "Format message; the claim is refused",
+      "actual": "Student-number format rule reported.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S07.png"
+    },
+    {
+      "id": "TC-S08",
+      "title": "Registration without accepting the privacy commitment",
+      "kind": "Invalid",
+      "expected": "Consent message; no account created",
+      "actual": "Consent rule enforced; registration refused.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S08.png"
+    },
+    {
+      "id": "TC-S09",
+      "title": "Registration with valid details and consent accepted",
+      "kind": "Normal",
+      "expected": "Account is created and the student is signed in",
+      "actual": "Account created and signed in; landed on https://localhost:5001/Student.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S09.png"
+    },
+    {
+      "id": "TC-S10",
+      "title": "Registration reusing an existing email address",
+      "kind": "Exceptional",
+      "expected": "Duplicate is refused with a readable message",
+      "actual": "Duplicate email refused with a message.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S10.png"
+    },
+    {
+      "id": "TC-S11",
+      "title": "Sign in with the wrong password",
+      "kind": "Exceptional",
+      "expected": "Refusal with a non-specific message",
+      "actual": "Sign-in refused without disclosing which field was wrong.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S11.png"
+    },
+    {
+      "id": "TC-S12",
+      "title": "Sign in with an email that has no account",
+      "kind": "Exceptional",
+      "expected": "Same refusal as a wrong password (no account enumeration)",
+      "actual": "Unknown account refused with the same message as a wrong password.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S12.png"
+    },
+    {
+      "id": "TC-S13",
+      "title": "Sign in with valid credentials",
+      "kind": "Normal",
+      "expected": "Session established and role redirect applied",
+      "actual": "Signed in and redirected to https://localhost:5001/Student.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S13.png"
+    },
+    {
+      "id": "TC-S14",
+      "title": "Open the private mood journal",
+      "kind": "Normal",
+      "expected": "Journal page renders with the entry form",
+      "actual": "Journal page rendered for the signed-in student.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S14.png"
+    },
+    {
+      "id": "TC-S15",
+      "title": "Record today's mood entry",
+      "kind": "Normal",
+      "expected": "Entry is stored and shown in the history",
+      "actual": "Entry submitted; the journal accepted today's check-in.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S15.png"
+    },
+    {
+      "id": "TC-S16",
+      "title": "Record a second mood entry on the same day",
+      "kind": "Boundary",
+      "expected": "One entry per UTC day; the second is refused",
+      "actual": "The entry form is withdrawn for the rest of the day, with a message.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S16.png"
+    },
+    {
+      "id": "TC-S17",
+      "title": "Open the peer forum",
+      "kind": "Normal",
+      "expected": "Category list renders",
+      "actual": "Forum categories listed.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S17.png"
+    },
+    {
+      "id": "TC-S18",
+      "title": "Publish a discussion with an empty title and body",
+      "kind": "Invalid",
+      "expected": "Validation messages; nothing is published",
+      "actual": "Empty title and body refused.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S18.png"
+    },
+    {
+      "id": "TC-S19",
+      "title": "Publish a valid discussion",
+      "kind": "Normal",
+      "expected": "Post is stored and its detail page opens",
+      "actual": "Discussion published at https://localhost:5001/Forum/Post/4.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S19.png"
+    },
+    {
+      "id": "TC-S20",
+      "title": "Reply to a discussion",
+      "kind": "Normal",
+      "expected": "Comment is stored and displayed",
+      "actual": "Reply stored and rendered on the discussion.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S20.png"
+    },
+    {
+      "id": "TC-S21",
+      "title": "Report a discussion without giving a reason",
+      "kind": "Invalid",
+      "expected": "Guidance message; no flag recorded",
+      "actual": "The empty report was blocked and the page did not submit.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S21.png"
+    },
+    {
+      "id": "TC-S21b",
+      "title": "Type past the reply length limit",
+      "kind": "Boundary",
+      "expected": "The reply box stops at the same 2,000 characters the server accepts",
+      "actual": "The reply box stops at 2000 characters, matching the server limit.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S21b.png"
+    },
+    {
+      "id": "TC-S21c",
+      "title": "Type past the report reason length limit",
+      "kind": "Boundary",
+      "expected": "The report box stops at the same 500 characters the server accepts",
+      "actual": "The report box stops at 500 characters, matching the server limit.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S21c.png"
+    },
+    {
+      "id": "TC-S22",
+      "title": "Open a discussion that does not exist",
+      "kind": "Exceptional",
+      "expected": "Not-found page rather than a server error",
+      "actual": "A discussion identifier that does not resolve returns a not-found page.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S22.png"
+    },
+    {
+      "id": "TC-S23",
+      "title": "Search the crisis resources with a sentence",
+      "kind": "Normal",
+      "expected": "Ranked resources are listed",
+      "actual": "Search returned a ranked result page.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S23.png"
+    },
+    {
+      "id": "TC-S24",
+      "title": "Search the crisis resources with a 3,000 character query",
+      "kind": "Boundary",
+      "expected": "Query is truncated to the ranking limit; page still renders",
+      "actual": "A 3,000 character query was handled without an error.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S24.png"
+    },
+    {
+      "id": "TC-S25",
+      "title": "Open the counselor booking page",
+      "kind": "Normal",
+      "expected": "Available slots or an empty state render",
+      "actual": "Booking page rendered with the published slots or an empty state.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S25.png"
+    },
+    {
+      "id": "TC-S26",
+      "title": "Student opens the administration area",
+      "kind": "Exceptional",
+      "expected": "Access denied; the page is not served",
+      "actual": "Student is refused the administration area.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S26.png"
+    },
+    {
+      "id": "TC-S27",
+      "title": "Student opens the counselor risk queue",
+      "kind": "Exceptional",
+      "expected": "Access denied; no risk data is exposed",
+      "actual": "Student is refused the counselor risk queue.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S27.png"
+    },
+    {
+      "id": "TC-S28",
+      "title": "Request a URL that does not exist",
+      "kind": "Exceptional",
+      "expected": "Handled not-found response, no stack trace",
+      "actual": "Unknown route returned a handled response rather than a stack trace.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S28.png"
+    },
+    {
+      "id": "TC-S29",
+      "title": "Open the student privacy and monitoring area",
+      "kind": "Normal",
+      "expected": "Consent state and the transparency panel render",
+      "actual": "Student privacy and monitoring area rendered.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S29.png"
+    },
+    {
+      "id": "TC-S30",
+      "title": "Change the monitoring consent decision",
+      "kind": "Normal",
+      "expected": "Consent is updated and confirmed on screen",
+      "actual": "Monitoring consent was changed from the student's own privacy page.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S30.png"
+    },
+    {
+      "id": "TC-S31",
+      "title": "Sign out and re-request a private page",
+      "kind": "Normal",
+      "expected": "Session is cleared and the dashboard is no longer served",
+      "actual": "Session ended; private pages require signing in again.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S31.png"
+    },
+    {
+      "id": "TC-S32",
+      "title": "Repeated sign-in attempts from one address",
+      "kind": "Exceptional",
+      "expected": "The auth rate limiter refuses further attempts with 429",
+      "actual": "The sign-in endpoint began refusing with 429 after 4 attempts in the window.",
+      "status": "PASS",
+      "screenshot": "screenshots/TC-S32.png"
+    }
+  ]
+}

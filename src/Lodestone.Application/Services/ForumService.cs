@@ -1,3 +1,4 @@
+using Lodestone.Application.Exceptions;
 using Lodestone.Application.DTOs.Forum;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Entities;
@@ -77,13 +78,15 @@ public class ForumService : IForumService
         CreateForumPostDto dto, CancellationToken cancellationToken = default)
     {
         var userId = _currentUser.UserId ?? throw new InvalidOperationException("User not authenticated.");
+        var title = Required(dto.Title, nameof(dto.Title));
+        var body = Required(dto.Body, nameof(dto.Body));
 
         var post = new ForumPost
         {
             ForumCategoryId = dto.CategoryId,
             AuthorUserId    = userId,
-            Title           = dto.Title.Trim(),
-            Body            = dto.Body.Trim(),
+            Title           = title,
+            Body            = body,
             Status          = ForumPostStatus.Published,
             CreatedAtUtc    = DateTime.UtcNow,
         };
@@ -98,12 +101,18 @@ public class ForumService : IForumService
         CreateForumCommentDto dto, CancellationToken cancellationToken = default)
     {
         var userId = _currentUser.UserId ?? throw new InvalidOperationException("User not authenticated.");
+        var body = Required(dto.Body, nameof(dto.Body));
+
+        // The post is read before the reply is staged: without this, a reply from a page whose post
+        // has since been removed reaches the database and fails on the foreign key as a 500.
+        _ = await _forumRepository.GetPostByIdAsync(dto.PostId, cancellationToken)
+            ?? throw new ForumPostNotFoundException(dto.PostId);
 
         var comment = new ForumComment
         {
             ForumPostId  = dto.PostId,
             AuthorUserId = userId,
-            Body         = dto.Body.Trim(),
+            Body         = body,
             CreatedAtUtc = DateTime.UtcNow,
         };
 
@@ -116,15 +125,16 @@ public class ForumService : IForumService
     public async Task FlagPostAsync(int postId, string reason, CancellationToken cancellationToken = default)
     {
         var userId = _currentUser.UserId ?? throw new InvalidOperationException("User not authenticated.");
+        var trimmedReason = Required(reason, nameof(reason));
 
         var post = await _forumRepository.GetPostByIdAsync(postId, cancellationToken)
-            ?? throw new InvalidOperationException($"Post {postId} not found.");
+            ?? throw new ForumPostNotFoundException(postId);
 
         var flag = new ForumFlag
         {
             ForumPostId  = postId,
             RaisedByUserId = userId,
-            Reason       = reason.Trim(),
+            Reason       = trimmedReason,
             CreatedAtUtc = DateTime.UtcNow,
         };
 
@@ -208,6 +218,16 @@ public class ForumService : IForumService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return true;
     }
+
+    /// <summary>
+    /// Text the caller must supply, trimmed. Blank input is refused here as well as in the request
+    /// validator, so a caller that bypasses the MVC pipeline cannot store an empty post or reply,
+    /// and a null never reaches <c>Trim</c> as a null reference.
+    /// </summary>
+    private static string Required(string? value, string parameterName)
+        => string.IsNullOrWhiteSpace(value)
+            ? throw new ArgumentException("This field cannot be empty.", parameterName)
+            : value.Trim();
 
     private static ForumPostDto MapToDto(ForumPost p)
         => new(p.Id, p.ForumCategoryId, p.AuthorUserId, p.Title, p.Body, p.Status, p.CreatedAtUtc);

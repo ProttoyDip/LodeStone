@@ -81,9 +81,12 @@ public sealed class AdminVolunteerController : Controller
         }
 
         var sent = await SendVolunteerSetupEmailAsync(result, cancellationToken);
-        TempData[sent ? "AdminSuccess" : "AdminError"] = sent
-            ? "Invitation sent. The volunteer will appear here once they set a password and complete their profile."
-            : "The account was created, but the invitation email could not be sent. Use Resend invitation.";
+        TempData[sent ? "AdminSuccess" : "AdminError"] = (sent, result.IsResend) switch
+        {
+            (true, true) => "That address was already invited but has not set a password yet, so a fresh invitation link was sent.",
+            (true, false) => "Invitation sent. The volunteer will appear here once they set a password and complete their profile.",
+            _ => "The account was created, but the invitation email could not be sent. Use Resend invitation."
+        };
 
         return RedirectToAction(nameof(Index));
     }

@@ -109,7 +109,48 @@ public sealed class VolunteerProvisioningServiceTests
         users.Verify(m => m.CreateAsync(It.IsAny<ApplicationUser>()), Times.Never);
     }
 
-    // Validation delegates to EmailAddressAttribute, which accepts domain-only hosts such as
+    [Fact]
+    public async Task InviteAsync_ReissuesTheLinkWhenTheVolunteerHasNotSetAPasswordYet()
+    {
+        var pending = new ApplicationUser { Id = "pending", Email = "vol@university.test" };
+        var users = CreateUserManager();
+        users.Setup(m => m.FindByEmailAsync("vol@university.test")).ReturnsAsync(pending);
+        users.Setup(m => m.IsInRoleAsync(pending, RoleConstants.Volunteer)).ReturnsAsync(true);
+        users.Setup(m => m.HasPasswordAsync(pending)).ReturnsAsync(false);
+        users.Setup(m => m.GeneratePasswordResetTokenAsync(pending)).ReturnsAsync("fresh-token");
+
+        await using var context = CreateContext();
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
+
+        var result = await service.InviteAsync(new InviteVolunteerDto("vol@university.test"));
+
+        // The account is invisible on the roster until the volunteer accepts, so refusing here
+        // would leave the administrator with an "already exists" error for an address they cannot see.
+        result.Succeeded.Should().BeTrue();
+        result.IsResend.Should().BeTrue();
+        result.PasswordSetupToken.Should().Be("fresh-token");
+        users.Verify(m => m.CreateAsync(It.IsAny<ApplicationUser>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task InviteAsync_StillRejectsAVolunteerWhoAlreadySetAPassword()
+    {
+        var active = new ApplicationUser { Id = "active", Email = "vol@university.test" };
+        var users = CreateUserManager();
+        users.Setup(m => m.FindByEmailAsync("vol@university.test")).ReturnsAsync(active);
+        users.Setup(m => m.IsInRoleAsync(active, RoleConstants.Volunteer)).ReturnsAsync(true);
+        users.Setup(m => m.HasPasswordAsync(active)).ReturnsAsync(true);
+
+        await using var context = CreateContext();
+        var service = new VolunteerProvisioningService(users.Object, context, Mock.Of<IAuditLogService>(),
+            Mock.Of<IVolunteerRosterNotifier>(), NullLogger<VolunteerProvisioningService>.Instance);
+
+        var result = await service.InviteAsync(new InviteVolunteerDto("vol@university.test"));
+
+        result.Succeeded.Should().BeFalse();
+        users.Verify(m => m.GeneratePasswordResetTokenAsync(It.IsAny<ApplicationUser>()), Times.Never);
+    }
     // "user@localhost" by design. Tightening that with a pattern would reject valid institutional
     // addresses, so only genuinely unusable input is asserted here.
     [Theory]

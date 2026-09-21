@@ -1,3 +1,4 @@
+using Lodestone.Application.Exceptions;
 using FluentValidation;
 using Lodestone.Application.DTOs.Forum;
 using Lodestone.Application.Interfaces;
@@ -92,7 +93,17 @@ public class ForumController : Controller
             return View("Post", new ForumPostDetailViewModel { Post = post, NewComment = newComment });
         }
 
-        await _forumService.AddCommentAsync(newComment, cancellationToken);
+        try
+        {
+            await _forumService.AddCommentAsync(newComment, cancellationToken);
+        }
+        catch (ForumPostNotFoundException)
+        {
+            // The discussion was removed while the reply was being written.
+            TempData["ForumError"] = "That discussion is no longer available, so your reply was not posted.";
+            return RedirectToAction(nameof(Index));
+        }
+
         TempData["ForumSuccess"] = "Your reply has been added.";
         return RedirectToAction(nameof(Post), new { id = newComment.PostId });
     }
@@ -107,7 +118,16 @@ public class ForumController : Controller
             return RedirectToAction(nameof(Post), new { id });
         }
 
-        await _forumService.FlagPostAsync(id, reason, cancellationToken);
+        try
+        {
+            await _forumService.FlagPostAsync(id, reason, cancellationToken);
+        }
+        catch (ForumPostNotFoundException)
+        {
+            TempData["ForumError"] = "That discussion is no longer available, so there is nothing to report.";
+            return RedirectToAction(nameof(Index));
+        }
+
         TempData["ForumSuccess"] = "Thank you. The post has been sent for review.";
         return RedirectToAction(nameof(Index));
     }
