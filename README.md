@@ -367,17 +367,66 @@ Migrations are applied automatically at startup. Twelve migrations, in order:
 
 EF reports no pending model changes. The `ConsentGatedRiskMonitoring` migration used a privacy-first upgrade policy that deletes pre-consent monitoring data, converts valid legacy student numbers into pending claims, and clears untrusted verified mappings.
 
-## Local Docker
+## Deployment
 
-From the repo root:
+Lodestone is deployed from a developer machine and shared through a free public tunnel. There is no cloud host: the app needs SQL Server, and the free tiers of Railway, Render and Azure either cannot run SQL Server or cannot run the ML scoring and Hangfire jobs reliably. The public link is online only while the machine, the app and the tunnel are running.
+
+### Prerequisites
+
+- .NET 8 SDK
+- SQL Server Express with the `.\SQLEXPRESS` instance (the connection strings in `appsettings.Development.json` point at it)
+- Node.js (for `npx localtunnel`); `ngrok` is an optional alternative
+- The three ML artifacts in `src/Lodestone.Web/App_Data/ml/` (`risk-model.zip`, `risk-model.metadata.json`, `risk-model.publication.json`). They are git-ignored, so copy them onto the machine that hosts the app.
+
+### 1. Configure (once)
+
+```bash
+dotnet user-secrets set "MachineLearning:Enabled" true --project src/Lodestone.Web
+dotnet user-secrets set "SeedData:AdminEmail" "<admin email>" --project src/Lodestone.Web
+dotnet user-secrets set "SeedData:AdminPassword" "<strong password>" --project src/Lodestone.Web
+```
+
+The database and Hangfire schema are created and migrated on first start.
+
+### 2. Start the app
+
+`ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` lets the app trust the tunnel's `X-Forwarded-Proto`, so HTTPS redirection does not send visitors to a `localhost` address.
+
+```bash
+ASPNETCORE_FORWARDEDHEADERS_ENABLED=true ASPNETCORE_ENVIRONMENT=Development   dotnet run --project src/Lodestone.Web --no-launch-profile   --urls "https://localhost:5001;http://localhost:5000"
+```
+
+### 3. Open the public link
+
+```bash
+npx localtunnel --port 5000 --subdomain lodestone
+```
+
+This serves the app at `https://lodestone.loca.lt`. If the name is already taken you receive a random one, printed in the terminal. First-time visitors may be asked for a tunnel password, which is the public IP of the hosting machine (look it up at https://loca.lt/mytunnelpassword).
+
+Alternative with an ngrok account: `ngrok http https://localhost:5001` gives a fixed `*.ngrok-free.dev` address with a one-time "Visit Site" interstitial.
+
+### 4. Verify
+
+Open `/health/ready` on the public URL. It should report `Healthy`, including `risk-model`, which confirms the ML artifact loaded.
+
+### Limitations
+
+- Online only while the host machine, the app and the tunnel are running.
+- The link is not a custom domain (`lodestone.io` would need a purchased domain).
+- Account emails (password reset, invitations) use `PublicUrl__BaseUrl`; set it to the public URL, or those links point at `localhost`.
+- Registration and sign-in are rate limited to 10 requests per 10 minutes; restarting the app resets the counter.
+- Anyone with the link can reach the sign-in and registration pages, so share it deliberately.
+
+### Optional: local Docker
+
+For an isolated demo with its own SQL Server container, from the repo root:
 
 ```bash
 docker compose --env-file deployment/docker/.env.example -f deployment/docker/docker-compose.yml up --build
 ```
 
-The Docker setup is for local/demo evaluation. It uses persisted volumes for SQL Server, ASP.NET Data Protection keys, HTTPS certs, and optional ML artifacts. Do not use `docker compose down -v` with real encrypted journal data unless the SQL and key-ring volumes are backed up.
-
-Production should use external TLS, managed secrets, least-privilege DB credentials, controlled migrations, persistent backed-up SQL storage, and a protected shared Data Protection key ring.
+Replace every placeholder secret in a private env file first. The Docker setup persists SQL Server, ASP.NET Data Protection keys, HTTPS certs and optional ML artifacts in volumes. Do not run `docker compose down -v` with real encrypted journal data unless the SQL and key-ring volumes are backed up. A production deployment would need external TLS, managed secrets, least-privilege database credentials, controlled migrations, backed-up SQL storage and a protected shared Data Protection key ring.
 
 ## Tests
 
