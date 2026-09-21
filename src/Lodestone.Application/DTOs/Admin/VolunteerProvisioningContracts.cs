@@ -12,4 +12,5 @@ public record VolunteerProvisioningResult(
     string? UserId,
     string? Email,
     string? PasswordSetupToken,
-    IReadOnlyList<string> Errors);
+    IReadOnlyList<string> Errors,
+    bool IsResend = false);

@@ -113,6 +113,11 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+// A wrong or stale URL previously produced an empty 404 body: the browser's own error screen, with
+// no way back into the application. Re-executing to the error page keeps the status code and gives
+// the visitor a route back, including to the crisis resources.
+app.UseStatusCodePagesWithReExecute("/Home/Error", "?statusCode={0}");
+
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();

@@ -49,8 +49,29 @@ public sealed class VolunteerProvisioningService : IVolunteerProvisioningService
         var email = (dto.Email ?? string.Empty).Trim().ToLowerInvariant();
         if (email.Length == 0 || !new EmailAddressAttribute().IsValid(email))
             return Failed("Enter a valid email address.");
-        if (await _users.FindByEmailAsync(email) is not null)
-            return Failed("An account with that email already exists.");
+
+        if (await _users.FindByEmailAsync(email) is { } existing)
+        {
+            // An invited volunteer has no password and no profile until they accept, so they are
+            // invisible on the roster. Inviting them again is what an administrator does when the
+            // first email never arrived, so issue a fresh link rather than refusing.
+            var pendingInvitation = await _users.IsInRoleAsync(existing, RoleConstants.Volunteer)
+                                    && !await _users.HasPasswordAsync(existing);
+            if (!pendingInvitation)
+                return Failed("An account with that email already exists.");
+
+            var resendToken = await _users.GeneratePasswordResetTokenAsync(existing);
+            _audit.Record("VolunteerSetupLinkGenerated", nameof(ApplicationUser), existing.Id);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return new VolunteerProvisioningResult(
+                Succeeded: true,
+                UserId: existing.Id,
+                Email: email,
+                PasswordSetupToken: resendToken,
+                Errors: Array.Empty<string>(),
+                IsResend: true);
+        }
 
         var user = new ApplicationUser
         {

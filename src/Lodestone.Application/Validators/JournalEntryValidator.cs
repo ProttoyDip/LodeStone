@@ -8,6 +8,6 @@ public class JournalEntryValidator : AbstractValidator<CreateJournalEntryDto>
     public JournalEntryValidator()
     {
         RuleFor(x => x.MoodRating).InclusiveBetween(1, 5);
-        RuleFor(x => x.Note).MaximumLength(2000);
+        RuleFor(x => x.Note).MaximumTrimmedLength(2000);
     }
 }

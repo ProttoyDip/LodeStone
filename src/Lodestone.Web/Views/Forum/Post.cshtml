@@ -45,7 +45,7 @@
                     <p>Reporting sends the post to the moderation team for review. Please briefly explain the concern.</p>
                     <form class="forum-form forum-form--compact" asp-controller="Forum" asp-action="Flag" asp-route-id="@Model.Post.Id" method="post">
                         <label for="flag-reason">Reason for report</label>
-                        <textarea id="flag-reason" name="reason" rows="3" maxlength="1000" required placeholder="Describe the concern"></textarea>
+                        <textarea id="flag-reason" name="reason" rows="3" maxlength="500" required placeholder="Describe the concern"></textarea>
                         <button class="ls-btn ls-btn--ghost ls-btn--sm" type="submit">Submit report</button>
                     </form>
                 </div>
@@ -67,7 +67,7 @@
                     <input asp-for="NewComment.PostId" type="hidden" value="@Model.Post.Id" />
                     <div class="forum-field">
                         <label asp-for="NewComment.Body">Your response</label>
-                        <textarea asp-for="NewComment.Body" rows="5" maxlength="5000" required placeholder="Write a supportive, respectful response." aria-describedby="reply-guidance"></textarea>
+                        <textarea asp-for="NewComment.Body" rows="5" maxlength="2000" required placeholder="Write a supportive, respectful response." aria-describedby="reply-guidance"></textarea>
                         <p id="reply-guidance" class="forum-field-guidance">Your response will be visible to other members of the forum.</p>
                         <span asp-validation-for="NewComment.Body" class="forum-field-error"></span>
                     </div>

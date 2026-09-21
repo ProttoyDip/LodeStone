@@ -1,0 +1,23 @@
+@model Lodestone.Web.ViewModels.ErrorViewModel
+@{
+    ViewData["Title"] = Model.Title;
+    Layout = "_LandingLayout";
+}
+
+<main class="shell" style="min-height:60vh;display:flex;align-items:center;justify-content:center;padding:4rem 1rem;">
+    <section style="max-width:34rem;text-align:center;">
+        <p style="letter-spacing:.12em;text-transform:uppercase;font-size:.75rem;opacity:.7;">@Model.StatusLabel</p>
+        <h1 style="margin:.5rem 0 1rem;">@Model.Title</h1>
+        <p style="opacity:.85;">@Model.Message</p>
+        <p style="margin-top:2rem;">
+            <a class="btn btn--clay" href="/">Back to the home page</a>
+        </p>
+        @if (Model.IsCrisisRelevant)
+        {
+            <p style="margin-top:1.5rem;font-size:.9rem;opacity:.8;">
+                If you need support right now, the
+                <a href="/CrisisResource">crisis resources</a> page is always available.
+            </p>
+        }
+    </section>
+</main>
