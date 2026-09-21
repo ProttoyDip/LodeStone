@@ -853,7 +853,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                     ["name"] = name,
                     ["email"] = ValueOrFallback(volunteer.Email),
                     ["approval"] = approval,
-                    ["joined"] = FormatDate(volunteer.CreatedAtUtc),
+                    ["joined"] = FormatTimestamp(volunteer.CreatedAtUtc),
                     ["lastLogin"] = FormatOptionalTimestamp(volunteer.LastLoginUtc),
                     ["account"] = volunteer.IsActive ? "Active" : "Disabled"
                 });
@@ -981,7 +981,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                     ["roles"] = roles,
                     ["email"] = ValueOrFallback(user.Email),
                     ["username"] = ValueOrFallback(user.UserName),
-                    ["created"] = FormatDate(user.CreatedAtUtc),
+                    ["created"] = FormatTimestamp(user.CreatedAtUtc),
                     ["presence"] = PresenceText(user.LastSeenUtc, nowUtc),
                     ["lastLogin"] = FormatOptionalTimestamp(user.LastLoginUtc),
                     ["status"] = user.IsActive ? "Active" : "Disabled"
@@ -1277,7 +1277,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                 ["email"] = ValueOrFallback(user.Email),
                 ["username"] = ValueOrFallback(user.UserName),
                 ["roles"] = roleLabel,
-                ["created"] = FormatDate(user.CreatedAtUtc),
+                ["created"] = FormatTimestamp(user.CreatedAtUtc),
                 ["lastLogin"] = FormatOptionalTimestamp(user.LastLoginUtc),
                 ["status"] = accountStatus
             });
@@ -1292,7 +1292,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
             {
                 new AdminMiniMetricDto("Account status", accountStatus, user.IsActive ? "positive" : "critical"),
                 new AdminMiniMetricDto("Roles", roleLabel, "info"),
-                new AdminMiniMetricDto("Member since", FormatDate(user.CreatedAtUtc), "neutral"),
+                new AdminMiniMetricDto("Member since", FormatTimestamp(user.CreatedAtUtc), "neutral"),
                 new AdminMiniMetricDto("Last sign-in", FormatOptionalTimestamp(user.LastLoginUtc), "neutral")
             },
             Columns: ProfileColumns(),

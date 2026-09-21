@@ -85,7 +85,7 @@
                                                 <p class="mb-1 text-muted">
                                                     <span class="badge bg-secondary">@request.Category</span>
                                                 </p>
-                                                <small class="text-muted">Posted @request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
+                                                <small class="text-muted">Posted <time datetime="@request.CreatedAtUtc.ToString("O")">@request.CreatedAtUtc.ToString("MMM d, yyyy")</time></small>
                                             </div>
                                             <a href="@Url.Action("ViewRequest", "Volunteer", new { requestId = request.Id })" class="btn btn-sm btn-primary">
                                                 View Request
@@ -123,7 +123,7 @@
                                                     <span class="badge bg-success">Accepted</span>
                                                     <span class="badge bg-secondary">@request.Category</span>
                                                 </p>
-                                                <small class="text-muted">Started @request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
+                                                <small class="text-muted">Started <time datetime="@request.CreatedAtUtc.ToString("O")">@request.CreatedAtUtc.ToString("MMM d, yyyy")</time></small>
                                             </div>
                                             <a href="@Url.Action("ViewRequest", "Volunteer", new { requestId = request.Id })" class="btn btn-sm btn-primary">
                                                 Continue

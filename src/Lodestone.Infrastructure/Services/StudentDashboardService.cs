@@ -1,3 +1,4 @@
+using Lodestone.Application.Common;
 using Lodestone.Application.DTOs.Student;
 using Lodestone.Application.Interfaces;
 using Lodestone.Domain.Enums;
@@ -16,13 +17,31 @@ public sealed class StudentDashboardService : IStudentDashboardService
     {
         var profile = await _context.StudentProfiles.AsNoTracking()
             .Where(item => item.UserId == userId)
-            .Select(item => new { item.Id, Name = item.User != null ? item.User.FullName : string.Empty })
+            .Select(item => new
+            {
+                item.Id,
+                Name = item.User != null ? item.User.FullName : string.Empty,
+                TimeZoneId = item.User != null ? item.User.TimeZoneId : null
+            })
             .SingleOrDefaultAsync(cancellationToken);
         if (profile is null) return null;
 
+        // The seven days on the chart are the student's own calendar days, not UTC days, so an evening
+        // in Dhaka or New York lands on the day the student experienced it. Days are bounded by their
+        // local midnights converted back to UTC, which is what the stored timestamps use.
+        var zone = UserTime.Resolve(profile.TimeZoneId);
+        DateTime LocalMidnightToUtc(DateTime localDay)
+        {
+            var local = DateTime.SpecifyKind(localDay, DateTimeKind.Unspecified);
+            if (zone.IsInvalidTime(local)) local = local.AddHours(1); // midnight skipped by a daylight-saving change
+            return TimeZoneInfo.ConvertTimeToUtc(local, zone);
+        }
+
         var todayUtc = DateTime.UtcNow.Date;
-        var rangeStartUtc = todayUtc.AddDays(-6);
-        var rangeEndUtc = todayUtc.AddDays(1);
+        var todayLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone).Date;
+        var firstDayLocal = todayLocal.AddDays(-6);
+        var rangeStartUtc = LocalMidnightToUtc(firstDayLocal);
+        var rangeEndUtc = LocalMidnightToUtc(todayLocal.AddDays(1));
 
         var loginEvents = await _context.ActivityLogs.AsNoTracking()
             .Where(item => item.StudentProfileId == profile.Id && item.OccurredAtUtc >= rangeStartUtc && item.OccurredAtUtc < rangeEndUtc)
@@ -59,17 +78,23 @@ public sealed class StudentDashboardService : IStudentDashboardService
 
         var activityDays = Enumerable.Range(0, 7).Select(offset =>
         {
-            var day = rangeStartUtc.AddDays(offset);
-            var next = day.AddDays(1);
+            var dayLocal = firstDayLocal.AddDays(offset);
+            var day = LocalMidnightToUtc(dayLocal);
+            var next = LocalMidnightToUtc(dayLocal.AddDays(1));
             var count = loginEvents.Where(item => item.At >= day && item.At < next).Sum(item => item.Count)
                         + journalEvents.Count(item => item >= day && item < next)
                         + postEvents.Count(item => item >= day && item < next)
                         + commentEvents.Count(item => item >= day && item < next)
                         + bookingEvents.Count(item => item >= day && item < next);
-            return new StudentActivityDayDto(day, count);
+            return new StudentActivityDayDto(dayLocal, count);
         }).ToList().AsReadOnly();
 
-        var hasJournalToday = journalEvents.Any(item => item >= todayUtc && item < rangeEndUtc);
+        // The journal allows one entry per UTC day (enforced by a database index), so "today" here is
+        // the UTC day even though the chart above follows the student's own days.
+        var hasJournalToday = await _context.MoodJournalEntries.AsNoTracking().AnyAsync(
+            item => item.StudentProfileId == profile.Id && !item.IsDeleted &&
+                    item.EntryDateUtc >= todayUtc && item.EntryDateUtc < todayUtc.AddDays(1),
+            cancellationToken);
         var recommendation = nextBooking is not null
             ? new StudentRecommendationDto("Next appointment", "Your counselor session is scheduled.", "Review the time or manage the appointment from booking.", "Booking", "Index", "View appointment")
             : !hasJournalToday

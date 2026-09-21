@@ -1,3 +1,4 @@
+using Lodestone.Application.Common;
 using System.Globalization;
 using System.Net;
 using Hangfire;
@@ -84,7 +85,10 @@ public class BookingReminderJob : IMaintenanceJob
                 await _emailService.SendAsync(
                     recipient,
                     "Reminder: your Lodestone counseling session",
-                    BuildBody(booking.ScheduledForUtc, booking.CounselorProfile?.User?.FullName),
+                    BuildBody(
+                        booking.ScheduledForUtc,
+                        booking.CounselorProfile?.User?.FullName,
+                        booking.StudentProfile?.User?.TimeZoneId),
                     cancellationToken);
                 sent++;
             }
@@ -108,9 +112,10 @@ public class BookingReminderJob : IMaintenanceJob
             due.Count);
     }
 
-    private static string BuildBody(DateTime scheduledForUtc, string? counselorName)
+    /// <summary>The time is shown in the student's own zone when the browser has reported one, otherwise UTC.</summary>
+    private static string BuildBody(DateTime scheduledForUtc, string? counselorName, string? studentTimeZoneId)
     {
-        var when = scheduledForUtc.ToString("dddd, dd MMMM yyyy 'at' HH:mm", CultureInfo.InvariantCulture);
+        var when = UserTime.Format(scheduledForUtc, studentTimeZoneId, "dddd, dd MMMM yyyy 'at' HH:mm");
         var withCounselor = string.IsNullOrWhiteSpace(counselorName)
             ? string.Empty
             : $" with {WebUtility.HtmlEncode(counselorName)}";
@@ -118,7 +123,7 @@ public class BookingReminderJob : IMaintenanceJob
         return $"""
             <p>Hello,</p>
             <p>This is a reminder of your counseling session{withCounselor} on
-            <strong>{WebUtility.HtmlEncode(when)} UTC</strong>.</p>
+            <strong>{WebUtility.HtmlEncode(when)}</strong>.</p>
             <p>If you can no longer attend, please cancel in Lodestone so the slot can be offered
             to another student.</p>
             <p>If you need urgent support before then, please use the crisis resources listed in

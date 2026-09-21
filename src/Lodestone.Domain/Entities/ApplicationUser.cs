@@ -10,6 +10,9 @@ public class ApplicationUser : IdentityUser
     public DateTime? LastLoginUtc { get; set; }
     /// <summary>Last time the account made a request or sent a heartbeat; drives the admin online/offline view.</summary>
     public DateTime? LastSeenUtc { get; set; }
+    /// <summary>IANA time zone the user's browser reported (for example "Asia/Dhaka"); used for emails and drafts.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(64)]
+    public string? TimeZoneId { get; set; }
     public bool IsActive { get; set; } = true;
 
     public StudentProfile? StudentProfile { get; set; }

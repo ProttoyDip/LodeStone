@@ -21,7 +21,7 @@
             <h1>@Model.Request.Title</h1>
             <p class="text-muted">
                 <span class="badge bg-secondary">@Model.Request.Category</span>
-                <span class="text-muted ms-2">Posted @Model.Request.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</span>
+                <span class="text-muted ms-2">Posted <time datetime="@Model.Request.CreatedAtUtc.ToString("O")">@Model.Request.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</time></span>
             </p>
         </div>
     </div>
@@ -108,7 +108,7 @@
                                                 <span>Student</span>
                                             }
                                         </strong>
-                                        <small class="text-muted">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</small>
+                                        <small class="text-muted"><time datetime="@interaction.CreatedAtUtc.ToString("O")">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</time></small>
                                     </div>
                                     <p class="mb-0">@interaction.Message</p>
                                     @if (interaction.EscalatedToCounselor)
@@ -186,7 +186,7 @@
                                                 <span>Student</span>
                                             }
                                         </strong>
-                                        <small class="text-muted">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</small>
+                                        <small class="text-muted"><time datetime="@interaction.CreatedAtUtc.ToString("O")">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</time></small>
                                     </div>
                                     <p class="mb-0">@interaction.Message</p>
                                     @if (interaction.EscalatedToCounselor)
@@ -231,7 +231,7 @@
 
                     <p class="mb-0">
                         <strong>Posted:</strong><br />
-                        @Model.Request.CreatedAtUtc.ToString("MMM d, yyyy")
+                        <time datetime="@Model.Request.CreatedAtUtc.ToString("O")">@Model.Request.CreatedAtUtc.ToString("MMM d, yyyy")</time>
                     </p>
                 </div>
             </div>

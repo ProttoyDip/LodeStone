@@ -20,7 +20,7 @@
             <h1>@Model.Title</h1>
             <p class="text-muted">
                 <span class="badge bg-secondary">@Model.Category</span>
-                <span class="text-muted ms-2">Posted @Model.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</span>
+                <span class="text-muted ms-2">Posted <time datetime="@Model.CreatedAtUtc.ToString("O")">@Model.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</time></span>
             </p>
         </div>
     </div>
@@ -84,7 +84,7 @@
                                                 <span>You</span>
                                             }
                                         </strong>
-                                        <small class="text-muted">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</small>
+                                        <small class="text-muted"><time datetime="@interaction.CreatedAtUtc.ToString("O")">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</time></small>
                                     </div>
                                     <p class="mb-0">@interaction.Message</p>
                                     @if (interaction.EscalatedToCounselor)
@@ -161,7 +161,7 @@
 
                     <p class="mb-0">
                         <strong>Posted:</strong><br />
-                        @Model.CreatedAtUtc.ToString("MMM d, yyyy")
+                        <time datetime="@Model.CreatedAtUtc.ToString("O")">@Model.CreatedAtUtc.ToString("MMM d, yyyy")</time>
                     </p>
                 </div>
             </div>

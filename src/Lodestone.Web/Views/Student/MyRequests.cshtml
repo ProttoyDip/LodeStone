@@ -76,7 +76,7 @@
                                                 <p class="mb-1">
                                                     <span class="badge bg-secondary">@request.Category</span>
                                                 </p>
-                                                <small class="text-muted">Posted @request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
+                                                <small class="text-muted">Posted <time datetime="@request.CreatedAtUtc.ToString("O")">@request.CreatedAtUtc.ToString("MMM d, yyyy")</time></small>
                                             </div>
                                             <a href="@Url.Action("ViewRequest", "StudentSupport", new { requestId = request.Id })" class="btn btn-sm btn-primary">
                                                 View
@@ -114,7 +114,7 @@
                                                         <span class="badge bg-danger">@request.UnreadForStudent new</span>
                                                     }
                                                 </p>
-                                                <small class="text-muted">Started @request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
+                                                <small class="text-muted">Started <time datetime="@request.CreatedAtUtc.ToString("O")">@request.CreatedAtUtc.ToString("MMM d, yyyy")</time></small>
                                             </div>
                                             <a href="@Url.Action("ViewRequest", "StudentSupport", new { requestId = request.Id })" class="btn btn-sm btn-primary">
                                                 Continue
@@ -151,7 +151,7 @@
                                                     <span class="badge @badgeClass">@request.Status</span>
                                                     <span class="badge bg-secondary">@request.Category</span>
                                                 </p>
-                                                <small class="text-muted">@request.CreatedAtUtc.ToString("MMM d, yyyy")</small>
+                                                <small class="text-muted"><time datetime="@request.CreatedAtUtc.ToString("O")">@request.CreatedAtUtc.ToString("MMM d, yyyy")</time></small>
                                             </div>
                                             <a href="@Url.Action("ViewRequest", "StudentSupport", new { requestId = request.Id })" class="btn btn-sm btn-outline-primary">
                                                 View

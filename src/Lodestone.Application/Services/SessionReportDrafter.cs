@@ -1,3 +1,4 @@
+using Lodestone.Application.Common;
 using System.Globalization;
 using System.Text;
 using Lodestone.Domain.Enums;
@@ -31,13 +32,15 @@ public static class SessionReportDrafter
     /// <summary>What the drafter knows about a session. All of it is structural.</summary>
     /// <param name="PriorCompletedSessions">Completed sessions between this counselor and student before this one.</param>
     /// <param name="LastCompletedSessionUtc">When the most recent of those took place, if any.</param>
+    /// <param name="TimeZone">The reader's time zone; times are written in it, or in UTC when it is null. A zone object, never text, so no free text can enter the draft.</param>
     public sealed record SessionFacts(
         DateTime StartUtc,
         DateTime EndUtc,
         DateTime BookedAtUtc,
         bool StudentLeftBookingNote,
         int PriorCompletedSessions,
-        DateTime? LastCompletedSessionUtc);
+        DateTime? LastCompletedSessionUtc,
+        TimeZoneInfo? TimeZone = null);
 
     public const string Placeholder = "[ ]";
 
@@ -47,15 +50,15 @@ public static class SessionReportDrafter
 
         var text = new StringBuilder();
         text.Append("Session ")
-            .Append(facts.StartUtc.ToString("d MMM yyyy, HH:mm", CultureInfo.InvariantCulture))
+            .Append(UserTime.ToLocal(facts.StartUtc, facts.TimeZone).ToString("d MMM yyyy, HH:mm", CultureInfo.InvariantCulture))
             .Append('\u2013')
-            .Append(facts.EndUtc.ToString("HH:mm", CultureInfo.InvariantCulture))
-            .Append(" UTC (")
+            .Append(UserTime.ToLocal(facts.EndUtc, facts.TimeZone).ToString("HH:mm", CultureInfo.InvariantCulture))
+            .Append(' ').Append(UserTime.Label(facts.StartUtc, facts.TimeZone)).Append(" (")
             .Append(FormatDuration(facts.EndUtc - facts.StartUtc))
             .AppendLine(").");
 
         text.Append("Booked ")
-            .Append(facts.BookedAtUtc.ToString("d MMM yyyy", CultureInfo.InvariantCulture))
+            .Append(UserTime.ToLocal(facts.BookedAtUtc, facts.TimeZone).ToString("d MMM yyyy", CultureInfo.InvariantCulture))
             .Append(". ")
             .AppendLine(DescribeHistory(facts));
 
@@ -77,7 +80,7 @@ public static class SessionReportDrafter
 
         var ordinal = Ordinal(facts.PriorCompletedSessions + 1);
         var last = facts.LastCompletedSessionUtc is { } lastUtc
-            ? $" Previous session {lastUtc.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}."
+            ? $" Previous session {UserTime.ToLocal(lastUtc, facts.TimeZone).ToString("d MMM yyyy", CultureInfo.InvariantCulture)}."
             : string.Empty;
         return $"{ordinal} session with this counselor.{last}";
     }

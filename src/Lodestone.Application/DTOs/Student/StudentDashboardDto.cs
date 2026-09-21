@@ -1,6 +1,7 @@
 namespace Lodestone.Application.DTOs.Student;
 
-public record StudentActivityDayDto(DateTime DayUtc, int ActionCount);
+/// <param name="Day">The student's own calendar day (a date with no zone attached), used for the chart label.</param>
+public record StudentActivityDayDto(DateTime Day, int ActionCount);
 
 public record StudentNextBookingDto(
     int Id,
