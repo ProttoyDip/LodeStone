@@ -327,6 +327,11 @@ internal sealed class LoadedRiskModelPredictor : IRiskModelPredictor, IDisposabl
                 case nameof(StudentActivityFeatures.AssessmentLateOrMissingRate): features.AssessmentLateOrMissingRate = value; break;
                 case nameof(StudentActivityFeatures.CourseProgressRatio): features.CourseProgressRatio = value; break;
                 case nameof(StudentActivityFeatures.CohortActivityPercentile): features.CohortActivityPercentile = value; break;
+                case nameof(StudentActivityFeatures.ActivityTrendAcceleration): features.ActivityTrendAcceleration = value; break;
+                case nameof(StudentActivityFeatures.ClickVolatility): features.ClickVolatility = value; break;
+                case nameof(StudentActivityFeatures.ForumEngagementShare): features.ForumEngagementShare = value; break;
+                case nameof(StudentActivityFeatures.InactiveWeekRate): features.InactiveWeekRate = value; break;
+                case nameof(StudentActivityFeatures.AssessmentMissStreak): features.AssessmentMissStreak = value; break;
                 default:
                     throw new InvalidOperationException("The loaded risk model contains an unsupported feature mapping.");
             }
