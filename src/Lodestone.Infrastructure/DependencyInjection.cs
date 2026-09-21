@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.AddKeyedScoped<IEmailService, EmailService>(SmtpEmailServiceKey);
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();
         services.AddScoped<IUserPresenceService, UserPresenceService>();
+        services.AddScoped<IDemoSnapshotSampleService, DemoSnapshotSampleService>();
         services.AddScoped<IStudentDashboardService, StudentDashboardService>();
         services.AddScoped<ICounselorProvisioningService, CounselorProvisioningService>();
         services.AddScoped<IVolunteerProvisioningService, VolunteerProvisioningService>();

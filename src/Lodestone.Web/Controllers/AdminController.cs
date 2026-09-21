@@ -304,8 +304,18 @@ public class AdminController : Controller
         }
     }
 
+    /// <summary>
+    /// Snapshot CSV template. In Development the file is pre-filled with synthetic rows for the students
+    /// who are verified and consented right now, dated today under a fresh course key, so a demo can go
+    /// straight from download to import to scoring. Elsewhere it is an empty template with one example
+    /// row: invented risk data must never be importable by accident in a real deployment.
+    /// </summary>
     [HttpGet]
-    public IActionResult DownloadRiskSnapshotTemplate(string? featureSchemaVersion)
+    public async Task<IActionResult> DownloadRiskSnapshotTemplate(
+        string? featureSchemaVersion,
+        [FromServices] IDemoSnapshotSampleService sampleService,
+        [FromServices] IWebHostEnvironment environment,
+        CancellationToken cancellationToken)
     {
         var requestedSchema = string.IsNullOrWhiteSpace(featureSchemaVersion)
             ? _riskModelStatusProvider.Status.FeatureSchemaVersion ?? RiskFeatureSchema.Withdrawal28DayV1
@@ -317,12 +327,29 @@ public class AdminController : Controller
         {
             "StudentNumber", "CourseKey", "WindowEndUtc", "ObservedDays", "FeatureSchemaVersion"
         }.Concat(schema.FeatureNames)) + "\r\n";
+        if (environment.IsDevelopment())
+        {
+            var sample = await sampleService.BuildCsvAsync(schema.Version, DateTime.UtcNow, cancellationToken);
+            // Header plus at least one student row; otherwise fall through to the plain template.
+            if (sample is not null && sample.Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length > 1)
+            {
+                return File(
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetBytes(sample),
+                    "text/csv; charset=utf-8",
+                    $"risk-snapshot-{schema.Version}-template.csv");
+            }
+        }
+
         var currentWindowEnd = DateTime.UtcNow.Date.ToString(
             "yyyy-MM-dd'T'HH:mm:ss'Z'",
             CultureInfo.InvariantCulture);
-        var exampleValues = string.Equals(schema.Version, RiskFeatureSchema.Withdrawal28DayV2, StringComparison.Ordinal)
-            ? "0.43,0.57,-0.14,4.2,8.6,-4.4,7,0.07,0.5,0.5,0.42,0.18"
-            : "0.5,26,2,8,120,1";
+        // One value per feature, in schema order, all inside the importer's valid ranges.
+        var exampleValues = schema.Version switch
+        {
+            RiskFeatureSchema.Withdrawal28DayV3 => "0.43,0.57,-0.14,4.2,8.6,-0.51,7,0.07,0.5,0.5,0.42,0.18,-0.1,1.5,0.2,0.25,1",
+            RiskFeatureSchema.Withdrawal28DayV2 => "0.43,0.57,-0.14,4.2,8.6,-0.51,7,0.07,0.5,0.5,0.42,0.18",
+            _ => "0.5,26,2,8,120,1"
+        };
         var example = $"STU-0001,COURSE-01,{currentWindowEnd},{schema.ObservedDays},{schema.Version},{exampleValues}\r\n";
         return File(
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetBytes(header + example),

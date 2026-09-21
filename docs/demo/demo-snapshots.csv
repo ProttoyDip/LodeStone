@@ -1,0 +1,6 @@
+﻿StudentNumber,CourseKey,WindowEndUtc,ObservedDays,FeatureSchemaVersion,RecentActiveDayRate,PriorActiveDayRate,ActiveDayRateTrend,RecentCourseClickRate,PriorCourseClickRate,CourseClickRateTrend,InactivityStreakDays,AssessmentDueRate,AssessmentOnTimeRate,AssessmentLateOrMissingRate,CourseProgressRatio,CohortActivityPercentile,ActivityTrendAcceleration,ClickVolatility,ForumEngagementShare,InactiveWeekRate,AssessmentMissStreak
+SHOT2026S03,DEMO-101,2026-09-21T00:00:00Z,28,withdrawal-28d-v3,0.518,0.162,0.356,0,11.972,-1,2.08,0.108,1,1,0.167,0.266,-0.962,1.785,0.448,0.288,2.16
+SHOT2026S09,DEMO-101,2026-09-21T00:00:00Z,28,withdrawal-28d-v3,0.518,0.162,0.356,0,11.972,-1,2.08,0.108,1,1,0.167,0.266,-0.962,1.785,0.448,0.288,2.16
+SHOT2026001,DEMO-101,2026-09-21T00:00:00Z,28,withdrawal-28d-v3,0.8,0.8,0,12,12,0,1,0.6,0.95,0.05,0.85,0.8,0,1,0.3,0,0
+SHOT2026S02,DEMO-101,2026-09-21T00:00:00Z,28,withdrawal-28d-v3,0.8,0.8,0,12,12,0,1,0.6,0.95,0.05,0.85,0.8,0,1,0.3,0,0
+SHOT2026S06,DEMO-101,2026-09-21T00:00:00Z,28,withdrawal-28d-v3,0.8,0.8,0,12,12,0,1,0.6,0.95,0.05,0.85,0.8,0,1,0.3,0,0
