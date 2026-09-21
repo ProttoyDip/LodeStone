@@ -20,9 +20,14 @@ public interface IUserPresenceService
         var age = nowUtc - seen;
         if (age.TotalMinutes < 60) return $"Offline · {Math.Max(1, (int)age.TotalMinutes)} min ago";
         if (age.TotalHours < 24) return $"Offline · {(int)age.TotalHours} h ago";
-        return "Offline · " + seen.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
+        // A full timestamp, so the browser can show it in the viewer's own time zone.
+        return "Offline · " + seen.ToString("dd MMM yyyy, HH:mm", CultureInfo.InvariantCulture) + " UTC";
     }
 
-    /// <summary>Records activity for the account. Cheap to call on every request; writes are throttled.</summary>
-    Task TouchAsync(string userId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Records activity for the account. Cheap to call on every request; writes are throttled.
+    /// <paramref name="timeZoneId"/> is the IANA zone the user's browser reported; a valid, changed
+    /// value is saved immediately so later emails and drafts can use the user's own time.
+    /// </summary>
+    Task TouchAsync(string userId, string? timeZoneId = null, CancellationToken cancellationToken = default);
 }

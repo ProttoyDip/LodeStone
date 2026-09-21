@@ -38,9 +38,7 @@
             <div class="queue-header__meta">
                 <span class="queue-live-dot is-connecting" aria-hidden="true" data-queue-connection-dot></span>
                 <span data-queue-connection-label>Connecting live updates</span>
-                <time datetime="@Model.RefreshedAtUtc.ToString("O")" data-local-datetime>
-                    Updated @Model.RefreshedAtUtc.ToString("HH:mm 'UTC'")
-                </time>
+                Updated <time datetime="@Model.RefreshedAtUtc.ToString("O")" data-local-time>@Model.RefreshedAtUtc.ToString("HH:mm 'UTC'")</time>
             </div>
         </header>
 

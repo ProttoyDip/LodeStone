@@ -30,7 +30,7 @@
                         <span class="manual-nudge__outcome-badge manual-nudge__outcome-badge--@tone">@label</span>
                         <span class="manual-nudge__outcome-text">@outcome.Message</span>
                         <small>
-                            Sent @outcome.SentAtUtc.ToString("MMM d")@(outcome.RespondedAtUtc is DateTime responded ? $" · responded {responded:MMM d}" : "")
+                            Sent <time datetime="@outcome.SentAtUtc.ToString("O")">@outcome.SentAtUtc.ToString("MMM d")</time>@(outcome.RespondedAtUtc is DateTime responded ? $" · responded {responded:MMM d}" : "")
                         </small>
                     </li>
                 }

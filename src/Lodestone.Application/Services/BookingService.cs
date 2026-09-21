@@ -1,3 +1,4 @@
+using Lodestone.Application.Common;
 using Lodestone.Application.DTOs.Booking;
 using Lodestone.Application.Exceptions;
 using Lodestone.Application.Interfaces;
@@ -88,7 +89,8 @@ public class BookingService : IBookingService
                         booking.CreatedAtUtc,
                         !string.IsNullOrWhiteSpace(booking.Notes),
                         past.Count,
-                        past.LastUtc))
+                        past.LastUtc,
+                        UserTime.Resolve(counselor.User?.TimeZoneId)))
                 };
             })
             .ToArray();
