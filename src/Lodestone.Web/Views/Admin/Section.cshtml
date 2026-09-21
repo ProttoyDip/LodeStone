@@ -31,6 +31,8 @@
                 && string.Equals(cell.Value, "false", StringComparison.OrdinalIgnoreCase)));
     }
 
+    var hasPresence = Model.Page.Columns.Any(column => column.Key == "presence");
+
     var hasUnreadNotifications = Model.Page.Section == AdminSectionType.Notifications
         && Model.Page.Rows.Any(IsUnread);
 
@@ -150,7 +152,7 @@
             }
             else
             {
-                <div class="ls-admin-table-wrap">
+                <div class="ls-admin-table-wrap" data-presence-live="@(hasPresence ? "true" : null)">
                     <table class="ls-admin-table">
                         <caption class="ls-admin-sr-only">@Model.Page.Title records</caption>
                         <thead>
@@ -192,7 +194,11 @@
                                         {
                                             <td class="@column.CssClass" data-label="@column.Label">
                                                 <span class="@(column.IsNumeric ? "ls-admin-table__number" : string.Empty)">
-                                                    @if (string.IsNullOrWhiteSpace(cellValue))
+                                                    @if (column.Key == "presence" && !string.IsNullOrWhiteSpace(cellValue))
+                                                    {
+                                                        <partial name="_PresenceBadge" model="cellValue" />
+                                                    }
+                                                    else if (string.IsNullOrWhiteSpace(cellValue))
                                                     {
                                                         <span aria-label="Not available">&mdash;</span>
                                                     }

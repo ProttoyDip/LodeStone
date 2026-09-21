@@ -52,7 +52,8 @@ public record AdminVolunteerDto(
     VolunteerApprovalState Status,
     int ActiveAssignments,
     int PendingRequests,
-    DateTime? AwayUntilUtc = null);
+    DateTime? AwayUntilUtc = null,
+    DateTime? LastSeenUtc = null);
 
 public record AdminVolunteerOverviewDto(
     int TotalVolunteers,

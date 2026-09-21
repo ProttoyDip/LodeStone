@@ -568,11 +568,16 @@ public sealed class AdminDashboardService : IAdminDashboardService
             TotalCount: totalCount);
     }
 
+    private static string PresenceText(DateTime? lastSeenUtc, DateTime nowUtc)
+        => IUserPresenceService.Describe(lastSeenUtc, nowUtc);
+
     private async Task<AdminSectionPageDto> BuildStudentsPageAsync(
         string? query,
         int page,
         CancellationToken cancellationToken)
     {
+        var nowUtc = DateTime.UtcNow;
+        var onlineCutoff = IUserPresenceService.OnlineCutoff(nowUtc);
         var totalStudents = await _context.StudentProfiles.AsNoTracking().CountAsync(cancellationToken);
         var activeStudents = await _context.StudentProfiles
             .AsNoTracking()
@@ -598,7 +603,8 @@ public sealed class AdminDashboardService : IAdminDashboardService
         var skip = (page - 1) * SectionRowLimit;
 
         var records = await students
-            .OrderBy(profile => profile.User != null ? profile.User.FullName : profile.StudentNumber)
+            .OrderByDescending(profile => profile.User != null && profile.User.LastSeenUtc >= onlineCutoff)
+            .ThenBy(profile => profile.User != null ? profile.User.FullName : profile.StudentNumber)
             .Skip(skip)
             .Take(SectionRowLimit)
             .Select(profile => new
@@ -611,6 +617,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                 Email = profile.User != null ? profile.User.Email : null,
                 IsActive = profile.User != null && profile.User.IsActive,
                 LastLoginUtc = profile.User != null ? profile.User.LastLoginUtc : null,
+                LastSeenUtc = profile.User != null ? profile.User.LastSeenUtc : null,
                 LatestRisk = profile.RiskScores
                     .OrderByDescending(score => score.ScoredAtUtc)
                     .Select(score => (RiskLevel?)score.Level)
@@ -641,6 +648,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                         : "Not recorded",
                     ["email"] = ValueOrFallback(student.Email),
                     ["risk"] = riskLabel,
+                    ["presence"] = PresenceText(student.LastSeenUtc, nowUtc),
                     ["lastLogin"] = FormatOptionalTimestamp(student.LastLoginUtc),
                     ["status"] = student.IsActive ? "Active" : "Disabled"
                 });
@@ -661,6 +669,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
             Columns: new[]
             {
                 new AdminSectionColumnDto("name", "Name"),
+                new AdminSectionColumnDto("presence", "Online status"),
                 new AdminSectionColumnDto("studentId", "Student ID"),
                 new AdminSectionColumnDto("program", "Program"),
                 new AdminSectionColumnDto("year", "Enrollment year", true),
@@ -684,6 +693,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
         CancellationToken cancellationToken)
     {
         var nowUtc = DateTime.UtcNow;
+        var onlineCutoff = IUserPresenceService.OnlineCutoff(nowUtc);
         var totalCounselors = await _context.CounselorProfiles.AsNoTracking().CountAsync(cancellationToken);
         var acceptingBookings = await _context.CounselorProfiles
             .AsNoTracking()
@@ -706,7 +716,8 @@ public sealed class AdminDashboardService : IAdminDashboardService
         var skip = (page - 1) * SectionRowLimit;
 
         var records = await counselors
-            .OrderBy(profile => profile.User != null ? profile.User.FullName : profile.Specialization)
+            .OrderByDescending(profile => profile.User != null && profile.User.LastSeenUtc >= onlineCutoff)
+            .ThenBy(profile => profile.User != null ? profile.User.FullName : profile.Specialization)
             .Skip(skip)
             .Take(SectionRowLimit)
             .Select(profile => new
@@ -718,6 +729,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                 Email = profile.User != null ? profile.User.Email : null,
                 IsActive = profile.User != null && profile.User.IsActive,
                 LastLoginUtc = profile.User != null ? profile.User.LastLoginUtc : null,
+                LastSeenUtc = profile.User != null ? profile.User.LastSeenUtc : null,
                 RequestedBookings = profile.Bookings.Count(booking => booking.Status == BookingStatus.Requested),
                 UpcomingSessions = profile.Bookings.Count(booking =>
                     booking.Status == BookingStatus.Confirmed && booking.ScheduledForUtc >= nowUtc),
@@ -744,6 +756,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                     ["requests"] = FormatNumber(counselor.RequestedBookings),
                     ["upcoming"] = FormatNumber(counselor.UpcomingSessions),
                     ["completed"] = FormatNumber(counselor.CompletedSessions),
+                    ["presence"] = PresenceText(counselor.LastSeenUtc, nowUtc),
                     ["lastLogin"] = FormatOptionalTimestamp(counselor.LastLoginUtc),
                     ["account"] = counselor.IsActive ? "Active" : "Disabled"
                 });
@@ -764,6 +777,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
             Columns: new[]
             {
                 new AdminSectionColumnDto("name", "Counselor"),
+                new AdminSectionColumnDto("presence", "Online status"),
                 new AdminSectionColumnDto("specialization", "Specialization"),
                 new AdminSectionColumnDto("availability", "Availability"),
                 new AdminSectionColumnDto("requests", "Requests", true),
@@ -881,6 +895,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
         CancellationToken cancellationToken)
     {
         var nowUtc = DateTime.UtcNow;
+        var onlineCutoff = IUserPresenceService.OnlineCutoff(nowUtc);
         var sevenDaysAgoUtc = nowUtc.AddDays(-7);
         var totalUsers = await _context.Users.AsNoTracking().CountAsync(cancellationToken);
         var activeUsers = await _context.Users
@@ -913,7 +928,8 @@ public sealed class AdminDashboardService : IAdminDashboardService
         var skip = (page - 1) * SectionRowLimit;
 
         var records = await users
-            .OrderBy(user => user.FullName)
+            .OrderByDescending(user => user.LastSeenUtc >= onlineCutoff)
+            .ThenBy(user => user.FullName)
             .Skip(skip)
             .Take(SectionRowLimit)
             .Select(user => new
@@ -924,7 +940,8 @@ public sealed class AdminDashboardService : IAdminDashboardService
                 user.UserName,
                 user.IsActive,
                 user.CreatedAtUtc,
-                user.LastLoginUtc
+                user.LastLoginUtc,
+                user.LastSeenUtc
             })
             .ToListAsync(cancellationToken);
 
@@ -965,6 +982,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
                     ["email"] = ValueOrFallback(user.Email),
                     ["username"] = ValueOrFallback(user.UserName),
                     ["created"] = FormatDate(user.CreatedAtUtc),
+                    ["presence"] = PresenceText(user.LastSeenUtc, nowUtc),
                     ["lastLogin"] = FormatOptionalTimestamp(user.LastLoginUtc),
                     ["status"] = user.IsActive ? "Active" : "Disabled"
                 });
@@ -986,6 +1004,7 @@ public sealed class AdminDashboardService : IAdminDashboardService
             Columns: new[]
             {
                 new AdminSectionColumnDto("name", "Name"),
+                new AdminSectionColumnDto("presence", "Online status"),
                 new AdminSectionColumnDto("roles", "Roles"),
                 new AdminSectionColumnDto("email", "Email"),
                 new AdminSectionColumnDto("username", "Username"),

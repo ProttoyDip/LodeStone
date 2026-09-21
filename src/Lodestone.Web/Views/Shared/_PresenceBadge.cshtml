@@ -1,0 +1,8 @@
+@model string
+@{
+    var online = string.Equals(Model, "Online", StringComparison.Ordinal);
+}
+<span class="ls-presence-badge @(online ? "is-online" : "is-offline")">
+    <span class="ls-presence-dot" aria-hidden="true"></span>
+    @Model
+</span>

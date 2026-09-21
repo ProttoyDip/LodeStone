@@ -116,12 +116,13 @@
             }
             else
             {
-                <div class="ls-admin-table-wrap">
+                <div class="ls-admin-table-wrap" data-presence-live>
                     <table class="ls-admin-table">
                         <caption class="ls-admin-sr-only">Volunteer roster</caption>
                         <thead>
                             <tr>
                                 <th scope="col">Name</th>
+                                <th scope="col">Online status</th>
                                 <th scope="col">Department</th>
                                 <th scope="col">Skills</th>
                                 <th scope="col">Status</th>
@@ -137,6 +138,9 @@
                                     <th scope="row" data-label="Name">
                                         <div class="ls-admin-table__primary">@volunteer.FullName</div>
                                     </th>
+                                    <td data-label="Online status">
+                                        <partial name="_PresenceBadge" model="@Lodestone.Application.Interfaces.IUserPresenceService.Describe(volunteer.LastSeenUtc, DateTime.UtcNow)" />
+                                    </td>
                                     <td data-label="Department">@(volunteer.Department ?? "—")</td>
                                     <td data-label="Skills">@(volunteer.Skills ?? "—")</td>
                                     <td data-label="Status">

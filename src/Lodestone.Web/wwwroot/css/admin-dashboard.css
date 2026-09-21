@@ -1888,3 +1888,11 @@ body.ls-admin {
     .ls-admin-remove { width: 100%; }
     .ls-admin-remove__select { width: 100%; min-width: 0; }
 }
+
+/* Online status page */
+.ls-presence-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; }
+.ls-presence-dot { width: 9px; height: 9px; border-radius: 50%; background: #9a9587; display: inline-block; }
+.ls-presence-badge.is-online { color: var(--admin-positive); }
+.ls-presence-badge.is-online .ls-presence-dot { background: #2e9e5b; box-shadow: 0 0 0 3px rgba(46, 158, 91, 0.2); }
+.ls-presence-badge.is-offline { color: #6b6558; }
+.ls-presence-row--offline { opacity: 0.78; }
