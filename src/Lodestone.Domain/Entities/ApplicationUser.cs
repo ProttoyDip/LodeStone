@@ -8,6 +8,8 @@ public class ApplicationUser : IdentityUser
     public string FullName { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? LastLoginUtc { get; set; }
+    /// <summary>Last time the account made a request or sent a heartbeat; drives the admin online/offline view.</summary>
+    public DateTime? LastSeenUtc { get; set; }
     public bool IsActive { get; set; } = true;
 
     public StudentProfile? StudentProfile { get; set; }

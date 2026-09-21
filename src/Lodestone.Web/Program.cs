@@ -124,6 +124,7 @@ app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<Lodestone.Web.Middleware.UserPresenceMiddleware>();
 app.UseRateLimiter();
 app.Use(async (context, next) =>
 {

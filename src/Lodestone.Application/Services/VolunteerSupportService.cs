@@ -114,8 +114,11 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             ? allVolunteers
             : await _repository.GetVolunteersForAdminAsync(normalizedQuery, cancellationToken);
 
+        // Online volunteers first; the sort is stable, so the existing order holds within each group.
+        var onlineCutoff = IUserPresenceService.OnlineCutoff(DateTime.UtcNow);
         var items = visibleVolunteers
             .Select(MapAdminVolunteer)
+            .OrderByDescending(volunteer => volunteer.LastSeenUtc >= onlineCutoff)
             .ToList()
             .AsReadOnly();
 
@@ -1107,7 +1110,8 @@ public sealed class VolunteerSupportService : IVolunteerSupportService
             GetApprovalState(volunteer),
             volunteer.VolunteerAssignments.Count(assignment => assignment.IsActive),
             GetPendingRequestsForVolunteer(volunteer).Select(request => request.Id).Distinct().Count(),
-            volunteer.IsAwayAt(DateTime.UtcNow) ? volunteer.AwayUntilUtc : null);
+            volunteer.IsAwayAt(DateTime.UtcNow) ? volunteer.AwayUntilUtc : null,
+            volunteer.User?.LastSeenUtc);
 
     private static IEnumerable<SupportRequest> GetPendingRequestsForVolunteer(VolunteerProfile volunteer)
         => volunteer.VolunteerAssignments
