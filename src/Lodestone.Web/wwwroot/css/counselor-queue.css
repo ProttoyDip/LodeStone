@@ -434,6 +434,8 @@
 .explain-summary dd { margin: .3rem 0 0; color: var(--ink); font-size: .95rem; }
 .explain-note { padding: 1rem 1.25rem; color: var(--ink-soft); font-size: .9rem; line-height: 1.6; border-bottom: 1px solid var(--line); }
 .explain-note--boundary { background: var(--paper-2); }
+/* Horizontal-scroll fallback; the table itself switches to a stacked card layout at 820px below. */
+.explain-factors-wrap { width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .explain-factors { width: 100%; border-collapse: collapse; }
 .explain-factors th, .explain-factors td { padding: .8rem 1.25rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 .explain-factors thead th { color: var(--muted); background: var(--paper-2); font-family: var(--font-mono); font-size: .65rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
@@ -496,15 +498,32 @@
     .queue-table tbody,
     .queue-table tr,
     .queue-table th,
-    .queue-table td { display: block; width: 100%; }
-    .queue-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
-    .queue-table tbody { display: grid; }
-    .queue-table tbody tr { padding: .95rem 1rem; border-bottom: 1px solid var(--line-strong); }
-    .queue-table tbody tr:last-child { border-bottom: 0; }
+    .queue-table td,
+    .explain-factors,
+    .explain-factors tbody,
+    .explain-factors tr,
+    .explain-factors th,
+    .explain-factors td { display: block; width: 100%; }
+    .queue-table thead,
+    .explain-factors thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+    .queue-table tbody,
+    .explain-factors tbody { display: grid; }
+    .queue-table tbody tr,
+    .explain-factors tbody tr { padding: .95rem 1rem; border-bottom: 1px solid var(--line-strong); }
+    .queue-table tbody tr:last-child,
+    .explain-factors tbody tr:last-child { border-bottom: 0; }
     .queue-table th,
-    .queue-table td { display: grid; grid-template-columns: 7.2rem minmax(0, 1fr); gap: .75rem; padding: .42rem 0; border: 0; white-space: normal; }
+    .queue-table td,
+    .explain-factors th,
+    .explain-factors td { display: grid; grid-template-columns: 7.2rem minmax(0, 1fr); gap: .75rem; padding: .42rem 0; border: 0; white-space: normal; }
     .queue-table th::before,
-    .queue-table td::before { content: attr(data-label); color: var(--muted); font-family: var(--font-mono); font-size: .64rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+    .queue-table td::before,
+    .explain-factors th::before,
+    .explain-factors td::before { content: attr(data-label); color: var(--muted); font-family: var(--font-mono); font-size: .64rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+    /* This row has no data-label (it is only ever "Raised"/"Lowered", self-explanatory without one). */
+    .explain-factors td:has(.explain-direction) { grid-template-columns: 1fr; }
+    .explain-factors td.is-numeric { white-space: normal; }
+    .explain-bar { min-width: 0; }
     .queue-table__action form,
     .queue-btn--resolve { width: 100%; }
     .queue-context { min-width: 0; }

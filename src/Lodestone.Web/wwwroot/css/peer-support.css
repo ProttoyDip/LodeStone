@@ -47,18 +47,29 @@
 .mt-1 { margin-top: .25rem; }
 .mt-2 { margin-top: .5rem; }
 .mt-3 { margin-top: 1rem; }
+.ms-1 { margin-left: .25rem; }
 .ms-2 { margin-left: .5rem; }
 .p-3 { padding: 1rem; }
+.py-5 { padding-block: clamp(2rem, 6vw, 3.5rem); }
 
 /* ---- flex helpers ---- */
 
 .d-flex { display: flex; }
 .d-block { display: block; }
 .d-inline { display: inline; }
+.d-grid { display: grid; }
 .justify-content-between { justify-content: space-between; }
 .align-items-start { align-items: flex-start; }
+.align-items-center { align-items: center; }
+.align-items-end { align-items: flex-end; }
+/* Without this, every d-flex row this markup marks flex-wrap stays nowrap and forces the card
+   wider than the viewport on narrow screens instead of stacking its children. */
+.flex-wrap { flex-wrap: wrap; }
 .flex-grow-1 { flex: 1 1 auto; min-width: 0; }
 .gap-2 { gap: .5rem; }
+.gap-3 { gap: 1rem; }
+.w-100 { width: 100%; }
+.text-center { text-align: center; }
 
 /* ---- typography ---- */
 
@@ -105,6 +116,12 @@
 
 /* bg-light is used to tint card headers; keep it inside the paper palette. */
 .bg-light { background: var(--paper); }
+.bg-warning { background: #F6EAD2; }
+/* Real Bootstrap fades bg-warning by 25% alpha; the flat tint above already reads as "light", so
+   this only needs to exist as a class so the markup's combination isn't left unstyled. */
+.bg-opacity-25 { }
+
+.border-warning { border-color: #C99A3D; }
 
 /* ---- list groups ---- */
 
@@ -116,6 +133,11 @@
     border: 1px solid var(--line);
     border-radius: var(--r-md);
 }
+
+/* Inside a .card: no outer border/radius/gap of its own, items separated by rules instead. */
+.list-group-flush { gap: 0; }
+.list-group-flush .list-group-item { border-inline: 0; border-top: 0; border-radius: 0; border-bottom: 1px solid var(--line); }
+.list-group-flush .list-group-item:last-child { border-bottom: 0; }
 
 /* ---- badges ---- */
 
@@ -156,12 +178,25 @@
 }
 
 .btn-sm { padding: .45rem .75rem; font-size: .82rem; }
+.btn-lg { padding: .9rem 1.5rem; font-size: 1.02rem; }
 
 .btn-primary { color: var(--paper); background: var(--clay); border-color: var(--clay); }
 .btn-primary:hover { background: var(--clay-deep); transform: translateY(-1px); }
 
 .btn-outline-secondary { color: var(--ink); background: transparent; border-color: var(--line-strong); }
 .btn-outline-secondary:hover { background: var(--paper); transform: translateY(-1px); }
+
+.btn-outline-primary { color: var(--clay-deep); background: transparent; border-color: var(--clay); }
+.btn-outline-primary:hover { background: var(--clay-wash, rgba(188,81,56,.08)); transform: translateY(-1px); }
+
+.btn-outline-success { color: var(--forest); background: transparent; border-color: var(--forest); }
+.btn-outline-success:hover { background: var(--forest-wash); transform: translateY(-1px); }
+
+.btn-outline-danger { color: var(--clay-deep); background: transparent; border-color: var(--clay-deep); }
+.btn-outline-danger:hover { background: var(--clay-wash, rgba(188,81,56,.08)); transform: translateY(-1px); }
+
+.btn-outline-warning { color: #8a5a17; background: transparent; border-color: #C99A3D; }
+.btn-outline-warning:hover { background: #F6EAD2; transform: translateY(-1px); }
 
 .btn-danger { color: var(--paper); background: var(--clay-deep); border-color: var(--clay-deep); }
 .btn-success { color: var(--paper); background: var(--forest); border-color: var(--forest); }
@@ -210,6 +245,11 @@
 .form-control::placeholder { color: var(--muted); opacity: 1; }
 .form-control:focus { outline: 2px solid var(--clay); outline-offset: 2px; }
 textarea.form-control { resize: vertical; min-height: 5rem; }
+.form-control-sm { padding: .45rem .7rem; font-size: .84rem; }
+
+/* type=date inputs render wide on some mobile browsers; let them shrink to fit a wrapped row. */
+input[type="date"].form-control,
+input[type="date"].form-control-sm { min-width: 0; }
 
 .form-select {
     width: 100%;

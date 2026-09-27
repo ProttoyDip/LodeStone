@@ -16,6 +16,7 @@ using Lodestone.Web.Configuration;
 using Lodestone.Web.Health;
 using Lodestone.Web.Hubs;
 using Lodestone.Web.Services;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using System.Threading.RateLimiting;
@@ -107,6 +108,22 @@ builder.Services.ConfigureApplicationCookie(options =>
 var app = builder.Build();
 
 // ---- Middleware pipeline ----
+
+// Must run before anything that reads the caller's address (rate limiting, logging, the HTTPS
+// redirect's scheme check): without it, every request arriving through a reverse proxy or tunnel
+// shows up as coming from that proxy's own loopback connection, so the per-visitor auth rate limit
+// below becomes one shared bucket for every visitor at once, and legitimate visitors get locked out
+// by each other. Only the immediate hop (loopback: where a local tunnel client or a same-host
+// reverse proxy connects from) is trusted to supply these headers — an arbitrary caller cannot
+// spoof its way past the rate limit by sending its own X-Forwarded-For.
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownProxies.Add(System.Net.IPAddress.Loopback);
+forwardedHeadersOptions.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");

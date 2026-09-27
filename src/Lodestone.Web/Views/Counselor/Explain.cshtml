@@ -99,61 +99,63 @@
                 }
                 else
                 {
-                    <table class="explain-factors">
-                        <caption class="queue-sr-only">Measured influence of each feature on this score</caption>
-                        <thead>
-                            <tr>
-                                <th scope="col">Measured behaviour</th>
-                                <th scope="col">This student</th>
-                                <th scope="col">Comparison</th>
-                                <th scope="col">Effect on score</th>
-                                <th scope="col"><span class="queue-sr-only">Direction</span></th>
-                                @if (importance.Count > 0)
-                                {
-                                    <th scope="col" title="How much the model relies on this measure across all students">Model-wide rank</th>
-                                }
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var factor in factors)
-                            {
-                                var raising = factor.Direction == RiskFactorDirection.Raising;
-                                var width = Math.Round(50 * factor.Magnitude / largest, 1);
+                    <div class="explain-factors-wrap">
+                        <table class="explain-factors">
+                            <caption class="queue-sr-only">Measured influence of each feature on this score</caption>
+                            <thead>
                                 <tr>
-                                    <th scope="row">
-                                        @factor.DisplayName
-                                        <span class="queue-student-id">@factor.FeatureName</span>
-                                    </th>
-                                    <td class="is-numeric">@factor.Value.ToString("0.###")</td>
-                                    <td class="is-numeric">@factor.BaselineValue.ToString("0.###")</td>
-                                    <td class="is-numeric">
-                                        <span class="explain-bar @(raising ? "explain-bar--raising" : "explain-bar--protective")" aria-hidden="true">
-                                            <span style="width:@(width)%"></span>
-                                        </span>
-                                        @Percent(factor.Contribution)
-                                    </td>
-                                    <td>
-                                        <span class="explain-direction @(raising ? "explain-direction--raising" : "explain-direction--protective")">
-                                            @(raising ? "Raised" : "Lowered")
-                                        </span>
-                                    </td>
+                                    <th scope="col">Measured behaviour</th>
+                                    <th scope="col">This student</th>
+                                    <th scope="col">Comparison</th>
+                                    <th scope="col">Effect on score</th>
+                                    <th scope="col"><span class="queue-sr-only">Direction</span></th>
                                     @if (importance.Count > 0)
                                     {
-                                        <td class="is-numeric">
-                                            @if (importanceByFeature.TryGetValue(factor.FeatureName, out var entry))
-                                            {
-                                                <span class="explain-rank @(entry.Rank <= 3 ? "explain-rank--top" : null)" title="@((entry.Share * 100).ToString("0.#"))% of the model's discriminating power">#@entry.Rank</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="explain-rank">&mdash;</span>
-                                            }
-                                        </td>
+                                        <th scope="col" title="How much the model relies on this measure across all students">Model-wide rank</th>
                                     }
                                 </tr>
-                            }
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach (var factor in factors)
+                                {
+                                    var raising = factor.Direction == RiskFactorDirection.Raising;
+                                    var width = Math.Round(50 * factor.Magnitude / largest, 1);
+                                    <tr>
+                                        <th scope="row" data-label="Measured behaviour">
+                                            @factor.DisplayName
+                                            <span class="queue-student-id">@factor.FeatureName</span>
+                                        </th>
+                                        <td class="is-numeric" data-label="This student">@factor.Value.ToString("0.###")</td>
+                                        <td class="is-numeric" data-label="Comparison">@factor.BaselineValue.ToString("0.###")</td>
+                                        <td class="is-numeric" data-label="Effect on score">
+                                            <span class="explain-bar @(raising ? "explain-bar--raising" : "explain-bar--protective")" aria-hidden="true">
+                                                <span style="width:@(width)%"></span>
+                                            </span>
+                                            @Percent(factor.Contribution)
+                                        </td>
+                                        <td data-label="Direction">
+                                            <span class="explain-direction @(raising ? "explain-direction--raising" : "explain-direction--protective")">
+                                                @(raising ? "Raised" : "Lowered")
+                                            </span>
+                                        </td>
+                                        @if (importance.Count > 0)
+                                        {
+                                            <td class="is-numeric" data-label="Model-wide rank">
+                                                @if (importanceByFeature.TryGetValue(factor.FeatureName, out var entry))
+                                                {
+                                                    <span class="explain-rank @(entry.Rank <= 3 ? "explain-rank--top" : null)" title="@((entry.Share * 100).ToString("0.#"))% of the model's discriminating power">#@entry.Rank</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="explain-rank">&mdash;</span>
+                                                }
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 }
 
                 <p class="explain-caveat">
