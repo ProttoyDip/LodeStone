@@ -16,6 +16,20 @@
         return;
     }
 
+    // A page with its own open conversation already carries a live hub connection of its own
+    // (peer-chat.js), and that connection matters far more than this one: it's the actual messaging
+    // feature, this is a "the page might be stale, reload it" convenience. Opening a second
+    // simultaneous live connection here competed with peer-chat.js's for the one connection some
+    // hosting setups (a free tunnel among them) can reliably keep open at once — on those, the
+    // second connection could sit negotiated but never actually connect, at which point THIS script
+    // failing silently was fine, but it was starving the chat connection of the slot instead. So on
+    // these pages, peer-chat.js alone carries live updates; the actions that change this page's
+    // status (accept, decline, complete, escalate) are ordinary form posts that already redirect
+    // back to a fresh copy of the page on the actor's own screen. What's lost is near-real-time
+    // notice to the *other* participant that one of those happened while they have the page open;
+    // they still see it next time they load or refresh the page.
+    if (root.querySelector("[data-peer-chat]")) return;
+
     var connection = new window.signalR.HubConnectionBuilder()
         .withUrl("/hubs/peer-support")
         .withAutomaticReconnect([0, 2000, 10000, 30000])

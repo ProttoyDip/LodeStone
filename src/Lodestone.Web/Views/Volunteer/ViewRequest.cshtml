@@ -86,7 +86,7 @@
                      data-request-id="@Model.Request.Id"
                      data-user-id="@(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)"
                      data-self-label="You"
-                     data-other-label="Student">
+                     data-other-label="@Model.Request.StudentDisplayName">
                     <div class="card-header bg-light">
                         <h5 class="mb-0">Conversation</h5>
                     </div>
@@ -105,7 +105,7 @@
                                             }
                                             else
                                             {
-                                                <span>Student</span>
+                                                <span>@Model.Request.StudentDisplayName</span>
                                             }
                                         </strong>
                                         <small class="text-muted"><time datetime="@interaction.CreatedAtUtc.ToString("O")">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</time></small>
@@ -183,7 +183,7 @@
                                             }
                                             else
                                             {
-                                                <span>Student</span>
+                                                <span>@Model.Request.StudentDisplayName</span>
                                             }
                                         </strong>
                                         <small class="text-muted"><time datetime="@interaction.CreatedAtUtc.ToString("O")">@interaction.CreatedAtUtc.ToString("MMM d, yyyy 'at' h:mm tt")</time></small>
